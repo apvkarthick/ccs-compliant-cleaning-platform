@@ -1,0 +1,44 @@
+name: Deploy CCS Platform
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ccs-platform-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DROPLET_SSH_KEY }}" > ~/.ssh/ccs_deploy_key
+          chmod 600 ~/.ssh/ccs_deploy_key
+          ssh-keyscan -H "${{ secrets.DROPLET_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync files to droplet
+        run: |
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude '.env' \
+            --exclude '.env.*' \
+            --exclude 'storage/' \
+            --exclude 'uploads/' \
+            --exclude 'logs/' \
+            -e "ssh -i ~/.ssh/ccs_deploy_key" \
+            ./ "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:/opt/apps/ccs-platform/"
+
+      - name: Run remote deploy
+        run: |
+          ssh -i ~/.ssh/ccs_deploy_key "${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}" \
+            "bash /opt/apps/ccs-platform/deploy/deploy.sh"
