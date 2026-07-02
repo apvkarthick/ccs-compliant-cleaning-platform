@@ -24,3 +24,7 @@ Add these repository secrets before enabling CI/CD:
 - `DROPLET_SSH_KEY`: private key content for the matching public key in `/root/.ssh/authorized_keys`
 
 Keep application credentials only on the droplet in `/opt/apps/ccs-platform/.env`; do not commit them.
+
+## Deployment Check
+
+Pushing to `main` runs the `Deploy CCS Platform` workflow and restarts the droplet services.
