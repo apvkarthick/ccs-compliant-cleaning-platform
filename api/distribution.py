@@ -458,7 +458,7 @@ def _find_or_create_ghl_contact_id(contact: dict[str, Any]) -> str:
         "firstName": name_parts[0] if name_parts else "",
         "lastName": " ".join(name_parts[1:]) if len(name_parts) > 1 else "",
     }
-    response = _post_json(f"{base_url}/contacts/", payload, _ghl_headers(token))
+    response = _post_json(f"{base_url}/contacts/upsert", payload, _ghl_headers(token))
     body = response.get("body") or {}
     if isinstance(body, dict):
         contact_body = body.get("contact") if isinstance(body.get("contact"), dict) else body
@@ -473,12 +473,13 @@ def _find_ghl_contact_id_by_email(email: str) -> str:
     if not token or not location_id or not email:
         return ""
 
-    response = _post_json(
-        f"{base_url}/contacts/search",
-        {"locationId": location_id, "query": email, "pageLimit": 10},
-        _ghl_headers(token),
-    )
+    duplicate_url = f"{base_url}/contacts/search/duplicate?{urlencode({'locationId': location_id, 'email': email})}"
+    response = _get_json(duplicate_url, _ghl_headers(token))
     body = response.get("body") or {}
+    if isinstance(body, dict) and isinstance(body.get("contact"), dict):
+        contact = body["contact"]
+        return str(contact.get("id") or contact.get("contactId") or "")
+
     contacts: list[dict[str, Any]] = []
     if isinstance(body, dict):
         for key in ["contacts", "data", "items"]:
@@ -510,6 +511,29 @@ def _ghl_headers(token: str) -> dict[str, str]:
 
 def _post_json(url: str, payload: Any, headers: dict[str, str]) -> dict[str, Any]:
     return _request_json(url, payload, headers, method="POST")
+
+
+def _get_json(url: str, headers: dict[str, str]) -> dict[str, Any]:
+    request = Request(
+        url,
+        method="GET",
+        headers={
+            "Accept": "application/json",
+            **headers,
+        },
+    )
+    try:
+        with urlopen(request, timeout=30) as response:
+            body = response.read().decode("utf-8")
+            return {
+                "status": "ok",
+                "status_code": response.status,
+                "body": json.loads(body) if body else None,
+            }
+    except HTTPError as exc:
+        return {"status": "error", "status_code": exc.code, "body": exc.read().decode("utf-8")}
+    except URLError as exc:
+        return {"status": "error", "reason": str(exc.reason)}
 
 
 def _request_json(url: str, payload: Any, headers: dict[str, str], *, method: str) -> dict[str, Any]:
