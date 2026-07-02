@@ -1,0 +1,74 @@
+from io import BytesIO
+
+from openpyxl import Workbook
+
+from api.excel_parser import parse_chemical_register
+
+
+def _sample_register_bytes() -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Sheet1"
+    sheet["B7"] = "Chemical Register"
+    sheet["C8"] = "Biniris C/- Springfield Tower"
+    sheet["C9"] = "2026-07-01"
+    sheet["C10"] = "Matthew King"
+    sheet["C12"] = "0422 228 965"
+
+    sheet["A15"] = "Product Code"
+    sheet["B15"] = "Product Name"
+    sheet["C15"] = "Hazardous"
+    sheet["F15"] = "Risk Assessment"
+    sheet["K15"] = "SDS Expiry"
+    sheet["N15"] = "Selected"
+
+    sheet["A17"] = "Smart Clean Range"
+    sheet["A18"] = "ALLPURP5L"
+    sheet["B18"] = "All Purpose Sanitiser Soak"
+    sheet["C18"] = "No"
+    sheet["F18"] = "No"
+    sheet["K18"] = "2029-01-01"
+    sheet["N18"] = 1
+
+    sheet["A19"] = "LAUNDPOW15KGF"
+    sheet["B19"] = "Laundry Powder"
+    sheet["C19"] = "Yes"
+    sheet["F19"] = "Yes"
+    sheet["K19"] = "2028-05-01"
+    sheet["N19"] = 1
+
+    sheet["A20"] = "SKIPME"
+    sheet["B20"] = "Skipped Product"
+    sheet["N20"] = 0
+
+    stream = BytesIO()
+    workbook.save(stream)
+    return stream.getvalue()
+
+
+def test_parse_chemical_register_extracts_contact_products_and_document_urls():
+    source_files = [
+        "ALLPURP5L_ All Purpose Sanitiser Soak SDS.pdf",
+        "LAUNDPOW15KG_ Laundry Powder SDS.pdf",
+        "RISK_LAUNDPOW15KGF_ Laundry Powder Risk Assessment.pdf",
+    ]
+
+    preview = parse_chemical_register(
+        _sample_register_bytes(),
+        source_files=source_files,
+        public_base_url="https://ccs.example.test",
+    )
+
+    assert preview["customer"]["company"] == "Biniris C/- Springfield Tower"
+    assert preview["customer"]["contact_name"] == "Matthew King"
+    assert preview["customer"]["phone"] == "0422 228 965"
+    assert preview["register"]["title"] == "Chemical Register"
+    assert preview["register"]["date"] == "2026-07-01"
+
+    products = preview["products"]
+    assert [product["code"] for product in products] == ["ALLPURP5L", "LAUNDPOW15KGF"]
+    assert products[0]["sds"]["matched"] is True
+    assert products[0]["sds"]["url"] == "https://ccs.example.test/api/documents/source/ALLPURP5L_%20All%20Purpose%20Sanitiser%20Soak%20SDS.pdf"
+    assert products[0]["risk_assessment"]["matched"] is False
+    assert products[1]["sds"]["matched"] is True
+    assert products[1]["risk_assessment"]["matched"] is True

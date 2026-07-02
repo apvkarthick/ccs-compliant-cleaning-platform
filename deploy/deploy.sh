@@ -15,8 +15,13 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
 mkdir -p storage/source storage/generated uploads logs
+mkdir -p /var/www/ccs-frontend/dist
 
 python -m compileall api
+
+if [ -d "frontend/dist" ]; then
+  cp -a frontend/dist/. /var/www/ccs-frontend/dist/
+fi
 
 systemctl restart ccs-api
 systemctl restart ccs-worker
