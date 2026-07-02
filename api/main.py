@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .distribution import process_distribution
-from .excel_parser import list_source_documents, parse_chemical_register
+from .excel_parser import list_source_documents, parse_client_workbook
 from .tasks import ping_task
 
 
@@ -50,20 +50,25 @@ def enqueue_ping() -> dict[str, str]:
     return {"task_id": task.id, "status": "queued"}
 
 
-@app.post("/register/preview")
-async def preview_register(file: UploadFile = File(...)) -> dict[str, Any]:
+@app.post("/workbook/preview")
+async def preview_workbook(file: UploadFile = File(...)) -> dict[str, Any]:
     if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm")):
-        raise HTTPException(status_code=400, detail="Upload an .xlsx or .xlsm chemical register")
+        raise HTTPException(status_code=400, detail="Upload an .xlsx or .xlsm client workbook")
 
     workbook_bytes = await file.read()
     if not workbook_bytes:
         raise HTTPException(status_code=400, detail="Uploaded workbook is empty")
 
-    return parse_chemical_register(
+    return parse_client_workbook(
         workbook_bytes,
         source_files=list_source_documents(SOURCE_DIR),
         public_base_url=os.getenv("CCS_PUBLIC_BASE_URL", ""),
     )
+
+
+@app.post("/register/preview")
+async def preview_register(file: UploadFile = File(...)) -> dict[str, Any]:
+    return await preview_workbook(file)
 
 
 @app.post("/distribution/test-send")

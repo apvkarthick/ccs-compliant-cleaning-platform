@@ -2,7 +2,7 @@ from io import BytesIO
 
 from openpyxl import Workbook
 
-from api.excel_parser import parse_chemical_register
+from api.excel_parser import parse_chemical_register, parse_client_workbook
 
 
 def _sample_register_bytes() -> bytes:
@@ -72,3 +72,62 @@ def test_parse_chemical_register_extracts_contact_products_and_document_urls():
     assert products[0]["risk_assessment"]["matched"] is False
     assert products[1]["sds"]["matched"] is True
     assert products[1]["risk_assessment"]["matched"] is True
+
+
+def test_parse_client_workbook_extracts_customers_products_and_pdf_links_across_sheets():
+    workbook = Workbook()
+    customers = workbook.active
+    customers.title = "Customer Data"
+    customers.append(["Customer", "Contact Name", "Email", "Phone"])
+    customers.append(["Springfield Tower", "Matthew King", "matthew@example.com", "0422 228 965"])
+    customers.append(["North Site", "Sarah Jones", "sarah@example.com", "0400 000 001"])
+
+    chemicals = workbook.create_sheet("Chemical SDS Links")
+    chemicals.append(
+        [
+            "Product Code",
+            "Chemical Name",
+            "Selected",
+            "SDS PDF Link",
+            "Risk Assessment Link",
+            "Chemical Register URL",
+        ]
+    )
+    chemicals.append(
+        [
+            "ALLPURP5L",
+            "All Purpose Sanitiser Soak",
+            "yes",
+            "https://cdn.example.com/sds/allpurp.pdf",
+            "",
+            "https://cdn.example.com/register/springfield.pdf",
+        ]
+    )
+    chemicals.append(
+        [
+            "BLEACH5L",
+            "Bleach 4%",
+            "yes",
+            "https://cdn.example.com/sds/bleach.pdf",
+            "https://cdn.example.com/risk/bleach.pdf",
+            "",
+        ]
+    )
+
+    stream = BytesIO()
+    workbook.save(stream)
+
+    preview = parse_client_workbook(stream.getvalue(), public_base_url="https://ccs.example.test")
+
+    assert preview["workbook_type"] == "client_workbook"
+    assert preview["customer"]["company"] == "Springfield Tower"
+    assert preview["customer"]["contact_name"] == "Matthew King"
+    assert preview["contacts"] == [
+        {"company": "Springfield Tower", "name": "Matthew King", "email": "matthew@example.com", "phone": "0422 228 965"},
+        {"company": "North Site", "name": "Sarah Jones", "email": "sarah@example.com", "phone": "0400 000 001"},
+    ]
+    assert preview["register"]["url"] == "https://cdn.example.com/register/springfield.pdf"
+    assert [product["code"] for product in preview["products"]] == ["ALLPURP5L", "BLEACH5L"]
+    assert preview["products"][0]["sds"]["url"] == "https://cdn.example.com/sds/allpurp.pdf"
+    assert preview["products"][0]["risk_assessment"]["matched"] is False
+    assert preview["products"][1]["risk_assessment"]["url"] == "https://cdn.example.com/risk/bleach.pdf"

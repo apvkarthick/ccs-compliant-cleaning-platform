@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AlertCircle, CheckCircle2, FileSpreadsheet, Link2, Send, Upload } from 'lucide-react';
 import './styles.css';
@@ -17,10 +17,19 @@ function App() {
 
   const contacts = useMemo(() => parseContacts(contactsText), [contactsText]);
 
+  useEffect(() => {
+    if (!preview?.contacts?.length) return;
+    setContactsText(
+      preview.contacts
+        .map((contact) => `${contact.name || contact.company || 'Contact'} <${contact.email}>`)
+        .join('\n')
+    );
+  }, [preview]);
+
   async function uploadRegister(event) {
     event.preventDefault();
     if (!file) {
-      setError('Select an Excel register first.');
+      setError('Select a client workbook first.');
       return;
     }
     setLoading(true);
@@ -30,7 +39,7 @@ function App() {
     formData.append('file', file);
 
     try {
-      const response = await fetch(`${API_BASE}/register/preview`, {
+      const response = await fetch(`${API_BASE}/workbook/preview`, {
         method: 'POST',
         body: formData,
       });
@@ -46,7 +55,7 @@ function App() {
 
   async function sendTestDistribution() {
     if (!preview) {
-      setError('Upload and preview a register first.');
+      setError('Upload and preview a client workbook first.');
       return;
     }
     if (contacts.length === 0) {
@@ -86,7 +95,7 @@ function App() {
         <div className="layout">
           <aside className="side-panel">
             <form onSubmit={uploadRegister} className="upload-box">
-              <label htmlFor="register-file">Chemical register</label>
+              <label htmlFor="register-file">Client workbook</label>
               <input
                 id="register-file"
                 type="file"
@@ -153,14 +162,14 @@ function StatusPill({ preview, sendResult }) {
     return (
       <div className="status success">
         <CheckCircle2 size={18} />
-        Register parsed
+        Workbook parsed
       </div>
     );
   }
   return (
     <div className="status neutral">
       <FileSpreadsheet size={18} />
-      Awaiting register
+      Awaiting workbook
     </div>
   );
 }
@@ -169,8 +178,8 @@ function EmptyState() {
   return (
     <div className="empty-state">
       <FileSpreadsheet size={34} />
-      <h2>Upload a CCS chemical register</h2>
-      <p>The preview will show customer details, selected products, SDS links, and risk-assessment matches.</p>
+      <h2>Upload the client workbook</h2>
+      <p>The preview will read customer sheets, chemical/product sheets, SDS PDF links, and risk-assessment mappings.</p>
     </div>
   );
 }
@@ -190,7 +199,7 @@ function PreviewPanel({ preview }) {
         <Info label="Customer" value={preview.customer.company || 'Not found'} />
         <Info label="Contact" value={preview.customer.contact_name || 'Not found'} />
         <Info label="Phone" value={preview.customer.phone || 'Not found'} />
-        <Info label="Register date" value={preview.register.date || 'Not found'} />
+        <Info label="Workbook date" value={preview.register.date || 'Not found'} />
       </div>
 
       <div className="table-wrap">

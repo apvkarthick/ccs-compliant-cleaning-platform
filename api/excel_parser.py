@@ -19,6 +19,42 @@ def parse_chemical_register(
     source_files: list[str] | None = None,
     public_base_url: str = "",
 ) -> dict[str, Any]:
+    preview = _parse_chemical_register_layout(
+        workbook_bytes,
+        source_files=source_files,
+        public_base_url=public_base_url,
+    )
+    preview["workbook_type"] = "chemical_register"
+    preview.setdefault("contacts", _contacts_from_customer(preview["customer"]))
+    return preview
+
+
+def parse_client_workbook(
+    workbook_bytes: bytes,
+    *,
+    source_files: list[str] | None = None,
+    public_base_url: str = "",
+) -> dict[str, Any]:
+    structured_preview = _parse_structured_workbook(
+        workbook_bytes,
+        source_files=source_files,
+        public_base_url=public_base_url,
+    )
+    if structured_preview["products"]:
+        return structured_preview
+    return parse_chemical_register(
+        workbook_bytes,
+        source_files=source_files,
+        public_base_url=public_base_url,
+    )
+
+
+def _parse_chemical_register_layout(
+    workbook_bytes: bytes,
+    *,
+    source_files: list[str] | None = None,
+    public_base_url: str = "",
+) -> dict[str, Any]:
     workbook = load_workbook(BytesIO(workbook_bytes), data_only=True)
     sheet = workbook[workbook.sheetnames[0]]
     files = source_files or []
@@ -81,9 +117,54 @@ def parse_chemical_register(
             "date": _clean(sheet["C9"].value),
             "sheet": sheet.title,
             "product_count": len(products),
+            "url": "",
         },
         "products": products,
         "missing_documents": [item for item in missing_documents if item["missing"]],
+    }
+
+
+def _parse_structured_workbook(
+    workbook_bytes: bytes,
+    *,
+    source_files: list[str] | None,
+    public_base_url: str,
+) -> dict[str, Any]:
+    workbook = load_workbook(BytesIO(workbook_bytes), data_only=True)
+    files = source_files or []
+    contacts: list[dict[str, str]] = []
+    products: list[dict[str, Any]] = []
+    register_url = ""
+
+    for sheet in workbook.worksheets:
+        for header_row, headers in _header_rows(sheet):
+            if _is_customer_header(headers):
+                contacts.extend(_contacts_from_sheet(sheet, header_row, headers))
+            if _is_product_header(headers):
+                parsed_products, parsed_register_url = _products_from_sheet(
+                    sheet,
+                    header_row,
+                    headers,
+                    source_files=files,
+                    public_base_url=public_base_url,
+                )
+                products.extend(parsed_products)
+                register_url = register_url or parsed_register_url
+
+    customer = _customer_from_contacts(contacts)
+    return {
+        "workbook_type": "client_workbook",
+        "customer": customer,
+        "contacts": contacts,
+        "register": {
+            "title": "Client Workbook",
+            "date": "",
+            "sheet": ", ".join(workbook.sheetnames),
+            "product_count": len(products),
+            "url": register_url,
+        },
+        "products": products,
+        "missing_documents": _missing_documents(products),
     }
 
 
@@ -140,6 +221,12 @@ def _document_result(filename: str | None, public_base_url: str) -> dict[str, An
     }
 
 
+def _url_document_result(url: str) -> dict[str, Any]:
+    if not url:
+        return {"matched": False, "filename": None, "url": None}
+    return {"matched": True, "filename": url.rsplit("/", 1)[-1] or url, "url": url}
+
+
 def _match_sds_file(code: str, files: list[str]) -> str | None:
     aliases = _code_aliases(code)
     return _first_matching_file(files, aliases, risk=False)
@@ -180,3 +267,171 @@ def _find_email(sheet: Any) -> str:
             if "@" in text and "." in text:
                 return text
     return ""
+
+
+def _header_rows(sheet: Any) -> list[tuple[int, dict[str, int]]]:
+    header_rows = []
+    for row in sheet.iter_rows(min_row=1, max_row=min(sheet.max_row, 30)):
+        headers = {
+            _normalize_header(cell.value): cell.column
+            for cell in row
+            if _normalize_header(cell.value)
+        }
+        if len(headers) >= 2:
+            header_rows.append((row[0].row, headers))
+    return header_rows
+
+
+def _is_customer_header(headers: dict[str, int]) -> bool:
+    return bool(_find_header(headers, CUSTOMER_EMAIL_HEADERS)) and bool(
+        _find_header(headers, CUSTOMER_COMPANY_HEADERS + CUSTOMER_NAME_HEADERS)
+    )
+
+
+def _is_product_header(headers: dict[str, int]) -> bool:
+    has_product = bool(_find_header(headers, PRODUCT_CODE_HEADERS) or _find_header(headers, PRODUCT_NAME_HEADERS))
+    has_document = bool(_find_header(headers, SDS_URL_HEADERS + RISK_URL_HEADERS + REGISTER_URL_HEADERS))
+    return has_product and has_document
+
+
+def _contacts_from_sheet(sheet: Any, header_row: int, headers: dict[str, int]) -> list[dict[str, str]]:
+    contacts = []
+    for row_number in range(header_row + 1, sheet.max_row + 1):
+        email = _cell_by_headers(sheet, row_number, headers, CUSTOMER_EMAIL_HEADERS)
+        company = _cell_by_headers(sheet, row_number, headers, CUSTOMER_COMPANY_HEADERS)
+        name = _cell_by_headers(sheet, row_number, headers, CUSTOMER_NAME_HEADERS)
+        phone = _cell_by_headers(sheet, row_number, headers, CUSTOMER_PHONE_HEADERS)
+        if not any([email, company, name, phone]):
+            continue
+        if not email:
+            continue
+        contacts.append({"company": company, "name": name, "email": email, "phone": phone})
+    return contacts
+
+
+def _products_from_sheet(
+    sheet: Any,
+    header_row: int,
+    headers: dict[str, int],
+    *,
+    source_files: list[str],
+    public_base_url: str,
+) -> tuple[list[dict[str, Any]], str]:
+    products = []
+    register_url = ""
+    for row_number in range(header_row + 1, sheet.max_row + 1):
+        code = _cell_by_headers(sheet, row_number, headers, PRODUCT_CODE_HEADERS)
+        name = _cell_by_headers(sheet, row_number, headers, PRODUCT_NAME_HEADERS)
+        if not code and not name:
+            continue
+
+        selected = _cell_by_headers(sheet, row_number, headers, SELECTED_HEADERS)
+        if selected and not _is_selected(selected):
+            continue
+
+        sds_url = _cell_by_headers(sheet, row_number, headers, SDS_URL_HEADERS)
+        risk_url = _cell_by_headers(sheet, row_number, headers, RISK_URL_HEADERS)
+        row_register_url = _cell_by_headers(sheet, row_number, headers, REGISTER_URL_HEADERS)
+        register_url = register_url or row_register_url
+
+        sds_file = _match_sds_file(code, source_files) if code else None
+        risk_file = _match_risk_file(code, source_files) if code else None
+
+        products.append(
+            {
+                "row": row_number,
+                "sheet": sheet.title,
+                "code": code,
+                "name": name or code,
+                "hazardous": _cell_by_headers(sheet, row_number, headers, HAZARD_HEADERS),
+                "un_number": _cell_by_headers(sheet, row_number, headers, UN_HEADERS),
+                "max_quantity": _cell_by_headers(sheet, row_number, headers, QUANTITY_HEADERS),
+                "risk_required": bool(risk_url or risk_file),
+                "hazchem": "",
+                "class": "",
+                "packing_group": "",
+                "use": _cell_by_headers(sheet, row_number, headers, USE_HEADERS),
+                "sds_expiry": _cell_by_headers(sheet, row_number, headers, EXPIRY_HEADERS),
+                "sds": _url_document_result(sds_url) if sds_url else _document_result(sds_file, public_base_url),
+                "risk_assessment": _url_document_result(risk_url) if risk_url else _document_result(risk_file, public_base_url),
+            }
+        )
+    return products, register_url
+
+
+def _cell_by_headers(sheet: Any, row_number: int, headers: dict[str, int], candidates: list[str]) -> str:
+    header = _find_header(headers, candidates)
+    if not header:
+        return ""
+    return _clean(sheet.cell(row=row_number, column=headers[header]).value)
+
+
+def _find_header(headers: dict[str, int], candidates: list[str]) -> str:
+    for candidate in candidates:
+        normalized = _normalize_header(candidate)
+        if normalized in headers:
+            return normalized
+    return ""
+
+
+def _normalize_header(value: Any) -> str:
+    return _normalize(_clean(value))
+
+
+def _customer_from_contacts(contacts: list[dict[str, str]]) -> dict[str, str]:
+    if not contacts:
+        return {"company": "", "contact_name": "", "phone": "", "email": ""}
+    first = contacts[0]
+    return {
+        "company": first.get("company", ""),
+        "contact_name": first.get("name", ""),
+        "phone": first.get("phone", ""),
+        "email": first.get("email", ""),
+    }
+
+
+def _contacts_from_customer(customer: dict[str, str]) -> list[dict[str, str]]:
+    if not customer.get("email"):
+        return []
+    return [
+        {
+            "company": customer.get("company", ""),
+            "name": customer.get("contact_name", ""),
+            "email": customer.get("email", ""),
+            "phone": customer.get("phone", ""),
+        }
+    ]
+
+
+def _missing_documents(products: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    missing_documents = [
+        {
+            "code": product["code"],
+            "name": product["name"],
+            "missing": [
+                label
+                for label, key in [("SDS", "sds"), ("Risk Assessment", "risk_assessment")]
+                if not product[key]["matched"] and (key == "sds" or product["risk_required"])
+            ],
+        }
+        for product in products
+    ]
+    return [item for item in missing_documents if item["missing"]]
+
+
+CUSTOMER_COMPANY_HEADERS = ["customer", "customer name", "company", "company name", "client", "site", "site name"]
+CUSTOMER_NAME_HEADERS = ["contact", "contact name", "name", "customer contact", "primary contact"]
+CUSTOMER_EMAIL_HEADERS = ["email", "email address", "contact email", "customer email"]
+CUSTOMER_PHONE_HEADERS = ["phone", "phone number", "mobile", "contact phone"]
+
+PRODUCT_CODE_HEADERS = ["product code", "code", "sku", "item code", "chemical code"]
+PRODUCT_NAME_HEADERS = ["product", "product name", "chemical", "chemical name", "sds product"]
+SDS_URL_HEADERS = ["sds url", "sds link", "sds pdf link", "sds pdf url", "sds pdf", "sds"]
+RISK_URL_HEADERS = ["risk assessment url", "risk assessment link", "risk url", "risk link", "risk assessment"]
+REGISTER_URL_HEADERS = ["chemical register url", "chemical register link", "register url", "register link"]
+SELECTED_HEADERS = ["selected", "include", "send", "active", "enabled"]
+HAZARD_HEADERS = ["hazardous", "hazard", "dangerous good"]
+UN_HEADERS = ["un", "un number", "un no"]
+QUANTITY_HEADERS = ["max quantity", "quantity", "maximum quantity"]
+USE_HEADERS = ["use", "usage", "application"]
+EXPIRY_HEADERS = ["sds expiry", "sds expiry date", "expiry", "expiry date"]
