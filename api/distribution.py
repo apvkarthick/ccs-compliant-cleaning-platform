@@ -518,6 +518,7 @@ def _get_json(url: str, headers: dict[str, str]) -> dict[str, Any]:
         url,
         method="GET",
         headers={
+            "User-Agent": "ccs-compliant-cleaning-platform/1.0",
             "Accept": "application/json",
             **headers,
         },
@@ -543,6 +544,7 @@ def _request_json(url: str, payload: Any, headers: dict[str, str], *, method: st
         data=data,
         method=method,
         headers={
+            "User-Agent": "ccs-compliant-cleaning-platform/1.0",
             "Content-Type": "application/json",
             "Accept": "application/json",
             **headers,
