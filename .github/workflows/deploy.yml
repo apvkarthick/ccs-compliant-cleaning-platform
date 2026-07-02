@@ -32,6 +32,7 @@ jobs:
             --exclude '.github/' \
             --exclude '.env' \
             --exclude '.env.*' \
+            --exclude '.venv/' \
             --exclude 'storage/' \
             --exclude 'uploads/' \
             --exclude 'logs/' \
