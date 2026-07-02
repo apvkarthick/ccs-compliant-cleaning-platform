@@ -5,6 +5,7 @@ import hmac
 import html
 import json
 import os
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote, urlencode
@@ -70,6 +71,11 @@ def process_distribution(
         return distribution
 
     distribution["ghl"] = _send_messages_via_ghl(distribution["messages"])
+    distribution["distribution_rows"] = distribution_rows_for_supabase(
+        distribution["messages"],
+        dry_run=False,
+        table=os.getenv("SUPABASE_DISTRIBUTION_TABLE", "ccs_distributions"),
+    )
     distribution["supabase"] = _log_events_to_supabase(distribution["distribution_rows"])
     return distribution
 
@@ -214,7 +220,7 @@ def _with_ghl_contact_id(contact: dict[str, Any]) -> dict[str, Any]:
     if contact.get("id") or contact.get("contactId"):
         return contact
     email = str(contact.get("email", "")).strip()
-    contact_id = _find_ghl_contact_id_by_email(email)
+    contact_id = _find_or_create_ghl_contact_id(contact)
     if not contact_id:
         return contact
     return {**contact, "id": contact_id}
@@ -370,12 +376,28 @@ def _log_events_to_supabase(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _distribution_rows(messages: list[dict[str, Any]], *, dry_run: bool) -> list[dict[str, Any]]:
+    return distribution_rows_for_supabase(
+        messages,
+        dry_run=dry_run,
+        table=os.getenv("SUPABASE_DISTRIBUTION_TABLE", "ccs_distributions"),
+    )
+
+
+def distribution_rows_for_supabase(
+    messages: list[dict[str, Any]],
+    *,
+    dry_run: bool,
+    table: str,
+) -> list[dict[str, Any]]:
     rows = []
     for message in messages:
         for document in message["documents"]:
+            document_id = document["document_id"]
+            if table == "ccs_distributions" and not _is_uuid(document_id):
+                continue
             rows.append(
                 {
-                    "document_id": document["document_id"],
+                    "document_id": document_id,
                     "customer_email": message["to"],
                     "ghl_contact_id": message.get("contact_id") or document.get("contact_id", ""),
                     "status": "dry_run" if dry_run else "sent",
@@ -418,6 +440,32 @@ def _tag_ghl_contact(contact_id: str, tags: list[str]) -> dict[str, Any]:
     return _post_json(f"{base_url}/contacts/{contact_id}/tags", {"tags": tags}, _ghl_headers(token))
 
 
+def _find_or_create_ghl_contact_id(contact: dict[str, Any]) -> str:
+    email = str(contact.get("email", "")).strip()
+    existing_id = _find_ghl_contact_id_by_email(email)
+    if existing_id:
+        return existing_id
+    token = os.getenv("GHL_ACCESS_TOKEN") or os.getenv("GHL_API_KEY")
+    location_id = os.getenv("GHL_LOCATION_ID")
+    base_url = os.getenv("GHL_BASE_URL", "https://services.leadconnectorhq.com").rstrip("/")
+    if not token or not location_id or not email:
+        return ""
+
+    name_parts = str(contact.get("name", "")).split()
+    payload = {
+        "locationId": location_id,
+        "email": email,
+        "firstName": name_parts[0] if name_parts else "",
+        "lastName": " ".join(name_parts[1:]) if len(name_parts) > 1 else "",
+    }
+    response = _post_json(f"{base_url}/contacts/", payload, _ghl_headers(token))
+    body = response.get("body") or {}
+    if isinstance(body, dict):
+        contact_body = body.get("contact") if isinstance(body.get("contact"), dict) else body
+        return str(contact_body.get("id") or contact_body.get("contactId") or "")
+    return ""
+
+
 def _find_ghl_contact_id_by_email(email: str) -> str:
     token = os.getenv("GHL_ACCESS_TOKEN") or os.getenv("GHL_API_KEY")
     location_id = os.getenv("GHL_LOCATION_ID")
@@ -443,6 +491,14 @@ def _find_ghl_contact_id_by_email(email: str) -> str:
         if str(contact.get("email", "")).strip().lower() == email.strip().lower():
             return str(contact.get("id") or contact.get("contactId") or "")
     return ""
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(str(value))
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def _ghl_headers(token: str) -> dict[str, str]:

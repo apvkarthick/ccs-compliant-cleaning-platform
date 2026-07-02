@@ -1,6 +1,7 @@
 from api.distribution import (
     build_test_distribution,
     contact_matches_product,
+    distribution_rows_for_supabase,
     tag_slug_for_chemical,
     tracking_signature,
     tracking_url,
@@ -67,3 +68,27 @@ def test_tracking_url_uses_hmac_signature_and_safe_slug():
     assert "sig=28bce41a4afc3423" in url
     assert "chem=Floor+%26+Surface+Cleaner" in url
     assert "redirect=https%3A%2F%2Ffiles.example.test%2Fsds.pdf" in url
+
+
+def test_distribution_rows_skip_non_uuid_document_ids_for_ccs_distributions():
+    messages = [
+        {
+            "to": "test@example.com",
+            "contact_id": "contact-123",
+            "documents": [
+                {"document_id": "TESTPDF001"},
+                {"document_id": "b7ee7fb1-bb38-463f-97e6-f71634bb93d1"},
+            ],
+        }
+    ]
+
+    rows = distribution_rows_for_supabase(messages, dry_run=False, table="ccs_distributions")
+
+    assert rows == [
+        {
+            "document_id": "b7ee7fb1-bb38-463f-97e6-f71634bb93d1",
+            "customer_email": "test@example.com",
+            "ghl_contact_id": "contact-123",
+            "status": "sent",
+        }
+    ]
