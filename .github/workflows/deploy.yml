@@ -45,6 +45,7 @@ jobs:
             --exclude '.env' \
             --exclude '.env.*' \
             --exclude '.venv/' \
+            --exclude 'node_modules/' \
             --exclude 'storage/' \
             --exclude 'uploads/' \
             --exclude 'logs/' \
