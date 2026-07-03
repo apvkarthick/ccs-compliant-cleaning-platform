@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from .distribution import process_distribution, record_download_acknowledgement, validate_tracking_signature
 from .excel_parser import list_source_documents, parse_client_workbook
 from .rebrand import rebrand_sds
+from .rebrand_pdf import rebrand_pdf
 from .tasks import ping_task
 
 
@@ -157,6 +158,32 @@ async def rebrand_sds_endpoint(
     return Response(
         content=rebranded,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{out_name}"',
+            "X-CCS-Changes": str(len(summary.get("changes", []))),
+            "X-CCS-Old-Supplier": summary.get("old_supplier", ""),
+        },
+    )
+
+
+@app.post("/rebrand/pdf")
+async def rebrand_pdf_endpoint(
+    file: UploadFile = File(...),
+    sds_date: str = Query(default="", description="SDS date override DD/MM/YYYY; defaults to today"),
+) -> Response:
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Upload a .pdf SDS file")
+    pdf_bytes = await file.read()
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    rebranded, summary = rebrand_pdf(pdf_bytes, sds_date or None)
+
+    stem = Path(file.filename).stem
+    out_name = f"{stem}_ccs_branded.pdf"
+    return Response(
+        content=rebranded,
+        media_type="application/pdf",
         headers={
             "Content-Disposition": f'attachment; filename="{out_name}"',
             "X-CCS-Changes": str(len(summary.get("changes", []))),
