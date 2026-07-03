@@ -45,6 +45,14 @@ class DistributionRequest(BaseModel):
     dry_run: bool = True
 
 
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+
+
+@app.get("/rebrand", response_class=HTMLResponse)
+def rebrand_ui() -> HTMLResponse:
+    return HTMLResponse((ASSETS_DIR / "rebrand.html").read_text(encoding="utf-8"))
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "ccs-api"}

@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CCS — Rebrand SDS</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;background:#edf2f5;color:#17202a;min-height:100vh;padding:24px}
+  .shell{max-width:960px;margin:0 auto}
+  header{display:flex;align-items:baseline;gap:16px;margin-bottom:20px}
+  header a{font-size:0.82rem;color:#0f766e;text-decoration:none}
+  header a:hover{text-decoration:underline}
+  .eyebrow{font-size:0.72rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#2C6B33;margin-bottom:2px}
+  h1{font-size:2rem;font-weight:800;color:#17202a}
+  .card{background:#fff;border:1px solid #d8e1e8;border-radius:8px;padding:24px;box-shadow:0 14px 36px rgba(23,32,42,.07);margin-bottom:16px}
+  .drop-zone{border:2px dashed #d8e1e8;border-radius:8px;padding:40px 24px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+  .drop-zone:hover,.drop-zone.over{border-color:#0f766e;background:#f0fdf4}
+  .drop-zone p{color:#667789;font-size:0.9rem;margin-top:8px}
+  .drop-zone strong{font-size:1rem;color:#17202a}
+  input[type=file]{display:none}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:11px 22px;border-radius:6px;font-weight:700;font-size:0.9rem;cursor:pointer;border:none;transition:background .15s}
+  .btn-primary{background:#0f766e;color:#fff}
+  .btn-primary:hover{background:#115e59}
+  .btn-primary:disabled{background:#94a3b8;cursor:not-allowed}
+  .btn-secondary{background:#f4f7f9;color:#17202a;border:1px solid #d8e1e8;margin-left:8px}
+  .btn-secondary:hover{background:#e2eaef}
+  .actions{display:flex;align-items:center;gap:0;margin-top:16px;flex-wrap:wrap;gap:8px}
+  table{width:100%;border-collapse:collapse;font-size:0.88rem}
+  th{text-align:left;font-size:0.72rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#667789;padding:8px 12px;border-bottom:2px solid #d8e1e8}
+  td{padding:10px 12px;border-bottom:1px solid #f0f4f7;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  .status-badge{display:inline-block;font-size:0.73rem;font-weight:700;padding:2px 10px;border-radius:20px}
+  .s-pending{background:#f1f5f9;color:#475569}
+  .s-processing{background:#eff6ff;color:#1d4ed8}
+  .s-done{background:#f0fdf4;color:#15803d}
+  .s-error{background:#fff1f2;color:#be123c}
+  .dl-link{display:inline-flex;align-items:center;gap:4px;color:#0f766e;font-weight:600;font-size:0.85rem;text-decoration:none}
+  .dl-link:hover{text-decoration:underline}
+  .notice{display:flex;align-items:flex-start;gap:8px;padding:12px 16px;border-radius:6px;font-size:0.85rem;margin-top:12px}
+  .notice.err{background:#fff1f2;border:1px solid #fecdd3;color:#be123c}
+  .notice.info{background:#f0f9ff;border:1px solid #bae6fd;color:#0369a1}
+  .pill-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .pill{padding:6px 14px;border-radius:20px;font-size:0.8rem;font-weight:600;background:#f4f7f9;color:#667789;border:1px solid #d8e1e8}
+  .pill.active{background:#0f766e;color:#fff;border-color:#0f766e}
+  .replaced{font-size:0.76rem;color:#94a3b8;margin-top:2px}
+  .empty{text-align:center;padding:48px 24px;color:#94a3b8}
+  .empty svg{margin-bottom:12px;opacity:.4}
+  progress{width:100%;height:4px;border-radius:2px;accent-color:#0f766e;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div>
+      <p class="eyebrow">Compliant Cleaning Supplies</p>
+      <h1>Rebrand SDS</h1>
+    </div>
+    <a href="/">← Distribution Desk</a>
+  </header>
+
+  <div class="card">
+    <div class="drop-zone" id="dropZone">
+      <svg width="36" height="36" fill="none" stroke="#94a3b8" stroke-width="1.5" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M8 8l4-4 4 4"/></svg>
+      <strong>Drop .docx files here</strong>
+      <p>or click to browse — multiple files supported</p>
+      <input type="file" id="fileInput" accept=".docx" multiple>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-primary" id="rebrandBtn" disabled>
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M8 8l4-4 4 4"/></svg>
+        Rebrand files
+      </button>
+      <button class="btn btn-secondary" id="downloadAllBtn" style="display:none">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M16 12l-4 4-4-4"/></svg>
+        Download all
+      </button>
+      <button class="btn btn-secondary" id="clearBtn" style="display:none">Clear</button>
+    </div>
+    <div id="progressWrap" style="display:none"><progress id="progressBar" value="0" max="1"></progress></div>
+  </div>
+
+  <div class="card" id="resultsCard" style="display:none">
+    <table>
+      <thead><tr><th>File</th><th>Status</th><th>Replaced</th><th>Download</th></tr></thead>
+      <tbody id="jobTable"></tbody>
+    </table>
+  </div>
+
+  <div class="notice info">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
+    <span>Replaces supplier logo, name, address, phone, emergency, email, website, SDS date, and all body text references — then returns a CCS-branded .docx.</span>
+  </div>
+</div>
+
+<script>
+const API = '/api/rebrand/sds';
+let files = [];
+let jobs = [];
+
+const dropZone   = document.getElementById('dropZone');
+const fileInput  = document.getElementById('fileInput');
+const rebrandBtn = document.getElementById('rebrandBtn');
+const dlAllBtn   = document.getElementById('downloadAllBtn');
+const clearBtn   = document.getElementById('clearBtn');
+const jobTable   = document.getElementById('jobTable');
+const resultsCard= document.getElementById('resultsCard');
+const progressWrap=document.getElementById('progressWrap');
+const progressBar= document.getElementById('progressBar');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('over');
+  const picked = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.docx'));
+  setFiles(picked);
+});
+fileInput.addEventListener('change', () => setFiles(Array.from(fileInput.files)));
+
+function setFiles(picked) {
+  files = picked;
+  jobs = files.map(f => ({ name: f.name, status: 'pending', url: null, error: null, changes: 0, oldSupplier: '' }));
+  rebrandBtn.disabled = files.length === 0;
+  rebrandBtn.textContent = `Rebrand ${files.length} file${files.length !== 1 ? 's' : ''}`;
+  dlAllBtn.style.display = 'none';
+  clearBtn.style.display = files.length ? 'inline-flex' : 'none';
+  renderJobs();
+}
+
+clearBtn.addEventListener('click', () => {
+  files = []; jobs = [];
+  fileInput.value = '';
+  rebrandBtn.disabled = true;
+  rebrandBtn.textContent = 'Rebrand files';
+  dlAllBtn.style.display = 'none';
+  clearBtn.style.display = 'none';
+  resultsCard.style.display = 'none';
+  progressWrap.style.display = 'none';
+});
+
+rebrandBtn.addEventListener('click', runRebrand);
+
+async function runRebrand() {
+  if (!files.length) return;
+  rebrandBtn.disabled = true;
+  progressWrap.style.display = 'block';
+  progressBar.value = 0; progressBar.max = files.length;
+
+  for (let i = 0; i < files.length; i++) {
+    jobs[i].status = 'processing';
+    renderJobs();
+    try {
+      const fd = new FormData();
+      fd.append('file', files[i]);
+      const res = await fetch(API, { method: 'POST', body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || 'Server error');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      jobs[i].status = 'done';
+      jobs[i].url = url;
+      jobs[i].changes = parseInt(res.headers.get('X-CCS-Changes') || '0');
+      jobs[i].oldSupplier = res.headers.get('X-CCS-Old-Supplier') || '';
+    } catch (err) {
+      jobs[i].status = 'error';
+      jobs[i].error = err.message;
+    }
+    progressBar.value = i + 1;
+    renderJobs();
+  }
+
+  rebrandBtn.disabled = false;
+  const doneJobs = jobs.filter(j => j.status === 'done');
+  if (doneJobs.length > 1) dlAllBtn.style.display = 'inline-flex';
+}
+
+dlAllBtn.addEventListener('click', () => {
+  jobs.filter(j => j.url).forEach(j => triggerDownload(j));
+});
+
+function triggerDownload(job) {
+  const a = document.createElement('a');
+  a.href = job.url;
+  a.download = job.name.replace(/\.docx$/i, '_ccs_branded.docx');
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+function renderJobs() {
+  if (!jobs.length) { resultsCard.style.display = 'none'; return; }
+  resultsCard.style.display = 'block';
+  jobTable.innerHTML = jobs.map((job, i) => `
+    <tr>
+      <td><strong style="font-size:0.88rem">${esc(job.name)}</strong></td>
+      <td><span class="status-badge s-${job.status}">${statusLabel(job)}</span></td>
+      <td>
+        ${job.oldSupplier ? `<span style="font-size:0.8rem;color:#475569">${esc(job.oldSupplier)}</span><div class="replaced">${job.changes} field${job.changes !== 1 ? 's' : ''} replaced</div>` : ''}
+        ${job.error ? `<span style="font-size:0.8rem;color:#be123c">${esc(job.error)}</span>` : ''}
+      </td>
+      <td>
+        ${job.url ? `<a class="dl-link" href="${job.url}" download="${esc(job.name.replace(/\.docx$/i,'_ccs_branded.docx'))}">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M16 12l-4 4-4-4"/></svg>
+          Download
+        </a>` : '—'}
+      </td>
+    </tr>
+  `).join('');
+}
+
+function statusLabel(job) {
+  return { pending: 'Pending', processing: 'Processing…', done: 'Done', error: 'Error' }[job.status] || job.status;
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
