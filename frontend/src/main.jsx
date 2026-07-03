@@ -10,7 +10,7 @@ function App() {
     <main className="shell">
       <div className="tab-bar">
         <button className="tab active">Distribution</button>
-        <a className="tab" href="/rebrand">Rebrand SDS</a>
+        <a className="tab" href="/rebrand.html">Rebrand SDS</a>
       </div>
       <DistributionDesk />
     </main>
