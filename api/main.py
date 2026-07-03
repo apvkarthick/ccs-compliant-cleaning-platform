@@ -1,16 +1,17 @@
 import html
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field
 
 from .distribution import process_distribution, record_download_acknowledgement, validate_tracking_signature
 from .excel_parser import list_source_documents, parse_client_workbook
+from .rebrand import rebrand_sds
 from .tasks import ping_task
 
 
@@ -128,6 +129,32 @@ def track_msds_download(
     response = HTMLResponse(page)
     response.headers["X-CCS-Acknowledgement"] = str(acknowledgement)
     return response
+
+
+@app.post("/rebrand/sds")
+async def rebrand_sds_endpoint(
+    file: UploadFile = File(...),
+    sds_date: str = Query(default="", description="SDS date override DD/MM/YYYY; defaults to today"),
+) -> Response:
+    if not file.filename or not file.filename.lower().endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Upload a .docx SDS file")
+    docx_bytes = await file.read()
+    if not docx_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    rebranded, summary = rebrand_sds(docx_bytes, sds_date or None)
+
+    stem = Path(file.filename).stem
+    out_name = f"{stem}_ccs_branded.docx"
+    return Response(
+        content=rebranded,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{out_name}"',
+            "X-CCS-Changes": str(len(summary.get("changes", []))),
+            "X-CCS-Old-Supplier": summary.get("old_supplier", ""),
+        },
+    )
 
 
 @app.get("/documents/source/{filename:path}")

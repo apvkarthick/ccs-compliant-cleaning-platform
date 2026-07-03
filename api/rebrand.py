@@ -1,0 +1,257 @@
+"""SDS document rebranding: replace supplier identity with CCS identity."""
+from __future__ import annotations
+
+import io
+import re
+import zipfile
+from datetime import date
+from pathlib import Path
+
+from docx import Document
+from docx.oxml.ns import qn
+
+
+CCS = {
+    "supplier_name": "Compliant Cleaning Supplies & Systems",
+    "address": "86 Crockford Street, Northgate QLD 4013",
+    "telephone": "1300 314 491",
+    "emergency": "131126",
+    "email": "sales@compliantcs.com.au",
+    "website": "www.compliantcs.com.au",
+}
+_CCS_EMAIL_URL = "mailto:sales@compliantcs.com.au"
+_CCS_WEB_URL = "http://www.compliantcs.com.au/"
+
+LOGO_PATH = Path(__file__).parent / "assets" / "ccs_logo.png"
+
+# Maps paragraph label prefixes to CCS field keys (mode: "full" or "tab_value")
+# Email/Website are hyperlink paragraphs — handled by _replace_hyperlink_display_text only
+_SUPPLIER_FIELDS: list[tuple[str, str, str]] = [
+    ("Supplier Name", "supplier_name", "full"),
+    ("Address", "address", "tab_value"),
+    ("Telephone", "telephone", "tab_value"),
+    ("Emergency", "emergency", "tab_value"),
+]
+
+
+def rebrand_sds(docx_bytes: bytes, sds_date: str | None = None) -> tuple[bytes, dict]:
+    """
+    Rebrand a supplier SDS DOCX with CCS identity.
+
+    Returns (rebranded_bytes, summary_dict).
+    sds_date: DD/MM/YYYY string; defaults to today.
+    """
+    today = sds_date or date.today().strftime("%d/%m/%Y")
+    doc = Document(io.BytesIO(docx_bytes))
+
+    old_supplier = _detect_supplier_name(doc)
+    changes = _apply_supplier_block(doc, today, old_supplier)
+    _replace_hyperlink_display_text(doc, old_supplier)
+
+    out_bytes = _save_to_bytes(doc)
+    out_bytes = _patch_zip(out_bytes)
+
+    changes["old_supplier"] = old_supplier
+    changes["sds_date"] = today
+    return out_bytes, changes
+
+
+# ---------------------------------------------------------------------------
+# Detection
+# ---------------------------------------------------------------------------
+
+def _detect_supplier_name(doc: Document) -> str:
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if text.startswith("Supplier Name"):
+            after = text[len("Supplier Name"):].strip()
+            return after
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Supplier block — paragraph-level replacements
+# ---------------------------------------------------------------------------
+
+def _apply_supplier_block(doc: Document, sds_date: str, old_supplier: str) -> dict:
+    replaced: list[str] = []
+    for para in doc.paragraphs:
+        text = para.text.strip()
+
+        # Named supplier fields
+        for label, field_key, mode in _SUPPLIER_FIELDS:
+            if text.startswith(label):
+                new_val = CCS[field_key]
+                if mode == "full":
+                    _set_full_run(para, f"Supplier Name    {new_val}")
+                else:
+                    _replace_after_tab(para, new_val)
+                replaced.append(f"{label} → {new_val}")
+                break
+
+        # SDS Date (may be split across runs: 'SDS', ' ', 'Date', '\t', ...)
+        if re.match(r"SDS\s*Date", text, re.IGNORECASE):
+            version = _extract_version(text)
+            new_date_text = f"{sds_date}, {version}" if version else sds_date
+            _replace_after_tab(para, new_date_text)
+            replaced.append(f"SDS Date → {new_date_text}")
+
+        # Any body paragraph still containing old supplier name
+        if old_supplier and old_supplier.upper() in text.upper():
+            if not any(text.startswith(lbl) for lbl, _, _ in _SUPPLIER_FIELDS):
+                _replace_text_in_runs(para, old_supplier, CCS["supplier_name"])
+                replaced.append(f"Body text: replaced '{old_supplier}'")
+
+    return {"changes": replaced}
+
+
+def _extract_version(text: str) -> str:
+    match = re.search(r"Version\s*[\d.]+", text, re.IGNORECASE)
+    return match.group(0).strip() if match else ""
+
+
+# ---------------------------------------------------------------------------
+# Run manipulation helpers
+# ---------------------------------------------------------------------------
+
+def _set_full_run(para, new_text: str) -> None:
+    """Replace entire paragraph text via runs (single-run paragraphs)."""
+    if para.runs:
+        para.runs[0].text = new_text
+        for r in para.runs[1:]:
+            r.text = ""
+    else:
+        para.add_run(new_text)
+
+
+def _replace_after_tab(para, new_value: str) -> None:
+    """
+    Keep all runs up to and including the first tab character;
+    replace everything after with new_value.
+    """
+    value_started = False
+    first_value_run = None
+
+    for run in para.runs:
+        if not value_started:
+            if "\t" in run.text:
+                tab_idx = run.text.index("\t")
+                run.text = run.text[: tab_idx + 1]  # keep label + tab
+                value_started = True
+        else:
+            if first_value_run is None:
+                first_value_run = run
+                run.text = new_value
+            else:
+                run.text = ""
+
+    if value_started and first_value_run is None:
+        # Tab was the last char of a run; append a new value run
+        para.add_run(new_value)
+    elif not value_started:
+        # No tab found — fall back to full replacement
+        _set_full_run(para, new_value)
+
+
+def _replace_text_in_runs(para, old: str, new: str) -> None:
+    for run in para.runs:
+        if old.upper() in run.text.upper():
+            run.text = re.sub(re.escape(old), new, run.text, flags=re.IGNORECASE)
+
+
+# ---------------------------------------------------------------------------
+# Hyperlink display-text update (email / website paragraphs)
+# ---------------------------------------------------------------------------
+
+def _replace_hyperlink_display_text(doc: Document, old_supplier: str) -> None:
+    """Update the visible text of hyperlinks that reference old supplier domains."""
+    old_domains = ["cleanplus.com.au"]
+    if old_supplier:
+        # Build a slug from old supplier name for fuzzy matching
+        slug = "".join(c.lower() for c in old_supplier if c.isalnum() or c == ".")
+        old_domains.append(slug[:20])  # partial match safety
+
+    for para in doc.paragraphs:
+        for hyperlink in para._p.findall(".//" + qn("w:hyperlink")):
+            for t_el in hyperlink.findall(".//" + qn("w:t")):
+                text = t_el.text or ""
+                if any(d in text.lower() for d in old_domains):
+                    if "@" in text:
+                        t_el.text = CCS["email"]
+                    else:
+                        t_el.text = CCS["website"]
+
+    # Also update headers
+    for section in doc.sections:
+        header = section.header
+        for para in header.paragraphs:
+            for hyperlink in para._p.findall(".//" + qn("w:hyperlink")):
+                for t_el in hyperlink.findall(".//" + qn("w:t")):
+                    text = t_el.text or ""
+                    if any(d in text.lower() for d in old_domains):
+                        t_el.text = CCS["email"] if "@" in text else CCS["website"]
+
+
+# ---------------------------------------------------------------------------
+# ZIP-level patching: logo image + relationship URLs
+# ---------------------------------------------------------------------------
+
+def _patch_zip(docx_bytes: bytes) -> bytes:
+    """
+    Replace the header logo image and update all .rels hyperlink targets.
+    Works directly on the raw DOCX (zip) bytes.
+    """
+    logo_bytes = LOGO_PATH.read_bytes() if LOGO_PATH.exists() else None
+    buf = io.BytesIO()
+
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as zin, \
+         zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
+
+        # Build a set of header image paths from header relationship files
+        header_image_paths: set[str] = set()
+        for item in zin.infolist():
+            if re.search(r"word/_rels/header\d+\.xml\.rels", item.filename, re.IGNORECASE):
+                rels_xml = zin.read(item.filename).decode("utf-8")
+                for m in re.finditer(r'Target="([^"]+)"', rels_xml):
+                    target = m.group(1)
+                    if re.search(r"\.(png|jpg|jpeg|gif|bmp|tiff|emf|wmf)$", target, re.IGNORECASE):
+                        # Normalise to word/media/... path
+                        resolved = "word/" + target.lstrip("../")
+                        header_image_paths.add(resolved.lower())
+
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            fname_lower = item.filename.lower()
+
+            # Replace header logo image bytes
+            if logo_bytes and fname_lower in header_image_paths:
+                data = logo_bytes
+
+            # Patch hyperlink URLs in any .rels file
+            if fname_lower.endswith(".rels"):
+                text = data.decode("utf-8")
+                text = re.sub(
+                    r'(Target=")(mailto:[^"]*cleanplus[^"]*)',
+                    lambda m: m.group(1) + _CCS_EMAIL_URL,
+                    text, flags=re.IGNORECASE,
+                )
+                text = re.sub(
+                    r'(Target=")(https?://[^"]*cleanplus[^"]*)',
+                    lambda m: m.group(1) + _CCS_WEB_URL,
+                    text, flags=re.IGNORECASE,
+                )
+                data = text.encode("utf-8")
+
+            zout.writestr(item, data)
+
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# IO helpers
+# ---------------------------------------------------------------------------
+
+def _save_to_bytes(doc: Document) -> bytes:
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
