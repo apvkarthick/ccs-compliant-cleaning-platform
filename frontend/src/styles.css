@@ -40,6 +40,51 @@ a {
   padding: 22px;
 }
 
+.tab-bar {
+  max-width: 1220px;
+  margin: 0 auto 8px;
+  display: flex;
+  gap: 4px;
+}
+
+.tab {
+  padding: 8px 20px;
+  border: 1px solid var(--line);
+  border-radius: 6px 6px 0 0;
+  background: #e2eaef;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.87rem;
+  cursor: pointer;
+}
+
+.tab.active {
+  background: var(--panel);
+  color: var(--ink);
+  border-bottom-color: var(--panel);
+}
+
+.secondary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--soft);
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.notice.info {
+  background: #f0f7ff;
+  border-color: #bfdbfe;
+  color: #1e40af;
+}
+
 .workbench {
   max-width: 1220px;
   margin: 0 auto;

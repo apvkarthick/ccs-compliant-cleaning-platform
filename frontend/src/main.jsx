@@ -1,11 +1,157 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertCircle, CheckCircle2, FileSpreadsheet, Link2, Send, Upload } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Link2, Send, Upload } from 'lucide-react';
 import './styles.css';
 
 const API_BASE = '/api';
 
 function App() {
+  const [tab, setTab] = useState('distribution');
+  return (
+    <main className="shell">
+      <div className="tab-bar">
+        <button className={tab === 'distribution' ? 'tab active' : 'tab'} onClick={() => setTab('distribution')}>Distribution</button>
+        <button className={tab === 'rebrand' ? 'tab active' : 'tab'} onClick={() => setTab('rebrand')}>Rebrand SDS</button>
+      </div>
+      {tab === 'distribution' ? <DistributionDesk /> : <RebrandDesk />}
+    </main>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Rebrand tab
+// ---------------------------------------------------------------------------
+
+function RebrandDesk() {
+  const [files, setFiles] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [running, setRunning] = useState(false);
+  const inputRef = useRef(null);
+
+  function onFilePick(e) {
+    const picked = Array.from(e.target.files || []).filter(f => f.name.toLowerCase().endsWith('.docx'));
+    setFiles(picked);
+    setJobs(picked.map(f => ({ name: f.name, status: 'pending', url: null, error: null })));
+  }
+
+  async function runRebrand() {
+    if (!files.length) return;
+    setRunning(true);
+    const updated = jobs.map(j => ({ ...j, status: 'pending', url: null, error: null }));
+    setJobs([...updated]);
+
+    for (let i = 0; i < files.length; i++) {
+      setJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: 'processing' } : j));
+      try {
+        const fd = new FormData();
+        fd.append('file', files[i]);
+        const res = await fetch(`${API_BASE}/rebrand/sds`, { method: 'POST', body: fd });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(err.detail || 'Server error');
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const oldSupplier = res.headers.get('X-CCS-Old-Supplier') || '';
+        const changes = res.headers.get('X-CCS-Changes') || '0';
+        setJobs(prev => prev.map((j, idx) => idx === i
+          ? { ...j, status: 'done', url, changes: parseInt(changes), oldSupplier }
+          : j));
+      } catch (err) {
+        setJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: 'error', error: err.message } : j));
+      }
+    }
+    setRunning(false);
+  }
+
+  function downloadAll() {
+    jobs.filter(j => j.url).forEach(j => {
+      const a = document.createElement('a');
+      a.href = j.url;
+      a.download = j.name.replace('.docx', '_ccs_branded.docx');
+      a.click();
+    });
+  }
+
+  const doneCount = jobs.filter(j => j.status === 'done').length;
+
+  return (
+    <section className="workbench">
+      <div className="topbar">
+        <div>
+          <p className="eyebrow">Compliant Cleaning Supplies</p>
+          <h1>Rebrand SDS</h1>
+        </div>
+        {doneCount > 0 && (
+          <div className="status success"><CheckCircle2 size={18} />{doneCount} branded</div>
+        )}
+      </div>
+
+      <div className="layout">
+        <aside className="side-panel">
+          <div className="upload-box">
+            <label>Select DOCX files</label>
+            <input ref={inputRef} type="file" accept=".docx" multiple onChange={onFilePick} />
+            <button className="primary" onClick={runRebrand} disabled={running || !files.length}>
+              <Upload size={18} />{running ? 'Processing…' : `Rebrand ${files.length || ''} file${files.length !== 1 ? 's' : ''}`}
+            </button>
+            {doneCount > 1 && (
+              <button className="secondary" onClick={downloadAll}>
+                <Download size={18} />Download all
+              </button>
+            )}
+          </div>
+          <div className="notice info" style={{marginTop:'1rem', fontSize:'0.82rem', color:'#64748b'}}>
+            <span>Each file is rebranded locally on the server. Logo, supplier block, SDS date, and all body references are replaced with CCS details.</span>
+          </div>
+        </aside>
+
+        <section className="main-panel">
+          {jobs.length === 0
+            ? <div className="empty-state"><Upload size={34}/><h2>Select .docx SDS files</h2><p>Upload one or multiple supplier SDS documents to rebrand them with CCS identity.</p></div>
+            : <RebrandJobList jobs={jobs} />}
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function RebrandJobList({ jobs }) {
+  return (
+    <div className="preview-grid">
+      <div className="section-head"><div><p className="eyebrow">Files</p><h2>{jobs.length} document{jobs.length !== 1 ? 's' : ''}</h2></div></div>
+      <div className="message-list">
+        {jobs.map((job, i) => (
+          <article key={`${job.name}-${i}`} className="message" style={{alignItems:'center', gap:'0.6rem'}}>
+            <div style={{flex:1}}>
+              <strong style={{fontSize:'0.9rem'}}>{job.name}</strong>
+              {job.oldSupplier && <div style={{fontSize:'0.78rem',color:'#94a3b8',marginTop:'2px'}}>Replaced: {job.oldSupplier} → CCS</div>}
+              {job.error && <div style={{fontSize:'0.78rem',color:'#f87171',marginTop:'2px'}}>{job.error}</div>}
+            </div>
+            <JobBadge status={job.status} changes={job.changes} />
+            {job.url && (
+              <a href={job.url} download={job.name.replace('.docx','_ccs_branded.docx')} className="doc-link" style={{whiteSpace:'nowrap'}}>
+                <Download size={15}/>Download
+              </a>
+            )}
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function JobBadge({ status, changes }) {
+  const map = { pending: ['#475569','Pending'], processing: ['#38bdf8','Processing…'], done: ['#34d399',`Done · ${changes} changes`], error: ['#f87171','Error'] };
+  const [color, label] = map[status] || ['#475569', status];
+  return <span style={{fontSize:'0.75rem',fontWeight:700,color,whiteSpace:'nowrap'}}>{label}</span>;
+}
+
+// ---------------------------------------------------------------------------
+// Distribution tab (original App content)
+// ---------------------------------------------------------------------------
+
+function DistributionDesk() {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [contactsText, setContactsText] = useState('Test Contact <test@example.com>');
@@ -82,8 +228,7 @@ function App() {
   }
 
   return (
-    <main className="shell">
-      <section className="workbench">
+    <section className="workbench">
         <div className="topbar">
           <div>
             <p className="eyebrow">Compliant Cleaning Supplies</p>
@@ -144,8 +289,7 @@ function App() {
             {sendResult && <SendResult result={sendResult} />}
           </section>
         </div>
-      </section>
-    </main>
+    </section>
   );
 }
 

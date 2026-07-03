@@ -96,13 +96,26 @@ def _apply_supplier_block(doc: Document, sds_date: str, old_supplier: str) -> di
             _replace_after_tab(para, new_date_text)
             replaced.append(f"SDS Date → {new_date_text}")
 
-        # Any body paragraph still containing old supplier name
-        if old_supplier and old_supplier.upper() in text.upper():
-            if not any(text.startswith(lbl) for lbl, _, _ in _SUPPLIER_FIELDS):
-                _replace_text_in_runs(para, old_supplier, CCS["supplier_name"])
-                replaced.append(f"Body text: replaced '{old_supplier}'")
+        # Any body paragraph still containing old supplier name (full or partial)
+        if old_supplier and not any(text.startswith(lbl) for lbl, _, _ in _SUPPLIER_FIELDS):
+            for term in _supplier_search_terms(old_supplier):
+                if term.upper() in text.upper():
+                    _replace_text_in_runs(para, term, CCS["supplier_name"])
+                    replaced.append(f"Body text: replaced '{term}'")
 
     return {"changes": replaced}
+
+
+def _supplier_search_terms(full_name: str) -> list[str]:
+    """Return the full name plus a version with legal suffixes stripped."""
+    terms = [full_name]
+    stripped = re.sub(
+        r'\s+(PTY\.?\s*LTD\.?|LIMITED|LTD\.?|INC\.?|LLC|CO\.?|CORP\.?)\s*$',
+        '', full_name, flags=re.IGNORECASE,
+    ).strip()
+    if stripped and stripped.upper() != full_name.upper():
+        terms.append(stripped)
+    return terms
 
 
 def _extract_version(text: str) -> str:
