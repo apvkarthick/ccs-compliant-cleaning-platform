@@ -6,14 +6,13 @@ import './styles.css';
 const API_BASE = '/api';
 
 function App() {
-  const [tab, setTab] = useState('distribution');
   return (
     <main className="shell">
       <div className="tab-bar">
-        <button className={tab === 'distribution' ? 'tab active' : 'tab'} onClick={() => setTab('distribution')}>Distribution</button>
-        <button className={tab === 'rebrand' ? 'tab active' : 'tab'} onClick={() => setTab('rebrand')}>Rebrand SDS</button>
+        <button className="tab active">Distribution</button>
+        <a className="tab" href="/rebrand">Rebrand SDS</a>
       </div>
-      {tab === 'distribution' ? <DistributionDesk /> : <RebrandDesk />}
+      <DistributionDesk />
     </main>
   );
 }
