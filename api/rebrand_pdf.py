@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import re
 from datetime import date
 from pathlib import Path
 
@@ -10,19 +11,23 @@ import fitz  # PyMuPDF
 from .rebrand import CCS, LOGO_PATH, _supplier_search_terms
 
 _OLD_DOMAINS = ["cleanplus.com.au"]
-_OLD_EMAIL_PATTERNS = ["@cleanplus"]
+
+# Labels to scan for in both inline and two-column table layouts
+_SUPPLIER_LABELS = ["Supplier Name", "Company Name", "Supplier", "Manufacturer Name"]
+_ADDRESS_LABELS = ["Address"]
+_PHONE_LABELS = ["Telephone", "Phone", "Tel"]
 
 
 def rebrand_pdf(pdf_bytes: bytes, sds_date: str | None = None) -> tuple[bytes, dict]:
     today = sds_date or date.today().strftime("%d/%m/%Y")
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
 
-    old_supplier = _detect_supplier_from_pdf(doc)
+    old_supplier, old_address, old_phone = _detect_supplier_fields(doc)
     search_terms = _supplier_search_terms(old_supplier) if old_supplier else []
     changes: list[str] = []
 
     for page in doc:
-        page_changes = _replace_text_on_page(page, search_terms)
+        page_changes = _replace_text_on_page(page, search_terms, old_address, old_phone)
         changes.extend(page_changes)
 
     _replace_link_annotations(doc, changes)
@@ -42,43 +47,117 @@ def rebrand_pdf(pdf_bytes: bytes, sds_date: str | None = None) -> tuple[bytes, d
 # Detection
 # ---------------------------------------------------------------------------
 
-def _detect_supplier_from_pdf(doc: fitz.Document) -> str:
+def _detect_supplier_fields(doc: fitz.Document) -> tuple[str, str, str]:
+    """Return (supplier_name, address, phone) detected from page 1."""
     if not doc.page_count:
-        return ""
-    text = doc[0].get_text("text")
-    for line in text.splitlines():
-        if "Supplier Name" in line:
-            after = line[line.index("Supplier Name") + len("Supplier Name"):]
-            after = after.lstrip(":\t ").strip()
-            if after:
-                return after
-    return ""
+        return "", "", ""
+
+    page = doc[0]
+
+    # Pass 1 — inline: label and value on the same line
+    for line in page.get_text("text").splitlines():
+        stripped = line.strip()
+        for label in _SUPPLIER_LABELS:
+            if re.match(re.escape(label), stripped, re.IGNORECASE):
+                after = stripped[len(label):].strip().lstrip(":").strip()
+                if after:
+                    return after, "", ""
+
+    # Pass 2 — spatial: two-column table where labels are in a left block
+    # and values are in a right block at the same vertical band
+    return _detect_fields_spatial(page)
+
+
+def _detect_fields_spatial(page: fitz.Page) -> tuple[str, str, str]:
+    page_width = page.rect.width
+    blocks = page.get_text("blocks")  # (x0,y0,x1,y1,text,block_no,block_type)
+
+    for block in blocks:
+        x0, y0, x1, y1, text = block[:5]
+        # Only look at left-side label blocks (left 45% of page)
+        if x0 > page_width * 0.45:
+            continue
+
+        lines = text.splitlines()
+        non_empty = [l.strip() for l in lines if l.strip()]
+
+        supplier_idx = address_idx = phone_idx = -1
+        for i, line in enumerate(non_empty):
+            for lbl in _SUPPLIER_LABELS:
+                if re.match(re.escape(lbl), line, re.IGNORECASE):
+                    supplier_idx = i
+            for lbl in _ADDRESS_LABELS:
+                if re.match(re.escape(lbl), line, re.IGNORECASE):
+                    address_idx = i
+            for lbl in _PHONE_LABELS:
+                if re.match(re.escape(lbl), line, re.IGNORECASE):
+                    phone_idx = i
+
+        if supplier_idx == -1:
+            continue
+
+        # Find the matching right-side value block at the same y-band
+        by_center = (y0 + y1) / 2
+        right_blocks = [
+            b for b in blocks
+            if b[0] > x1 + 5 and abs((b[1] + b[3]) / 2 - by_center) < 40
+        ]
+        if not right_blocks:
+            continue
+        # Pick the closest one to the right
+        right_blocks.sort(key=lambda b: b[0])
+        rtext = right_blocks[0][4]
+        rlines = [l.strip() for l in rtext.splitlines() if l.strip()]
+
+        def get_rline(idx: int) -> str:
+            return rlines[idx] if 0 <= idx < len(rlines) else ""
+
+        supplier = get_rline(supplier_idx)
+        address = get_rline(address_idx) if address_idx != -1 else ""
+        phone = get_rline(phone_idx) if phone_idx != -1 else ""
+        if supplier:
+            return supplier, address, phone
+
+    return "", "", ""
 
 
 # ---------------------------------------------------------------------------
 # Text redaction
 # ---------------------------------------------------------------------------
 
-def _replace_text_on_page(page: fitz.Page, supplier_terms: list[str]) -> list[str]:
+def _replace_text_on_page(
+    page: fitz.Page,
+    supplier_terms: list[str],
+    old_address: str,
+    old_phone: str,
+) -> list[str]:
     changes: list[str] = []
 
-    for term in supplier_terms:
-        hits = page.search_for(term)
-        for rect in hits:
-            page.add_redact_annot(rect, text=CCS["supplier_name"], fontsize=0, align=fitz.TEXT_ALIGN_LEFT)
-            changes.append(f"Replaced supplier name '{term}'")
+    replacements: list[tuple[str, str]] = []
 
-    # Replace domain/email text occurrences
-    for old_text, new_text in [
+    for term in supplier_terms:
+        replacements.append((term, CCS["supplier_name"]))
+
+    if old_address:
+        replacements.append((old_address, CCS["address"]))
+    if old_phone:
+        replacements.append((old_phone, CCS["telephone"]))
+
+    # Hardcoded domain/email replacements for known old suppliers
+    replacements += [
         ("www.cleanplus.com.au", CCS["website"]),
         ("cleanplus.com.au", CCS["website"]),
         ("info@cleanplus.com.au", CCS["email"]),
         ("sales@cleanplus.com.au", CCS["email"]),
-    ]:
+    ]
+
+    for old_text, new_text in replacements:
+        if not old_text:
+            continue
         hits = page.search_for(old_text)
         for rect in hits:
-            page.add_redact_annot(rect, text=new_text, fontsize=0)
-            changes.append(f"Replaced '{old_text}'")
+            page.add_redact_annot(rect, text=new_text, fontsize=0, align=fitz.TEXT_ALIGN_LEFT)
+            changes.append(f"Replaced '{old_text[:40]}'")
 
     if changes:
         page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
@@ -120,7 +199,6 @@ def _replace_header_image(doc: fitz.Document, logo_bytes: bytes) -> bool:
     page_height = page.rect.height
 
     img_info_list = page.get_image_info(hashes=False)
-    # Sort by vertical position (top of bbox)
     img_info_list.sort(key=lambda x: x.get("bbox", (0, 0, 0, 0))[1])
 
     for info in img_info_list:
@@ -134,7 +212,6 @@ def _replace_header_image(doc: fitz.Document, logo_bytes: bytes) -> bool:
             except Exception:
                 pass
 
-    # Fallback: replace very first image anywhere on the page
     all_imgs = page.get_images(full=True)
     if all_imgs:
         try:
