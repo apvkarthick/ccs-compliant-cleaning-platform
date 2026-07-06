@@ -192,30 +192,38 @@ def _replace_link_annotations(doc: fitz.Document, changes: list[str]) -> None:
 # ---------------------------------------------------------------------------
 
 def _replace_header_image(doc: fitz.Document, logo_bytes: bytes) -> bool:
-    """Replace the first image in the top 35% of page 1 with the CCS logo."""
+    """Replace the image in the top 35% of page 1 with the CCS logo."""
     if not doc.page_count:
         return False
     page = doc[0]
     page_height = page.rect.height
 
-    img_info_list = page.get_image_info(hashes=False)
-    img_info_list.sort(key=lambda x: x.get("bbox", (0, 0, 0, 0))[1])
+    # Map each xref to its on-page position using get_image_rects
+    candidates = []
+    for img in page.get_images(full=True):
+        xref = img[0]
+        try:
+            rects = page.get_image_rects(xref)
+            for r in rects:
+                y_center = (r.y0 + r.y1) / 2
+                candidates.append((y_center, xref))
+        except Exception:
+            pass
 
-    for info in img_info_list:
-        bbox = info.get("bbox", (0, 0, page.rect.width, page_height))
-        y_center = (bbox[1] + bbox[3]) / 2
-        xref = info.get("xref", 0)
-        if xref and y_center < page_height * 0.35:
+    # Replace the topmost image that sits in the top 35% of the page
+    candidates.sort(key=lambda c: c[0])
+    for y_center, xref in candidates:
+        if y_center < page_height * 0.35:
             try:
-                doc.replace_image(xref, stream=logo_bytes)
+                page.replace_image(xref, stream=logo_bytes)
                 return True
             except Exception:
                 pass
 
-    all_imgs = page.get_images(full=True)
-    if all_imgs:
+    # Fallback: replace topmost image regardless of position
+    if candidates:
         try:
-            doc.replace_image(all_imgs[0][0], stream=logo_bytes)
+            page.replace_image(candidates[0][1], stream=logo_bytes)
             return True
         except Exception:
             pass
