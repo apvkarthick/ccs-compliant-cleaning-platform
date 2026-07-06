@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from .distribution import process_distribution, record_download_acknowledgement, validate_tracking_signature
 from .excel_parser import list_source_documents, parse_client_workbook
-from .rebrand import docx_to_pdf, rebrand_sds
+from .rebrand import rebrand_sds
 from .rebrand_pdf import rebrand_pdf
 from .tasks import ping_task
 
@@ -173,14 +173,13 @@ async def rebrand_sds_endpoint(
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
     rebranded_docx, summary = rebrand_sds(docx_bytes, sds_date or None)
-    pdf_bytes = docx_to_pdf(rebranded_docx)
 
     stem = Path(file.filename).stem
     return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
+        content=rebranded_docx,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={
-            "Content-Disposition": f'attachment; filename="{stem}_ccs_branded.pdf"',
+            "Content-Disposition": f'attachment; filename="{stem}_ccs_branded.docx"',
             "X-CCS-Changes": str(len(summary.get("changes", []))),
             "X-CCS-Old-Supplier": summary.get("old_supplier", ""),
             "Access-Control-Expose-Headers": "X-CCS-Changes, X-CCS-Old-Supplier",

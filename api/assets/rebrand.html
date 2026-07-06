@@ -195,8 +195,7 @@ dlAllBtn.addEventListener('click', () => {
 });
 
 function outFilename(job) {
-  // DOCX inputs now produce PDF output via server-side LibreOffice conversion
-  return job.name.replace(/\.(docx|pdf)$/i, '_ccs_branded.pdf');
+  return job.name.replace(/\.(docx|pdf)$/i, (_, ext) => `_ccs_branded.${ext.toLowerCase()}`);
 }
 
 function triggerDownload(job) {
