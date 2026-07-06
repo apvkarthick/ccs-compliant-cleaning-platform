@@ -1,4 +1,6 @@
+import base64
 import html
+import json as _json
 import os
 from pathlib import Path
 from typing import Any
@@ -22,7 +24,24 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = APP_ROOT / "storage" / "source"
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
-_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+def _load_jwt_secret(raw: str):
+    """Accept a plain secret string or a Supabase JWK JSON blob (new dashboard format)."""
+    raw = raw.strip()
+    if not raw or not raw.startswith("{"):
+        return raw
+    try:
+        jwk = _json.loads(raw)
+        keys = jwk.get("keys", [jwk])
+        k = keys[0].get("k", "")
+        if k:
+            padding = 4 - len(k) % 4
+            return base64.urlsafe_b64decode(k + "=" * (padding % 4))
+    except Exception:
+        pass
+    return raw
+
+
+_JWT_SECRET = _load_jwt_secret(os.getenv("SUPABASE_JWT_SECRET", ""))
 _ALLOWED_EMAILS: set[str] = set(filter(None, os.getenv("ALLOWED_EMAILS", "").split(",")))
 
 app = FastAPI(title="CCS Compliant Cleaning Platform")
