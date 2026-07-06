@@ -1,25 +1,29 @@
 import html
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
+import jwt
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field
 
 from .distribution import process_distribution, record_download_acknowledgement, validate_tracking_signature
 from .excel_parser import list_source_documents, parse_client_workbook
-from .rebrand import rebrand_sds
+from .rebrand import docx_to_pdf, rebrand_sds
 from .rebrand_pdf import rebrand_pdf
 from .tasks import ping_task
-
 
 load_dotenv()
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = APP_ROOT / "storage" / "source"
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+
+_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+_ALLOWED_EMAILS: set[str] = set(filter(None, os.getenv("ALLOWED_EMAILS", "").split(",")))
 
 app = FastAPI(title="CCS Compliant Cleaning Platform")
 app.add_middleware(
@@ -29,6 +33,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+async def require_auth(authorization: str = Header(default="")) -> dict:
+    if not _JWT_SECRET:
+        return {}
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authentication required")
+    token = authorization[7:]
+    try:
+        payload = jwt.decode(token, _JWT_SECRET, algorithms=["HS256"], audience="authenticated")
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired session — please log in again")
+    if _ALLOWED_EMAILS and payload.get("email") not in _ALLOWED_EMAILS:
+        raise HTTPException(status_code=403, detail="Access restricted to authorised users")
+    return payload
 
 
 class Contact(BaseModel):
@@ -44,9 +63,6 @@ class DistributionRequest(BaseModel):
     preview: dict[str, Any]
     contacts: list[Contact] = Field(default_factory=list)
     dry_run: bool = True
-
-
-ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
 
 @app.get("/rebrand", response_class=HTMLResponse)
@@ -66,14 +82,15 @@ def enqueue_ping() -> dict[str, str]:
 
 
 @app.post("/workbook/preview")
-async def preview_workbook(file: UploadFile = File(...)) -> dict[str, Any]:
+async def preview_workbook(
+    file: UploadFile = File(...),
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
     if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm")):
         raise HTTPException(status_code=400, detail="Upload an .xlsx or .xlsm client workbook")
-
     workbook_bytes = await file.read()
     if not workbook_bytes:
         raise HTTPException(status_code=400, detail="Uploaded workbook is empty")
-
     return parse_client_workbook(
         workbook_bytes,
         source_files=list_source_documents(SOURCE_DIR),
@@ -82,12 +99,18 @@ async def preview_workbook(file: UploadFile = File(...)) -> dict[str, Any]:
 
 
 @app.post("/register/preview")
-async def preview_register(file: UploadFile = File(...)) -> dict[str, Any]:
-    return await preview_workbook(file)
+async def preview_register(
+    file: UploadFile = File(...),
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    return await preview_workbook(file, _auth)
 
 
 @app.post("/distribution/test-send")
-def test_send_distribution(request: DistributionRequest) -> dict[str, Any]:
+def test_send_distribution(
+    request: DistributionRequest,
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
     return process_distribution(
         preview=request.preview,
         contacts=[contact.model_dump() for contact in request.contacts],
@@ -105,36 +128,33 @@ def track_msds_download(
 ) -> HTMLResponse:
     if not validate_tracking_signature(doc, contact, sig):
         raise HTTPException(status_code=400, detail="Invalid or expired MSDS link")
-
     acknowledgement = record_download_acknowledgement(doc, contact, chem)
     safe_chem = html.escape(chem or "this MSDS document")
     safe_redirect = html.escape(redirect, quote=True)
-    page = f"""
-    <!doctype html>
-    <html lang="en">
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-      <title>CCS Safety Document</title>
-      <style>
-        body {{ margin: 0; font-family: Arial, Helvetica, sans-serif; color: #17212b; background: #f5f8fa; }}
-        header {{ background: #2C6B33; color: white; padding: 20px 28px; }}
-        main {{ max-width: 860px; margin: 36px auto; background: white; border: 1px solid #d9e1e8; border-radius: 8px; padding: 28px; }}
-        a.button {{ display: inline-block; margin-top: 14px; background: #2C6B33; color: white; padding: 12px 16px; border-radius: 6px; text-decoration: none; font-weight: 700; }}
-        .muted {{ color: #607080; }}
-      </style>
-    </head>
-    <body>
-      <header><strong>COMPLIANT CLEANING SUPPLIES</strong></header>
-      <main>
-        <h1>Safety document ready</h1>
-        <p>Your acknowledgement has been recorded for {safe_chem}.</p>
-        <p><a class="button" href="{safe_redirect}">Open PDF</a></p>
-        <p class="muted">1300 314 491 | compliantcs.com.au</p>
-      </main>
-    </body>
-    </html>
-    """
+    page = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CCS Safety Document</title>
+  <style>
+    body {{ margin:0;font-family:Arial,Helvetica,sans-serif;color:#17212b;background:#f5f8fa; }}
+    header {{ background:#2C6B33;color:white;padding:20px 28px; }}
+    main {{ max-width:860px;margin:36px auto;background:white;border:1px solid #d9e1e8;border-radius:8px;padding:28px; }}
+    a.button {{ display:inline-block;margin-top:14px;background:#2C6B33;color:white;padding:12px 16px;border-radius:6px;text-decoration:none;font-weight:700; }}
+    .muted {{ color:#607080; }}
+  </style>
+</head>
+<body>
+  <header><strong>COMPLIANT CLEANING SUPPLIES</strong></header>
+  <main>
+    <h1>Safety document ready</h1>
+    <p>Your acknowledgement has been recorded for {safe_chem}.</p>
+    <p><a class="button" href="{safe_redirect}">Open PDF</a></p>
+    <p class="muted">1300 314 491 | compliantcs.com.au</p>
+  </main>
+</body>
+</html>"""
     response = HTMLResponse(page)
     response.headers["X-CCS-Acknowledgement"] = str(acknowledgement)
     return response
@@ -143,7 +163,8 @@ def track_msds_download(
 @app.post("/rebrand/sds")
 async def rebrand_sds_endpoint(
     file: UploadFile = File(...),
-    sds_date: str = Query(default="", description="SDS date override DD/MM/YYYY; defaults to today"),
+    sds_date: str = Query(default="", description="SDS date override DD/MM/YYYY"),
+    _auth: dict = Depends(require_auth),
 ) -> Response:
     if not file.filename or not file.filename.lower().endswith(".docx"):
         raise HTTPException(status_code=400, detail="Upload a .docx SDS file")
@@ -151,17 +172,18 @@ async def rebrand_sds_endpoint(
     if not docx_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    rebranded, summary = rebrand_sds(docx_bytes, sds_date or None)
+    rebranded_docx, summary = rebrand_sds(docx_bytes, sds_date or None)
+    pdf_bytes = docx_to_pdf(rebranded_docx)
 
     stem = Path(file.filename).stem
-    out_name = f"{stem}_ccs_branded.docx"
     return Response(
-        content=rebranded,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        content=pdf_bytes,
+        media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="{out_name}"',
+            "Content-Disposition": f'attachment; filename="{stem}_ccs_branded.pdf"',
             "X-CCS-Changes": str(len(summary.get("changes", []))),
             "X-CCS-Old-Supplier": summary.get("old_supplier", ""),
+            "Access-Control-Expose-Headers": "X-CCS-Changes, X-CCS-Old-Supplier",
         },
     )
 
@@ -169,7 +191,8 @@ async def rebrand_sds_endpoint(
 @app.post("/rebrand/pdf")
 async def rebrand_pdf_endpoint(
     file: UploadFile = File(...),
-    sds_date: str = Query(default="", description="SDS date override DD/MM/YYYY; defaults to today"),
+    sds_date: str = Query(default="", description="SDS date override DD/MM/YYYY"),
+    _auth: dict = Depends(require_auth),
 ) -> Response:
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Upload a .pdf SDS file")
@@ -178,16 +201,15 @@ async def rebrand_pdf_endpoint(
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
     rebranded, summary = rebrand_pdf(pdf_bytes, sds_date or None)
-
     stem = Path(file.filename).stem
-    out_name = f"{stem}_ccs_branded.pdf"
     return Response(
         content=rebranded,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="{out_name}"',
+            "Content-Disposition": f'attachment; filename="{stem}_ccs_branded.pdf"',
             "X-CCS-Changes": str(len(summary.get("changes", []))),
             "X-CCS-Old-Supplier": summary.get("old_supplier", ""),
+            "Access-Control-Expose-Headers": "X-CCS-Changes, X-CCS-Old-Supplier",
         },
     )
 
@@ -195,7 +217,6 @@ async def rebrand_pdf_endpoint(
 @app.get("/documents/source/{filename:path}")
 def get_source_document(filename: str) -> FileResponse:
     path = (SOURCE_DIR / filename).resolve()
-    source_root = SOURCE_DIR.resolve()
-    if source_root not in path.parents or not path.is_file():
+    if SOURCE_DIR.resolve() not in path.parents or not path.is_file():
         raise HTTPException(status_code=404, detail="Document not found")
     return FileResponse(path)

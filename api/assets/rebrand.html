@@ -100,6 +100,12 @@ const API_PDF  = '/api/rebrand/pdf';
 let files = [];
 let jobs = [];
 
+// Auth — read token set by the React login page
+const _authToken = localStorage.getItem('ccs_access_token') || '';
+if (!_authToken) {
+  document.body.innerHTML = '<div style="text-align:center;padding:80px;font-family:Arial,sans-serif"><p style="font-size:1.1rem">Please <a href="/" style="color:#0f766e;font-weight:700">log in</a> first.</p></div>';
+}
+
 const dropZone    = document.getElementById('dropZone');
 const fileInput   = document.getElementById('fileInput');
 const rebrandBtn  = document.getElementById('rebrandBtn');
@@ -161,7 +167,7 @@ async function runRebrand() {
       const fd = new FormData();
       fd.append('file', files[i]);
       const api = jobs[i].type === 'pdf' ? API_PDF : API_DOCX;
-      const res = await fetch(api, { method: 'POST', body: fd });
+      const res = await fetch(api, { method: 'POST', body: fd, headers: _authToken ? { Authorization: `Bearer ${_authToken}` } : {} });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
         throw new Error(err.detail || 'Server error');
@@ -189,7 +195,8 @@ dlAllBtn.addEventListener('click', () => {
 });
 
 function outFilename(job) {
-  return job.name.replace(/\.(docx|pdf)$/i, (_, ext) => `_ccs_branded.${ext.toLowerCase()}`);
+  // DOCX inputs now produce PDF output via server-side LibreOffice conversion
+  return job.name.replace(/\.(docx|pdf)$/i, '_ccs_branded.pdf');
 }
 
 function triggerDownload(job) {

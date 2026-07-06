@@ -1,16 +1,141 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Link2, Send, Upload } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
+import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Link2, LogOut, Send, Upload } from 'lucide-react';
 import './styles.css';
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL || '',
+  import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+);
 
 const API_BASE = '/api';
 
-function App() {
+// Module-level token so API helpers don't need prop drilling
+let _token = '';
+const getAuthHeaders = () => _token ? { Authorization: `Bearer ${_token}` } : {};
+
+// ---------------------------------------------------------------------------
+// Auth hook
+// ---------------------------------------------------------------------------
+
+function useAuth() {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      _token = session?.access_token || '';
+      if (_token) localStorage.setItem('ccs_access_token', _token);
+      setLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      _token = session?.access_token || '';
+      if (_token) localStorage.setItem('ccs_access_token', _token);
+      else localStorage.removeItem('ccs_access_token');
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  return { session, loading };
+}
+
+// ---------------------------------------------------------------------------
+// Login page
+// ---------------------------------------------------------------------------
+
+function LoginPage() {
+  const [email, setEmail] = useState('');
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState('');
+  const [sending, setSending] = useState(false);
+
+  async function sendMagicLink(e) {
+    e.preventDefault();
+    setSending(true);
+    setError('');
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.origin },
+    });
+    if (error) setError(error.message);
+    else setSent(true);
+    setSending(false);
+  }
+
+  if (sent) {
+    return (
+      <div className="login-shell">
+        <div className="login-card">
+          <p className="eyebrow">Compliant Cleaning Supplies</p>
+          <h1>Check your inbox</h1>
+          <p style={{ marginTop: '0.75rem', color: '#607080' }}>
+            A login link has been sent to <strong>{email}</strong>.<br />Click it to access the platform.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="login-shell">
+      <div className="login-card">
+        <p className="eyebrow">Compliant Cleaning Supplies</p>
+        <h1>CCS Platform</h1>
+        <p style={{ marginTop: '0.5rem', marginBottom: '1.25rem', color: '#607080', fontSize: '0.9rem' }}>
+          Enter your email to receive a secure login link.
+        </p>
+        <form onSubmit={sendMagicLink} className="login-form">
+          <input
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            placeholder="your@email.com"
+            required
+          />
+          <button type="submit" className="primary" disabled={sending}>
+            {sending ? 'Sending…' : 'Send login link'}
+          </button>
+        </form>
+        {error && (
+          <div className="notice error" style={{ marginTop: '1rem' }}>
+            <AlertCircle size={16} /><span>{error}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Root
+// ---------------------------------------------------------------------------
+
+function Root() {
+  const { session, loading } = useAuth();
+
+  if (loading) return <div className="login-shell"><div className="login-card"><p>Loading…</p></div></div>;
+  if (!session) return <LoginPage />;
+  return <App session={session} />;
+}
+
+function App({ session }) {
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+  }
+
   return (
     <main className="shell">
       <div className="tab-bar">
         <button className="tab active">Distribution</button>
-        <a className="tab" href="/rebrand.html">Rebrand SDS</a>
+        <a className="tab" href="/rebrand">Rebrand SDS</a>
+        <button className="tab tab-signout" onClick={handleSignOut} title="Sign out">
+          <LogOut size={14} />
+        </button>
       </div>
       <DistributionDesk />
     </main>
@@ -18,136 +143,7 @@ function App() {
 }
 
 // ---------------------------------------------------------------------------
-// Rebrand tab
-// ---------------------------------------------------------------------------
-
-function RebrandDesk() {
-  const [files, setFiles] = useState([]);
-  const [jobs, setJobs] = useState([]);
-  const [running, setRunning] = useState(false);
-  const inputRef = useRef(null);
-
-  function onFilePick(e) {
-    const picked = Array.from(e.target.files || []).filter(f => f.name.toLowerCase().endsWith('.docx'));
-    setFiles(picked);
-    setJobs(picked.map(f => ({ name: f.name, status: 'pending', url: null, error: null })));
-  }
-
-  async function runRebrand() {
-    if (!files.length) return;
-    setRunning(true);
-    const updated = jobs.map(j => ({ ...j, status: 'pending', url: null, error: null }));
-    setJobs([...updated]);
-
-    for (let i = 0; i < files.length; i++) {
-      setJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: 'processing' } : j));
-      try {
-        const fd = new FormData();
-        fd.append('file', files[i]);
-        const res = await fetch(`${API_BASE}/rebrand/sds`, { method: 'POST', body: fd });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({ detail: res.statusText }));
-          throw new Error(err.detail || 'Server error');
-        }
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const oldSupplier = res.headers.get('X-CCS-Old-Supplier') || '';
-        const changes = res.headers.get('X-CCS-Changes') || '0';
-        setJobs(prev => prev.map((j, idx) => idx === i
-          ? { ...j, status: 'done', url, changes: parseInt(changes), oldSupplier }
-          : j));
-      } catch (err) {
-        setJobs(prev => prev.map((j, idx) => idx === i ? { ...j, status: 'error', error: err.message } : j));
-      }
-    }
-    setRunning(false);
-  }
-
-  function downloadAll() {
-    jobs.filter(j => j.url).forEach(j => {
-      const a = document.createElement('a');
-      a.href = j.url;
-      a.download = j.name.replace('.docx', '_ccs_branded.docx');
-      a.click();
-    });
-  }
-
-  const doneCount = jobs.filter(j => j.status === 'done').length;
-
-  return (
-    <section className="workbench">
-      <div className="topbar">
-        <div>
-          <p className="eyebrow">Compliant Cleaning Supplies</p>
-          <h1>Rebrand SDS</h1>
-        </div>
-        {doneCount > 0 && (
-          <div className="status success"><CheckCircle2 size={18} />{doneCount} branded</div>
-        )}
-      </div>
-
-      <div className="layout">
-        <aside className="side-panel">
-          <div className="upload-box">
-            <label>Select DOCX files</label>
-            <input ref={inputRef} type="file" accept=".docx" multiple onChange={onFilePick} />
-            <button className="primary" onClick={runRebrand} disabled={running || !files.length}>
-              <Upload size={18} />{running ? 'Processing…' : `Rebrand ${files.length || ''} file${files.length !== 1 ? 's' : ''}`}
-            </button>
-            {doneCount > 1 && (
-              <button className="secondary" onClick={downloadAll}>
-                <Download size={18} />Download all
-              </button>
-            )}
-          </div>
-          <div className="notice info" style={{marginTop:'1rem', fontSize:'0.82rem', color:'#64748b'}}>
-            <span>Each file is rebranded locally on the server. Logo, supplier block, SDS date, and all body references are replaced with CCS details.</span>
-          </div>
-        </aside>
-
-        <section className="main-panel">
-          {jobs.length === 0
-            ? <div className="empty-state"><Upload size={34}/><h2>Select .docx SDS files</h2><p>Upload one or multiple supplier SDS documents to rebrand them with CCS identity.</p></div>
-            : <RebrandJobList jobs={jobs} />}
-        </section>
-      </div>
-    </section>
-  );
-}
-
-function RebrandJobList({ jobs }) {
-  return (
-    <div className="preview-grid">
-      <div className="section-head"><div><p className="eyebrow">Files</p><h2>{jobs.length} document{jobs.length !== 1 ? 's' : ''}</h2></div></div>
-      <div className="message-list">
-        {jobs.map((job, i) => (
-          <article key={`${job.name}-${i}`} className="message" style={{alignItems:'center', gap:'0.6rem'}}>
-            <div style={{flex:1}}>
-              <strong style={{fontSize:'0.9rem'}}>{job.name}</strong>
-              {job.oldSupplier && <div style={{fontSize:'0.78rem',color:'#94a3b8',marginTop:'2px'}}>Replaced: {job.oldSupplier} → CCS</div>}
-              {job.error && <div style={{fontSize:'0.78rem',color:'#f87171',marginTop:'2px'}}>{job.error}</div>}
-            </div>
-            <JobBadge status={job.status} changes={job.changes} />
-            {job.url && (
-              <a href={job.url} download={job.name.replace('.docx','_ccs_branded.docx')} className="doc-link" style={{whiteSpace:'nowrap'}}>
-                <Download size={15}/>Download
-              </a>
-            )}
-          </article>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function JobBadge({ status, changes }) {
-  const map = { pending: ['#475569','Pending'], processing: ['#38bdf8','Processing…'], done: ['#34d399',`Done · ${changes} changes`], error: ['#f87171','Error'] };
-  const [color, label] = map[status] || ['#475569', status];
-  return <span style={{fontSize:'0.75rem',fontWeight:700,color,whiteSpace:'nowrap'}}>{label}</span>;
-}
-
-// ---------------------------------------------------------------------------
-// Distribution tab (original App content)
+// Distribution desk
 // ---------------------------------------------------------------------------
 
 function DistributionDesk() {
@@ -166,155 +162,95 @@ function DistributionDesk() {
     if (!preview?.contacts?.length) return;
     setContactsText(
       preview.contacts
-        .map((contact) => `${contact.name || contact.company || 'Contact'} <${contact.email}>`)
+        .map(c => `${c.name || c.company || 'Contact'} <${c.email}>`)
         .join('\n')
     );
   }, [preview]);
 
   async function uploadRegister(event) {
     event.preventDefault();
-    if (!file) {
-      setError('Select a client workbook first.');
-      return;
-    }
-    setLoading(true);
-    setError('');
-    setSendResult(null);
+    if (!file) { setError('Select a client workbook first.'); return; }
+    setLoading(true); setError(''); setSendResult(null);
     const formData = new FormData();
     formData.append('file', file);
-
     try {
       const response = await fetch(`${API_BASE}/workbook/preview`, {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: formData,
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Upload failed.');
       setPreview(data);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
   }
 
   async function sendTestDistribution() {
-    if (!preview) {
-      setError('Upload and preview a client workbook first.');
-      return;
-    }
-    if (contacts.length === 0) {
-      setError('Add at least one test contact email.');
-      return;
-    }
-    setSending(true);
-    setError('');
-
+    if (!preview) { setError('Upload and preview a client workbook first.'); return; }
+    if (!contacts.length) { setError('Add at least one test contact email.'); return; }
+    setSending(true); setError('');
     try {
       const response = await fetch(`${API_BASE}/distribution/test-send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ preview, contacts, dry_run: dryRun }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Distribution failed.');
       setSendResult(data);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSending(false);
-    }
+    } catch (err) { setError(err.message); }
+    finally { setSending(false); }
   }
 
   return (
     <section className="workbench">
-        <div className="topbar">
-          <div>
-            <p className="eyebrow">Compliant Cleaning Supplies</p>
-            <h1>Distribution Desk</h1>
-          </div>
-          <StatusPill preview={preview} sendResult={sendResult} />
+      <div className="topbar">
+        <div>
+          <p className="eyebrow">Compliant Cleaning Supplies</p>
+          <h1>Distribution Desk</h1>
         </div>
-
-        <div className="layout">
-          <aside className="side-panel">
-            <form onSubmit={uploadRegister} className="upload-box">
-              <label htmlFor="register-file">Client workbook</label>
-              <input
-                id="register-file"
-                type="file"
-                accept=".xlsx,.xlsm"
-                onChange={(event) => setFile(event.target.files?.[0] || null)}
-              />
-              <button type="submit" disabled={loading} className="primary">
-                <Upload size={18} />
-                {loading ? 'Uploading' : 'Preview'}
-              </button>
-            </form>
-
-            <div className="contact-box">
-              <label htmlFor="test-contacts">Test contacts</label>
-              <textarea
-                id="test-contacts"
-                value={contactsText}
-                onChange={(event) => setContactsText(event.target.value)}
-                rows={6}
-              />
-              <div className="toggle-row">
-                <input
-                  id="dry-run"
-                  type="checkbox"
-                  checked={dryRun}
-                  onChange={(event) => setDryRun(event.target.checked)}
-                />
-                <label htmlFor="dry-run">Dry run</label>
-              </div>
-              <button type="button" onClick={sendTestDistribution} disabled={sending || !preview} className="primary">
-                <Send size={18} />
-                {sending ? 'Processing' : 'Process Test Email'}
-              </button>
+        <StatusPill preview={preview} sendResult={sendResult} />
+      </div>
+      <div className="layout">
+        <aside className="side-panel">
+          <form onSubmit={uploadRegister} className="upload-box">
+            <label htmlFor="register-file">Client workbook</label>
+            <input id="register-file" type="file" accept=".xlsx,.xlsm"
+              onChange={e => setFile(e.target.files?.[0] || null)} />
+            <button type="submit" disabled={loading} className="primary">
+              <Upload size={18} />{loading ? 'Uploading' : 'Preview'}
+            </button>
+          </form>
+          <div className="contact-box">
+            <label htmlFor="test-contacts">Test contacts</label>
+            <textarea id="test-contacts" value={contactsText}
+              onChange={e => setContactsText(e.target.value)} rows={6} />
+            <div className="toggle-row">
+              <input id="dry-run" type="checkbox" checked={dryRun}
+                onChange={e => setDryRun(e.target.checked)} />
+              <label htmlFor="dry-run">Dry run</label>
             </div>
-
-            {error && (
-              <div className="notice error">
-                <AlertCircle size={18} />
-                <span>{error}</span>
-              </div>
-            )}
-          </aside>
-
-          <section className="main-panel">
-            {!preview ? <EmptyState /> : <PreviewPanel preview={preview} />}
-            {sendResult && <SendResult result={sendResult} />}
-          </section>
-        </div>
+            <button type="button" onClick={sendTestDistribution}
+              disabled={sending || !preview} className="primary">
+              <Send size={18} />{sending ? 'Processing' : 'Process Test Email'}
+            </button>
+          </div>
+          {error && <div className="notice error"><AlertCircle size={18} /><span>{error}</span></div>}
+        </aside>
+        <section className="main-panel">
+          {!preview ? <EmptyState /> : <PreviewPanel preview={preview} />}
+          {sendResult && <SendResult result={sendResult} />}
+        </section>
+      </div>
     </section>
   );
 }
 
 function StatusPill({ preview, sendResult }) {
-  if (sendResult) {
-    return (
-      <div className="status success">
-        <CheckCircle2 size={18} />
-        {sendResult.dry_run ? 'Dry run prepared' : 'Send requested'}
-      </div>
-    );
-  }
-  if (preview) {
-    return (
-      <div className="status success">
-        <CheckCircle2 size={18} />
-        Workbook parsed
-      </div>
-    );
-  }
-  return (
-    <div className="status neutral">
-      <FileSpreadsheet size={18} />
-      Awaiting workbook
-    </div>
-  );
+  if (sendResult) return <div className="status success"><CheckCircle2 size={18} />{sendResult.dry_run ? 'Dry run prepared' : 'Send requested'}</div>;
+  if (preview) return <div className="status success"><CheckCircle2 size={18} />Workbook parsed</div>;
+  return <div className="status neutral"><FileSpreadsheet size={18} />Awaiting workbook</div>;
 }
 
 function EmptyState() {
@@ -331,33 +267,20 @@ function PreviewPanel({ preview }) {
   return (
     <div className="preview-grid">
       <div className="section-head">
-        <div>
-          <p className="eyebrow">Preview</p>
-          <h2>{preview.register.title}</h2>
-        </div>
+        <div><p className="eyebrow">Preview</p><h2>{preview.register.title}</h2></div>
         <span className="count">{preview.products.length} products</span>
       </div>
-
       <div className="info-grid">
         <Info label="Customer" value={preview.customer.company || 'Not found'} />
         <Info label="Contact" value={preview.customer.contact_name || 'Not found'} />
         <Info label="Phone" value={preview.customer.phone || 'Not found'} />
         <Info label="Workbook date" value={preview.register.date || 'Not found'} />
       </div>
-
       <div className="table-wrap">
         <table>
-          <thead>
-            <tr>
-              <th>Code</th>
-              <th>Product</th>
-              <th>SDS</th>
-              <th>Risk</th>
-              <th>Expiry</th>
-            </tr>
-          </thead>
+          <thead><tr><th>Code</th><th>Product</th><th>SDS</th><th>Risk</th><th>Expiry</th></tr></thead>
           <tbody>
-            {preview.products.map((product) => (
+            {preview.products.map(product => (
               <tr key={`${product.code}-${product.row}`}>
                 <td>{product.code}</td>
                 <td>{product.name}</td>
@@ -369,7 +292,6 @@ function PreviewPanel({ preview }) {
           </tbody>
         </table>
       </div>
-
       {preview.missing_documents.length > 0 && (
         <div className="notice warning">
           <AlertCircle size={18} />
@@ -381,44 +303,29 @@ function PreviewPanel({ preview }) {
 }
 
 function Info({ label, value }) {
-  return (
-    <div className="info">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
+  return <div className="info"><span>{label}</span><strong>{value}</strong></div>;
 }
 
 function DocCell({ document }) {
   if (!document?.matched) return <span className="missing">Missing</span>;
-  return (
-    <a className="doc-link" href={document.url} target="_blank" rel="noreferrer">
-      <Link2 size={15} />
-      Open
-    </a>
-  );
+  return <a className="doc-link" href={document.url} target="_blank" rel="noreferrer"><Link2 size={15} />Open</a>;
 }
 
 function SendResult({ result }) {
   return (
     <div className="send-result">
       <div className="section-head">
-        <div>
-          <p className="eyebrow">Distribution</p>
-          <h2>{result.summary.messages} test email payloads</h2>
-        </div>
+        <div><p className="eyebrow">Distribution</p><h2>{result.summary.messages} test email payloads</h2></div>
         <span className="count">{result.dry_run ? 'Dry run' : 'Live mode'}</span>
       </div>
-
       <div className="info-grid">
         <Info label="Contacts" value={String(result.summary.contacts)} />
         <Info label="Products" value={String(result.summary.products)} />
         <Info label="GHL" value={result.ghl?.status || 'prepared'} />
         <Info label="Supabase" value={result.supabase?.status || 'prepared'} />
       </div>
-
       <div className="message-list">
-        {result.messages.map((message) => (
+        {result.messages.map(message => (
           <article key={`${message.to}-${message.subject}`} className="message">
             <strong>{message.to}</strong>
             <span>{message.subject}</span>
@@ -430,22 +337,13 @@ function SendResult({ result }) {
 }
 
 function parseContacts(value) {
-  return value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const bracketMatch = line.match(/^(.*?)<([^>]+)>$/);
-      if (bracketMatch) {
-        return { name: bracketMatch[1].trim(), email: bracketMatch[2].trim() };
-      }
-      const parts = line.split(',');
-      if (parts.length >= 2) {
-        return { name: parts[0].trim(), email: parts[1].trim() };
-      }
-      return { name: '', email: line };
-    })
-    .filter((contact) => contact.email.includes('@'));
+  return value.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(line => {
+    const m = line.match(/^(.*?)<([^>]+)>$/);
+    if (m) return { name: m[1].trim(), email: m[2].trim() };
+    const parts = line.split(',');
+    if (parts.length >= 2) return { name: parts[0].trim(), email: parts[1].trim() };
+    return { name: '', email: line };
+  }).filter(c => c.email.includes('@'));
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+createRoot(document.getElementById('root')).render(<Root />);

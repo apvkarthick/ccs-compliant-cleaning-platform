@@ -1,11 +1,12 @@
 celery==5.6.3
 fastapi==0.139.0
-python-docx==1.1.2
 gunicorn==26.0.0
 openpyxl==3.1.5
 pandas==3.0.3
 pydantic-settings==2.14.2
 pymupdf==1.28.0
+PyJWT>=2.8.0
+python-docx==1.1.2
 python-dotenv==1.2.2
 python-multipart==0.0.32
 redis==8.0.1

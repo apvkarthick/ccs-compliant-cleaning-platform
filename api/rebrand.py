@@ -268,3 +268,28 @@ def _save_to_bytes(doc: Document) -> bytes:
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
+
+
+import os
+import subprocess
+import tempfile
+
+
+def docx_to_pdf(docx_bytes: bytes) -> bytes:
+    """Convert DOCX bytes to PDF via LibreOffice headless."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        in_path = os.path.join(tmpdir, "input.docx")
+        with open(in_path, "wb") as f:
+            f.write(docx_bytes)
+        result = subprocess.run(
+            ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmpdir, in_path],
+            capture_output=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"PDF conversion failed: {result.stderr.decode()[:300]}")
+        out_path = os.path.join(tmpdir, "input.pdf")
+        if not os.path.exists(out_path):
+            raise RuntimeError("LibreOffice produced no output — is libreoffice installed?")
+        with open(out_path, "rb") as f:
+            return f.read()
