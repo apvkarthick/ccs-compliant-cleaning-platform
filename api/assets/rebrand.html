@@ -100,11 +100,8 @@ const API_PDF  = '/api/rebrand/pdf';
 let files = [];
 let jobs = [];
 
-// Auth — read token set by the React login page
+// Auth disabled for testing
 const _authToken = localStorage.getItem('ccs_access_token') || '';
-if (!_authToken) {
-  document.body.innerHTML = '<div style="text-align:center;padding:80px;font-family:Arial,sans-serif"><p style="font-size:1.1rem">Please <a href="/" style="color:#0f766e;font-weight:700">log in</a> first.</p></div>';
-}
 
 const dropZone    = document.getElementById('dropZone');
 const fileInput   = document.getElementById('fileInput');

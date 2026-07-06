@@ -189,7 +189,6 @@ def track_msds_download(
 async def rebrand_sds_endpoint(
     file: UploadFile = File(...),
     sds_date: str = Query(default="", description="SDS date override DD/MM/YYYY"),
-    _auth: dict = Depends(require_auth),
 ) -> Response:
     if not file.filename or not file.filename.lower().endswith(".docx"):
         raise HTTPException(status_code=400, detail="Upload a .docx SDS file")
@@ -216,7 +215,6 @@ async def rebrand_sds_endpoint(
 async def rebrand_pdf_endpoint(
     file: UploadFile = File(...),
     sds_date: str = Query(default="", description="SDS date override DD/MM/YYYY"),
-    _auth: dict = Depends(require_auth),
 ) -> Response:
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Upload a .pdf SDS file")
