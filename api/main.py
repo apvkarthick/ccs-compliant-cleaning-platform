@@ -24,24 +24,30 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = APP_ROOT / "storage" / "source"
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
-def _load_jwt_secret(raw: str):
-    """Accept a plain secret string or a Supabase JWK JSON blob (new dashboard format)."""
+def _load_jwt_secret(raw: str) -> tuple:
+    """Return (key, algorithms) from a plain HS256 string or Supabase JWK JSON blob."""
     raw = raw.strip()
     if not raw or not raw.startswith("{"):
-        return raw
+        return raw, ["HS256"]
     try:
         jwk = _json.loads(raw)
-        keys = jwk.get("keys", [jwk])
-        k = keys[0].get("k", "")
-        if k:
-            padding = 4 - len(k) % 4
-            return base64.urlsafe_b64decode(k + "=" * (padding % 4))
+        key_obj = jwk.get("keys", [jwk])[0]
+        kty = key_obj.get("kty", "")
+        alg = key_obj.get("alg", "HS256")
+        if kty == "EC":
+            from jwt.algorithms import ECAlgorithm
+            return ECAlgorithm.from_jwk(_json.dumps(key_obj)), [alg]
+        if kty == "oct":
+            k = key_obj.get("k", "")
+            if k:
+                pad = 4 - len(k) % 4
+                return base64.urlsafe_b64decode(k + "=" * (pad % 4)), [alg]
     except Exception:
         pass
-    return raw
+    return raw, ["HS256"]
 
 
-_JWT_SECRET = _load_jwt_secret(os.getenv("SUPABASE_JWT_SECRET", ""))
+_JWT_SECRET, _JWT_ALGORITHMS = _load_jwt_secret(os.getenv("SUPABASE_JWT_SECRET", ""))
 _ALLOWED_EMAILS: set[str] = set(filter(None, os.getenv("ALLOWED_EMAILS", "").split(",")))
 
 app = FastAPI(title="CCS Compliant Cleaning Platform")
@@ -61,7 +67,7 @@ async def require_auth(authorization: str = Header(default="")) -> dict:
         raise HTTPException(status_code=401, detail="Authentication required")
     token = authorization[7:]
     try:
-        payload = jwt.decode(token, _JWT_SECRET, algorithms=["HS256"], audience="authenticated")
+        payload = jwt.decode(token, _JWT_SECRET, algorithms=_JWT_ALGORITHMS, audience="authenticated")
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired session — please log in again")
     if _ALLOWED_EMAILS and payload.get("email") not in _ALLOWED_EMAILS:
