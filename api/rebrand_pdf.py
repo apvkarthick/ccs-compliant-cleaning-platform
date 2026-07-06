@@ -151,12 +151,22 @@ def _replace_text_on_page(
         ("sales@cleanplus.com.au", CCS["email"]),
     ]
 
+    page_width = page.rect.width
     for old_text, new_text in replacements:
         if not old_text:
             continue
         hits = page.search_for(old_text)
         for rect in hits:
-            page.add_redact_annot(rect, text=new_text, fontsize=0, align=fitz.TEXT_ALIGN_LEFT)
+            # Expand rect rightward if replacement is longer than original
+            # so the new text isn't clipped invisible in a too-narrow box
+            char_ratio = len(new_text) / max(len(old_text), 1)
+            expanded = fitz.Rect(
+                rect.x0,
+                rect.y0,
+                min(rect.x0 + rect.width * char_ratio * 1.15, page_width - 4),
+                rect.y1,
+            )
+            page.add_redact_annot(expanded, text=new_text, fontsize=9, align=fitz.TEXT_ALIGN_LEFT)
             changes.append(f"Replaced '{old_text[:40]}'")
 
     if changes:
