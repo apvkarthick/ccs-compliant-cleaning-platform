@@ -149,6 +149,8 @@ def _replace_text_on_page(
         ("cleanplus.com.au", CCS["website"]),
         ("info@cleanplus.com.au", CCS["email"]),
         ("sales@cleanplus.com.au", CCS["email"]),
+        ("http://www.compliantcs.com.au", CCS["website"]),
+        ("http://compliantcs.com.au", CCS["website"]),
     ]
 
     page_width = page.rect.width
@@ -190,7 +192,7 @@ def _replace_link_annotations(doc: fitz.Document, changes: list[str]) -> None:
                 if "mailto:" in uri.lower():
                     new_uri = f"mailto:{CCS['email']}"
                 else:
-                    new_uri = f"http://{CCS['website']}/"
+                    new_uri = CCS["website"]
             if new_uri != uri:
                 link["uri"] = new_uri
                 page.update_link(link)

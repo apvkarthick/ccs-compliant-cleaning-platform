@@ -13,14 +13,15 @@ from docx.oxml.ns import qn
 
 CCS = {
     "supplier_name": "Compliant Cleaning Supplies & Systems",
-    "address": "86 Crockford Street, Northgate QLD 4013",
+    "address": "86 Crockford Street, NORTHGATE QLD 4013",
+    "po_box": "PO Box 258, Hamilton Central QLD 4007",
     "telephone": "1300 314 491",
     "emergency": "131126",
     "email": "sales@compliantcs.com.au",
-    "website": "www.compliantcs.com.au",
+    "website": "https://www.compliantcs.com.au/",
 }
 _CCS_EMAIL_URL = "mailto:sales@compliantcs.com.au"
-_CCS_WEB_URL = "http://www.compliantcs.com.au/"
+_CCS_WEB_URL = "https://www.compliantcs.com.au/"
 
 LOGO_PATH = Path(__file__).parent / "assets" / "ccs_logo.png"
 
