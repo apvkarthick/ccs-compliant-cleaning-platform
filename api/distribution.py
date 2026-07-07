@@ -8,9 +8,12 @@ import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+import re
 from urllib.parse import quote, urlencode
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+_UUID_RE = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', re.IGNORECASE)
 
 
 def build_test_distribution(
@@ -179,7 +182,9 @@ def _tracked_document(
     public_base_url: str,
     secret: str,
 ) -> dict[str, str]:
-    document_id = str(document.get("id") or product.get("code") or product.get("name") or document.get("url"))
+    _url = str(document.get("url", ""))
+    _url_uuid = (m.group(0) if (m := _UUID_RE.search(_url)) else "")
+    document_id = str(document.get("id") or _url_uuid or product.get("code") or product.get("name") or _url)
     redirect_url = str(document.get("url", ""))
     chemical_name = str(product.get("name") or product.get("code") or "")
     delivery_url = redirect_url
