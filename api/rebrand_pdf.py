@@ -39,8 +39,11 @@ def rebrand_pdf(pdf_bytes: bytes, sds_date: str | None = None) -> tuple[bytes, d
     search_terms = _supplier_search_terms(old_supplier) if old_supplier else []
     changes: list[str] = []
 
-    for page in doc:
-        page_changes = _replace_text_on_page(page, search_terms, old_address, old_phone, old_sds_date, today)
+    for page_idx, page in enumerate(doc):
+        page_changes = _replace_text_on_page(
+            page, search_terms, old_address, old_phone, old_sds_date, today,
+            header_only=(page_idx == 0),
+        )
         changes.extend(page_changes)
 
     _replace_link_annotations(doc, changes)
@@ -169,47 +172,54 @@ def _replace_text_on_page(
     old_phone: str,
     old_date: str = "",
     new_date: str = "",
+    header_only: bool = False,
 ) -> list[str]:
     changes: list[str] = []
+    page_height = page.rect.height
+    page_width = page.rect.width
+    # Supplier block is always in the top half of page 1; never replace in body text
+    header_y_max = page_height * 0.50 if header_only else page_height
 
-    replacements: list[tuple[str, str]] = []
-
+    # Header-restricted replacements (supplier name, address, phone)
+    header_replacements: list[tuple[str, str]] = []
     for term in supplier_terms:
-        replacements.append((term, CCS["supplier_name"]))
-
+        header_replacements.append((term, CCS["supplier_name"]))
     if old_address:
-        replacements.append((old_address, CCS["address"]))
+        header_replacements.append((old_address, CCS["address"]))
     if old_phone:
-        replacements.append((old_phone, CCS["telephone"]))
-    if old_date and new_date:
-        replacements.append((old_date, new_date))
+        header_replacements.append((old_phone, CCS["telephone"]))
 
-    # Replace any URL-like text on the page that isn't already CCS
+    # All-page replacements (date, URLs, emails)
+    full_replacements: list[tuple[str, str]] = []
+    if old_date and new_date:
+        full_replacements.append((old_date, new_date))
     page_text = page.get_text("text")
     for url in re.findall(r'https?://[^\s<>"\']+|www\.[^\s<>"\']+', page_text, re.IGNORECASE):
         if "compliantcs.com.au" not in url.lower():
-            replacements.append((url, CCS["website"]))
+            full_replacements.append((url, CCS["website"]))
     for email in re.findall(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', page_text):
         if "compliantcs.com.au" not in email.lower():
-            replacements.append((email, CCS["email"]))
+            full_replacements.append((email, CCS["email"]))
 
-    page_width = page.rect.width
-    for old_text, new_text in replacements:
+    def _redact(old_text: str, new_text: str, y_max: float) -> None:
         if not old_text:
-            continue
-        hits = page.search_for(old_text)
-        for rect in hits:
-            # Expand rect rightward if replacement is longer than original
-            # so the new text isn't clipped invisible in a too-narrow box
+            return
+        for rect in page.search_for(old_text):
+            if rect.y0 > y_max:
+                continue
             char_ratio = len(new_text) / max(len(old_text), 1)
             expanded = fitz.Rect(
-                rect.x0,
-                rect.y0,
+                rect.x0, rect.y0,
                 min(rect.x0 + rect.width * char_ratio * 1.15, page_width - 4),
                 rect.y1,
             )
             page.add_redact_annot(expanded, text=new_text, fontsize=9, align=fitz.TEXT_ALIGN_LEFT)
             changes.append(f"Replaced '{old_text[:40]}'")
+
+    for old_text, new_text in header_replacements:
+        _redact(old_text, new_text, header_y_max)
+    for old_text, new_text in full_replacements:
+        _redact(old_text, new_text, page_height)
 
     if changes:
         page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
