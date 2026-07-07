@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CCS — Distribution Desk</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;background:#edf2f5;color:#17202a;min-height:100vh;padding:24px}
+  .shell{max-width:1100px;margin:0 auto}
+  .eyebrow{font-size:0.72rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#2C6B33;margin-bottom:2px}
+  h1{font-size:2rem;font-weight:800;color:#17202a}
+  header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+  .nav-link{font-size:0.85rem;color:#2C6B33;text-decoration:none;font-weight:600;border:1px solid #2C6B33;padding:6px 14px;border-radius:6px}
+  .nav-link:hover{background:#2C6B33;color:#fff}
+
+  .layout{display:grid;grid-template-columns:320px 1fr;gap:20px;align-items:start}
+  @media(max-width:780px){.layout{grid-template-columns:1fr}}
+
+  .card{background:#fff;border:1px solid #d8e1e8;border-radius:8px;padding:20px;box-shadow:0 4px 16px rgba(23,32,42,.06);margin-bottom:16px}
+  label{display:block;font-size:0.82rem;font-weight:600;color:#34495e;margin-bottom:6px}
+  input[type=file]{display:block;width:100%;font-size:0.85rem;padding:8px;border:1px dashed #a0b0be;border-radius:6px;background:#f8fafc;cursor:pointer}
+  textarea{width:100%;padding:9px 10px;border:1px solid #c8d6e0;border-radius:6px;font-size:0.85rem;font-family:inherit;resize:vertical;background:#fafcfd}
+  .toggle-row{display:flex;align-items:center;gap:8px;margin:10px 0}
+  .toggle-row input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:#2C6B33}
+  .toggle-row label{margin:0;font-weight:500;color:#34495e;cursor:pointer}
+
+  button.primary{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:11px 16px;background:#2C6B33;color:#fff;border:none;border-radius:7px;font-weight:700;font-size:0.9rem;cursor:pointer;margin-top:10px;transition:background .15s}
+  button.primary:hover:not(:disabled){background:#245829}
+  button.primary:disabled{opacity:.55;cursor:not-allowed}
+  button.secondary{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:10px 16px;background:#fff;color:#2C6B33;border:1.5px solid #2C6B33;border-radius:7px;font-weight:700;font-size:0.9rem;cursor:pointer;margin-top:8px;transition:all .15s}
+  button.secondary:hover:not(:disabled){background:#f0f8f1}
+  button.secondary:disabled{opacity:.45;cursor:not-allowed}
+
+  .notice{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:7px;font-size:0.85rem;margin-top:12px;line-height:1.4}
+  .notice.error{background:#fef2f2;border:1px solid #fca5a5;color:#991b1b}
+  .notice.success{background:#f0fdf4;border:1px solid #86efac;color:#166534}
+  .notice.warning{background:#fffbeb;border:1px solid #fcd34d;color:#92400e}
+
+  /* Status pill */
+  .status-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:0.8rem;font-weight:600}
+  .status-pill.neutral{background:#f1f5f9;color:#475569}
+  .status-pill.success{background:#dcfce7;color:#166534}
+  .status-pill.sending{background:#fef9c3;color:#854d0e}
+
+  /* Empty state */
+  .empty-state{text-align:center;padding:60px 20px;color:#8899aa}
+  .empty-state svg{margin:0 auto 16px;display:block;opacity:.4}
+  .empty-state h2{font-size:1.1rem;color:#607080;margin-bottom:6px}
+  .empty-state p{font-size:0.85rem;line-height:1.5;max-width:400px;margin:0 auto}
+
+  /* Preview table */
+  .section-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px}
+  .section-head h2{font-size:1.1rem;font-weight:700}
+  .count-badge{background:#e0f2fe;color:#0369a1;font-size:0.78rem;font-weight:700;padding:3px 10px;border-radius:10px}
+  .info-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:16px}
+  .info-item{background:#f8fafc;border:1px solid #e2eaef;border-radius:6px;padding:10px 12px}
+  .info-item span{display:block;font-size:0.72rem;font-weight:600;color:#8899aa;text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px}
+  .info-item strong{font-size:0.88rem;color:#1a2535}
+  .table-wrap{overflow-x:auto;border-radius:6px;border:1px solid #e2eaef}
+  table{width:100%;border-collapse:collapse;font-size:0.83rem}
+  th{background:#2C6B33;color:#fff;font-weight:700;padding:9px 12px;text-align:left;white-space:nowrap}
+  td{padding:8px 12px;border-bottom:1px solid #f0f4f7;color:#253545;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#f8fafc}
+  .doc-link{color:#0369a1;text-decoration:none;font-weight:600;font-size:0.8rem;white-space:nowrap}
+  .doc-link:hover{text-decoration:underline}
+  .missing{color:#ef4444;font-size:0.8rem;font-weight:600}
+  .resolved{color:#16a34a;font-size:0.8rem;font-weight:600}
+
+  /* Send result */
+  .message-list{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+  .message-item{background:#f8fafc;border:1px solid #e2eaef;border-radius:6px;padding:10px 14px;display:flex;flex-direction:column;gap:3px}
+  .message-item strong{font-size:0.85rem;color:#17202a}
+  .message-item span{font-size:0.8rem;color:#607080}
+
+  .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div>
+      <p class="eyebrow">Compliant Cleaning Supplies</p>
+      <h1>Distribution Desk</h1>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span id="status-pill" class="status-pill neutral">Awaiting workbook</span>
+      <a href="/rebrand" class="nav-link">Rebrand SDS</a>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- Left panel -->
+    <div>
+      <div class="card">
+        <label for="wb-file">Client workbook (.xlsx)</label>
+        <input type="file" id="wb-file" accept=".xlsx,.xlsm">
+        <button class="primary" id="btn-preview" onclick="doPreview()">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Preview workbook
+        </button>
+      </div>
+
+      <div class="card">
+        <label for="contacts">Test contacts (one per line)</label>
+        <textarea id="contacts" rows="5" placeholder="Name Surname &lt;email@example.com&gt;&#10;Another Person &lt;other@example.com&gt;"></textarea>
+        <div class="toggle-row">
+          <input type="checkbox" id="dry-run" checked>
+          <label for="dry-run">Dry run (no emails sent)</label>
+        </div>
+        <button class="primary" id="btn-send" onclick="doSend()" disabled>
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          Process test distribution
+        </button>
+      </div>
+
+      <div id="error-box" style="display:none"></div>
+    </div>
+
+    <!-- Right panel -->
+    <div id="main-panel">
+      <div class="card empty-state">
+        <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+        </svg>
+        <h2>Upload the client workbook</h2>
+        <p>Preview will show each product's SDS and Risk Assessment links, plus the customer details parsed from the sheet.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let previewData = null;
+
+function setStatus(text, cls) {
+  const el = document.getElementById('status-pill');
+  el.textContent = text;
+  el.className = 'status-pill ' + cls;
+}
+
+function showError(msg) {
+  const box = document.getElementById('error-box');
+  box.innerHTML = `<div class="notice error"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>${msg}</span></div>`;
+  box.style.display = 'block';
+}
+
+function clearError() {
+  const box = document.getElementById('error-box');
+  box.style.display = 'none';
+  box.innerHTML = '';
+}
+
+function parseContacts(text) {
+  return text.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(line => {
+    const m = line.match(/^(.*?)<([^>]+)>$/);
+    if (m) return { name: m[1].trim(), email: m[2].trim() };
+    const parts = line.split(',');
+    if (parts.length >= 2) return { name: parts[0].trim(), email: parts[1].trim() };
+    return { name: '', email: line };
+  }).filter(c => c.email.includes('@'));
+}
+
+async function doPreview() {
+  const fileInput = document.getElementById('wb-file');
+  if (!fileInput.files.length) { showError('Select a workbook first.'); return; }
+  clearError();
+  const btn = document.getElementById('btn-preview');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Parsing…';
+  setStatus('Parsing…', 'sending');
+
+  const fd = new FormData();
+  fd.append('file', fileInput.files[0]);
+
+  try {
+    const res = await fetch('/workbook/preview', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Upload failed');
+    previewData = data;
+    renderPreview(data);
+    document.getElementById('btn-send').disabled = false;
+    setStatus('Workbook parsed', 'success');
+
+    // Pre-fill contacts from workbook if available
+    if (data.contacts && data.contacts.length) {
+      document.getElementById('contacts').value = data.contacts
+        .map(c => `${c.name || c.company || 'Contact'} <${c.email}>`).join('\n');
+    }
+  } catch (err) {
+    showError(err.message);
+    setStatus('Awaiting workbook', 'neutral');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Preview workbook';
+  }
+}
+
+async function doSend() {
+  if (!previewData) { showError('Preview a workbook first.'); return; }
+  const contacts = parseContacts(document.getElementById('contacts').value);
+  if (!contacts.length) { showError('Add at least one valid email.'); return; }
+  clearError();
+  const btn = document.getElementById('btn-send');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Processing…';
+  setStatus('Sending…', 'sending');
+
+  try {
+    const res = await fetch('/distribution/test-send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        preview: previewData,
+        contacts,
+        dry_run: document.getElementById('dry-run').checked,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Distribution failed');
+    renderSendResult(data);
+    setStatus(data.dry_run ? 'Dry run complete' : 'Sent', 'success');
+  } catch (err) {
+    showError(err.message);
+    setStatus('Workbook parsed', 'success');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Process test distribution';
+  }
+}
+
+function docCell(doc) {
+  if (!doc || !doc.matched) return '<span class="missing">Missing</span>';
+  return `<a class="doc-link" href="${doc.url}" target="_blank" rel="noreferrer">Open ↗</a>`;
+}
+
+function renderPreview(data) {
+  const missing = data.missing_documents ? data.missing_documents.length : 0;
+  const missingNote = missing > 0
+    ? `<div class="notice warning" style="margin-top:12px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span>${missing} product(s) missing source documents</span></div>`
+    : '';
+
+  const rows = (data.products || []).map(p => `
+    <tr>
+      <td><strong>${p.code || '-'}</strong></td>
+      <td>${p.name || '-'}</td>
+      <td>${docCell(p.sds)}</td>
+      <td>${docCell(p.risk_assessment)}</td>
+      <td>${p.sds_expiry || '-'}</td>
+    </tr>`).join('');
+
+  document.getElementById('main-panel').innerHTML = `
+    <div class="card">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Preview</p>
+          <h2>${(data.register && data.register.title) || 'Chemical Register'}</h2>
+        </div>
+        <span class="count-badge">${(data.products || []).length} products</span>
+      </div>
+      <div class="info-grid">
+        <div class="info-item"><span>Customer</span><strong>${(data.customer && data.customer.company) || 'Not found'}</strong></div>
+        <div class="info-item"><span>Contact</span><strong>${(data.customer && data.customer.contact_name) || 'Not found'}</strong></div>
+        <div class="info-item"><span>Phone</span><strong>${(data.customer && data.customer.phone) || 'Not found'}</strong></div>
+        <div class="info-item"><span>Workbook date</span><strong>${(data.register && data.register.date) || 'Not found'}</strong></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Code</th><th>Product</th><th>SDS</th><th>Risk Assessment</th><th>SDS Expiry</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      ${missingNote}
+    </div>`;
+}
+
+function renderSendResult(data) {
+  const msgs = (data.messages || []).map(m => `
+    <div class="message-item">
+      <strong>${m.to || ''}</strong>
+      <span>${m.subject || ''}</span>
+    </div>`).join('');
+
+  const panel = document.getElementById('main-panel');
+  panel.insertAdjacentHTML('beforeend', `
+    <div class="card">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Distribution result</p>
+          <h2>${(data.summary && data.summary.messages) || 0} email payloads</h2>
+        </div>
+        <span class="count-badge">${data.dry_run ? 'Dry run' : 'Live'}</span>
+      </div>
+      <div class="info-grid">
+        <div class="info-item"><span>Contacts</span><strong>${(data.summary && data.summary.contacts) || 0}</strong></div>
+        <div class="info-item"><span>Products</span><strong>${(data.summary && data.summary.products) || 0}</strong></div>
+        <div class="info-item"><span>GHL</span><strong>${(data.ghl && data.ghl.status) || 'prepared'}</strong></div>
+        <div class="info-item"><span>Supabase</span><strong>${(data.supabase && data.supabase.status) || 'prepared'}</strong></div>
+      </div>
+      <div class="message-list">${msgs}</div>
+    </div>`);
+}
+</script>
+</body>
+</html>

@@ -95,6 +95,11 @@ def rebrand_ui() -> HTMLResponse:
     return HTMLResponse((ASSETS_DIR / "rebrand.html").read_text(encoding="utf-8"))
 
 
+@app.get("/distribution", response_class=HTMLResponse)
+def distribution_ui() -> HTMLResponse:
+    return HTMLResponse((ASSETS_DIR / "distribution.html").read_text(encoding="utf-8"))
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "ccs-api"}
@@ -109,7 +114,6 @@ def enqueue_ping() -> dict[str, str]:
 @app.post("/workbook/preview")
 async def preview_workbook(
     file: UploadFile = File(...),
-    _auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
     if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm")):
         raise HTTPException(status_code=400, detail="Upload an .xlsx or .xlsm client workbook")
@@ -126,15 +130,13 @@ async def preview_workbook(
 @app.post("/register/preview")
 async def preview_register(
     file: UploadFile = File(...),
-    _auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
-    return await preview_workbook(file, _auth)
+    return await preview_workbook(file)
 
 
 @app.post("/distribution/test-send")
 def test_send_distribution(
     request: DistributionRequest,
-    _auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
     return process_distribution(
         preview=request.preview,
