@@ -24,7 +24,7 @@ def _detect_sds_date(doc: fitz.Document) -> str:
         return ""
     text = doc[0].get_text("text")
     m = re.search(
-        r'SDS\s*Date[:\t\s]+(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})',
+        r'SDS\s*Date[:\t\s\n]+(\d{1,2}\s+[A-Za-z]+\s+\d{4}|\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})',
         text, re.IGNORECASE,
     )
     return m.group(1) if m else ""
@@ -66,15 +66,39 @@ def _detect_supplier_fields(doc: fitz.Document) -> tuple[str, str, str]:
         return "", "", ""
 
     page = doc[0]
+    lines = page.get_text("text").splitlines()
 
-    # Pass 1 — inline: label and value on the same line
-    for line in page.get_text("text").splitlines():
+    # Pass 1 — scan all lines; detect inline supplier and next-line phone/address
+    supplier = address = phone = ""
+    for i, line in enumerate(lines):
         stripped = line.strip()
-        for label in _SUPPLIER_LABELS:
-            if re.match(re.escape(label), stripped, re.IGNORECASE):
-                after = stripped[len(label):].strip().lstrip(":").strip()
-                if after:
-                    return after, "", ""
+
+        if not supplier:
+            for label in _SUPPLIER_LABELS:
+                if re.match(re.escape(label), stripped, re.IGNORECASE):
+                    after = stripped[len(label):].strip().lstrip(":").strip()
+                    if after:
+                        supplier = after
+                        break
+
+        if not phone:
+            for label in _PHONE_LABELS:
+                if re.match(re.escape(label) + r'\s*$', stripped, re.IGNORECASE):
+                    nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
+                    if nxt:
+                        phone = nxt
+                    break
+
+        if not address:
+            for label in _ADDRESS_LABELS:
+                if re.match(re.escape(label) + r'\s*$', stripped, re.IGNORECASE):
+                    nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
+                    if nxt:
+                        address = nxt
+                    break
+
+    if supplier:
+        return supplier, address, phone
 
     # Pass 2 — spatial: two-column table where labels are in a left block
     # and values are in a right block at the same vertical band
