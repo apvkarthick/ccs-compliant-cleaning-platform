@@ -425,7 +425,7 @@ CUSTOMER_EMAIL_HEADERS = ["email", "email address", "contact email", "customer e
 CUSTOMER_PHONE_HEADERS = ["phone", "phone number", "mobile", "contact phone"]
 
 PRODUCT_CODE_HEADERS = ["product code", "code", "sku", "item code", "chemical code"]
-PRODUCT_NAME_HEADERS = ["product", "product name", "chemical", "chemical name", "sds product"]
+PRODUCT_NAME_HEADERS = ["product", "product name", "chemical", "chemical name", "sds product", "name of substance", "substance name"]
 SDS_URL_HEADERS = ["sds url", "sds link", "sds pdf link", "sds pdf url", "sds pdf", "sds"]
 RISK_URL_HEADERS = ["risk assessment url", "risk assessment link", "risk url", "risk link", "risk assessment"]
 REGISTER_URL_HEADERS = ["chemical register url", "chemical register link", "register url", "register link"]

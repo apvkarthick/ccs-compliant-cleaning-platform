@@ -297,8 +297,8 @@ function renderSendResult(data) {
       <div class="info-grid">
         <div class="info-item"><span>Contacts</span><strong>${(data.summary && data.summary.contacts) || 0}</strong></div>
         <div class="info-item"><span>Products</span><strong>${(data.summary && data.summary.products) || 0}</strong></div>
-        <div class="info-item"><span>GHL</span><strong>${(data.ghl && data.ghl.status) || 'prepared'}</strong></div>
-        <div class="info-item"><span>Supabase</span><strong>${(data.supabase && data.supabase.status) || 'prepared'}</strong></div>
+        <div class="info-item"><span>Email</span><strong>${(data.ghl && data.ghl.status) || 'prepared'}</strong></div>
+        <div class="info-item"><span>Audit log</span><strong>${(data.supabase && data.supabase.status) || 'prepared'}</strong></div>
       </div>
       <div class="message-list">${msgs}</div>
     </div>`);
