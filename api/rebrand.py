@@ -31,10 +31,6 @@ _SUPPLIER_FIELDS: list[tuple[str, str, str]] = [
     ("Address", "address", "tab_value"),
     ("Telephone", "telephone", "tab_value"),
     ("Emergency", "emergency", "tab_value"),
-    ("Website", "website", "tab_value"),
-    ("Web", "website", "tab_value"),
-    ("Email", "email", "tab_value"),
-    ("E-mail", "email", "tab_value"),
 ]
 
 _CCS_DOMAIN = "compliantcs.com.au"
