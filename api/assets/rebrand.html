@@ -8,89 +8,207 @@
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;background:#edf2f5;color:#17202a;min-height:100vh;padding:24px}
   .shell{max-width:960px;margin:0 auto}
-  header{display:flex;align-items:baseline;gap:16px;margin-bottom:20px}
-  header a{font-size:0.82rem;color:#0f766e;text-decoration:none}
-  header a:hover{text-decoration:underline}
+  header{display:flex;align-items:baseline;gap:16px;margin-bottom:24px}
   .eyebrow{font-size:0.72rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#2C6B33;margin-bottom:2px}
   h1{font-size:2rem;font-weight:800;color:#17202a}
-  .card{background:#fff;border:1px solid #d8e1e8;border-radius:8px;padding:24px;box-shadow:0 14px 36px rgba(23,32,42,.07);margin-bottom:16px}
-  .drop-zone{border:2px dashed #d8e1e8;border-radius:8px;padding:40px 24px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+  .card{background:#fff;border:1px solid #d8e1e8;border-radius:8px;padding:24px;box-shadow:0 4px 16px rgba(23,32,42,.06);margin-bottom:16px}
+
+  /* How it works */
+  .steps{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:16px}
+  .step{background:#f8fafc;border:1px solid #e2eaef;border-radius:8px;padding:16px 18px;display:flex;gap:12px;align-items:flex-start}
+  .step-num{background:#0f766e;color:#fff;font-size:0.75rem;font-weight:800;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+  .step-body strong{display:block;font-size:0.88rem;margin-bottom:3px}
+  .step-body p{font-size:0.8rem;color:#607080;line-height:1.45}
+
+  /* What gets changed */
+  .what-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+  .what-box{border-radius:6px;padding:14px 16px}
+  .what-box.docx{background:#e0f2fe;border:1px solid #7dd3fc}
+  .what-box.pdf{background:#fce7f3;border:1px solid #f9a8d4}
+  .what-box .badge{display:inline-block;font-size:0.68rem;font-weight:800;padding:2px 8px;border-radius:10px;margin-bottom:8px}
+  .what-box.docx .badge{background:#0369a1;color:#fff}
+  .what-box.pdf .badge{background:#9d174d;color:#fff}
+  .what-box ul{margin:0;padding-left:16px;font-size:0.82rem;color:#374151;line-height:1.7}
+
+  /* Upload zone */
+  .drop-zone{border:2px dashed #d8e1e8;border-radius:8px;padding:44px 24px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;position:relative}
   .drop-zone:hover,.drop-zone.over{border-color:#0f766e;background:#f0fdf4}
-  .drop-zone p{color:#667789;font-size:0.9rem;margin-top:8px}
-  .drop-zone strong{font-size:1rem;color:#17202a}
+  .drop-zone .icon{margin-bottom:10px;color:#94a3b8}
+  .drop-zone strong{font-size:1rem;color:#17202a;display:block;margin-bottom:4px}
+  .drop-zone p{color:#667789;font-size:0.85rem;line-height:1.5}
+  .drop-zone .tip{margin-top:10px;font-size:0.78rem;color:#94a3b8;background:#f8fafc;border:1px solid #e2eaef;border-radius:4px;padding:6px 10px;display:inline-block}
   input[type=file]{display:none}
-  .btn{display:inline-flex;align-items:center;gap:8px;padding:11px 22px;border-radius:6px;font-weight:700;font-size:0.9rem;cursor:pointer;border:none;transition:background .15s}
-  .btn-primary{background:#0f766e;color:#fff}
-  .btn-primary:hover{background:#115e59}
-  .btn-primary:disabled{background:#94a3b8;cursor:not-allowed}
-  .btn-secondary{background:#f4f7f9;color:#17202a;border:1px solid #d8e1e8;margin-left:8px}
-  .btn-secondary:hover{background:#e2eaef}
+
+  .file-list{margin-top:14px;display:flex;flex-direction:column;gap:6px}
+  .file-pill{display:flex;align-items:center;gap:10px;background:#f8fafc;border:1px solid #e2eaef;border-radius:6px;padding:8px 12px;font-size:0.85rem}
+  .file-pill .fname{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .file-pill .fsize{color:#94a3b8;font-size:0.78rem;flex-shrink:0}
+  .type-badge{display:inline-block;font-size:0.68rem;font-weight:700;padding:1px 7px;border-radius:10px;flex-shrink:0}
+  .type-docx{background:#e0f2fe;color:#0369a1}
+  .type-pdf{background:#fce7f3;color:#9d174d}
+
   .actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:16px}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:11px 22px;border-radius:6px;font-weight:700;font-size:0.9rem;cursor:pointer;border:none;transition:background .15s,opacity .15s}
+  .btn-primary{background:#0f766e;color:#fff}
+  .btn-primary:hover:not(:disabled){background:#115e59}
+  .btn-primary:disabled{opacity:.5;cursor:not-allowed}
+  .btn-secondary{background:#f4f7f9;color:#17202a;border:1px solid #d8e1e8}
+  .btn-secondary:hover{background:#e2eaef}
+
+  progress{width:100%;height:5px;border-radius:3px;accent-color:#0f766e;margin-top:14px}
+  .progress-label{font-size:0.78rem;color:#667789;margin-top:4px}
+
+  /* Results */
   table{width:100%;border-collapse:collapse;font-size:0.88rem}
   th{text-align:left;font-size:0.72rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#667789;padding:8px 12px;border-bottom:2px solid #d8e1e8}
   td{padding:10px 12px;border-bottom:1px solid #f0f4f7;vertical-align:middle}
   tr:last-child td{border-bottom:none}
   .status-badge{display:inline-block;font-size:0.73rem;font-weight:700;padding:2px 10px;border-radius:20px}
   .s-pending{background:#f1f5f9;color:#475569}
-  .s-processing{background:#eff6ff;color:#1d4ed8}
+  .s-processing{background:#eff6ff;color:#1d4ed8;animation:pulse 1.2s ease-in-out infinite}
   .s-done{background:#f0fdf4;color:#15803d}
   .s-error{background:#fff1f2;color:#be123c}
-  .dl-link{display:inline-flex;align-items:center;gap:4px;color:#0f766e;font-weight:600;font-size:0.85rem;text-decoration:none}
-  .dl-link:hover{text-decoration:underline}
-  .notice{display:flex;align-items:flex-start;gap:8px;padding:12px 16px;border-radius:6px;font-size:0.85rem;margin-top:12px}
-  .notice.err{background:#fff1f2;border:1px solid #fecdd3;color:#be123c}
-  .notice.info{background:#f0f9ff;border:1px solid #bae6fd;color:#0369a1}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+
+  .dl-btn{display:inline-flex;align-items:center;gap:6px;background:#0f766e;color:#fff;font-size:0.82rem;font-weight:700;padding:6px 14px;border-radius:5px;text-decoration:none;transition:background .15s}
+  .dl-btn:hover{background:#115e59}
+  .replaced-info{font-size:0.78rem;color:#475569;margin-top:2px}
+  .replaced-info span{color:#94a3b8}
+
+  .notice{display:flex;align-items:flex-start;gap:10px;padding:12px 16px;border-radius:6px;font-size:0.83rem;line-height:1.5}
   .notice.warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e}
-  .type-badge{display:inline-block;font-size:0.68rem;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:6px;vertical-align:middle}
-  .type-docx{background:#e0f2fe;color:#0369a1}
-  .type-pdf{background:#fce7f3;color:#9d174d}
-  .replaced{font-size:0.76rem;color:#94a3b8;margin-top:2px}
-  progress{width:100%;height:4px;border-radius:2px;accent-color:#0f766e;margin-top:8px}
+  .notice svg{flex-shrink:0;margin-top:1px}
+
+  .section-title{font-size:0.72rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#667789;margin-bottom:12px}
+  .download-tip{display:flex;align-items:center;gap:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:10px 14px;font-size:0.83rem;color:#15803d;margin-top:14px}
+
+  @media(max-width:640px){
+    .steps{grid-template-columns:1fr}
+    .what-grid{grid-template-columns:1fr}
+  }
 </style>
 </head>
 <body>
 <div class="shell">
+
   <header>
     <div>
       <p class="eyebrow">Compliant Cleaning Supplies</p>
-      <h1>Rebrand SDS</h1>
+      <h1>SDS Rebrand Tool</h1>
     </div>
-    <a href="/">← Distribution Desk</a>
   </header>
 
+  <!-- How it works -->
   <div class="card">
+    <p class="section-title">How to use this tool</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Upload your files</strong>
+          <p>Drag and drop one or more SDS documents onto the upload area, or click it to browse. Supports <strong>.docx</strong> and <strong>.pdf</strong> files. You can upload multiple files at once.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Click "Rebrand files"</strong>
+          <p>The tool processes each file and replaces all supplier branding with CCS branding — logo, supplier name, and contact details — automatically.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Download rebranded files</strong>
+          <p>Once processing is complete, download each file individually or use <strong>Download all</strong> to save everything at once. Files are named <em>originalname_ccs_branded</em>.</p>
+        </div>
+      </div>
+    </div>
+
+    <p class="section-title" style="margin-top:8px">What gets replaced</p>
+    <div class="what-grid">
+      <div class="what-box docx">
+        <span class="badge">DOCX</span>
+        <ul>
+          <li>Supplier logo → CCS logo</li>
+          <li>Supplier name &amp; address block</li>
+          <li>SDS issue / revision date</li>
+          <li>All body text references to the old supplier</li>
+          <li>Emergency contact phone numbers</li>
+        </ul>
+      </div>
+      <div class="what-box pdf">
+        <span class="badge">PDF</span>
+        <ul>
+          <li>Supplier name text (all pages)</li>
+          <li>First header logo image → CCS logo</li>
+          <li>Hyperlink URLs</li>
+          <li>SDS issue / revision date</li>
+          <li><em>Note: font styling may differ slightly from original</em></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="notice warn" style="margin-top:14px">
+      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span>Only upload SDS files that CCS has the rights to rebrand. Do not upload third-party safety documents unless you have written authorisation to modify them.</span>
+    </div>
+  </div>
+
+  <!-- Upload -->
+  <div class="card">
+    <p class="section-title">Step 1 — Upload files</p>
     <div class="drop-zone" id="dropZone">
-      <svg width="36" height="36" fill="none" stroke="#94a3b8" stroke-width="1.5" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M8 8l4-4 4 4"/></svg>
-      <strong>Drop .docx or .pdf files here</strong>
-      <p>or click to browse — multiple files, mixed types supported</p>
+      <div class="icon">
+        <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M8 8l4-4 4 4"/></svg>
+      </div>
+      <strong>Drag &amp; drop .docx or .pdf files here</strong>
+      <p>or <u style="cursor:pointer">click to browse your computer</u></p>
+      <span class="tip">Multiple files supported — they will all be processed in one go</span>
       <input type="file" id="fileInput" accept=".docx,.pdf" multiple>
     </div>
+
+    <div class="file-list" id="fileList"></div>
 
     <div class="actions">
       <button class="btn btn-primary" id="rebrandBtn" disabled>
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M8 8l4-4 4 4"/></svg>
         Rebrand files
       </button>
-      <button class="btn btn-secondary" id="downloadAllBtn" style="display:none">
-        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M16 12l-4 4-4-4"/></svg>
-        Download all
-      </button>
-      <button class="btn btn-secondary" id="clearBtn" style="display:none">Clear</button>
+      <button class="btn btn-secondary" id="clearBtn" style="display:none">Clear all</button>
     </div>
-    <div id="progressWrap" style="display:none"><progress id="progressBar" value="0" max="1"></progress></div>
+
+    <div id="progressWrap" style="display:none">
+      <progress id="progressBar" value="0" max="1"></progress>
+      <p class="progress-label" id="progressLabel">Processing…</p>
+    </div>
   </div>
 
+  <!-- Results -->
   <div class="card" id="resultsCard" style="display:none">
+    <p class="section-title">Step 2 — Download rebranded files</p>
+
     <table>
-      <thead><tr><th>File</th><th>Type</th><th>Status</th><th>Replaced</th><th>Download</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Original file</th>
+          <th>Type</th>
+          <th>Status</th>
+          <th>Changes made</th>
+          <th>Download</th>
+        </tr>
+      </thead>
       <tbody id="jobTable"></tbody>
     </table>
+
+    <div class="download-tip" id="downloadAllWrap" style="display:none">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M16 12l-4 4-4-4"/></svg>
+      <span>All files ready — </span>
+      <button class="btn btn-primary" id="downloadAllBtn" style="padding:6px 16px;font-size:0.82rem">Download all</button>
+      <span style="font-size:0.8rem;color:#667789;margin-left:4px">saves each file to your Downloads folder</span>
+    </div>
   </div>
 
-  <div class="notice info">
-    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
-    <span><strong>DOCX:</strong> replaces supplier logo, supplier block, SDS date, and all body text references. <strong>PDF:</strong> replaces supplier name text (all pages), logo (first header image), and hyperlink URLs. Font styling in PDF output may differ from the original.</span>
-  </div>
 </div>
 
 <script>
@@ -98,20 +216,20 @@ const API_DOCX = '/api/rebrand/sds';
 const API_PDF  = '/api/rebrand/pdf';
 
 let files = [];
-let jobs = [];
+let jobs  = [];
 
-// Auth disabled for testing
-const _authToken = localStorage.getItem('ccs_access_token') || '';
-
-const dropZone    = document.getElementById('dropZone');
-const fileInput   = document.getElementById('fileInput');
-const rebrandBtn  = document.getElementById('rebrandBtn');
-const dlAllBtn    = document.getElementById('downloadAllBtn');
-const clearBtn    = document.getElementById('clearBtn');
-const jobTable    = document.getElementById('jobTable');
-const resultsCard = document.getElementById('resultsCard');
-const progressWrap= document.getElementById('progressWrap');
-const progressBar = document.getElementById('progressBar');
+const dropZone     = document.getElementById('dropZone');
+const fileInput    = document.getElementById('fileInput');
+const fileList     = document.getElementById('fileList');
+const rebrandBtn   = document.getElementById('rebrandBtn');
+const clearBtn     = document.getElementById('clearBtn');
+const jobTable     = document.getElementById('jobTable');
+const resultsCard  = document.getElementById('resultsCard');
+const progressWrap = document.getElementById('progressWrap');
+const progressBar  = document.getElementById('progressBar');
+const progressLabel= document.getElementById('progressLabel');
+const dlAllWrap    = document.getElementById('downloadAllWrap');
+const dlAllBtn     = document.getElementById('downloadAllBtn');
 
 const VALID_EXT = /\.(docx|pdf)$/i;
 
@@ -124,18 +242,36 @@ dropZone.addEventListener('drop', e => {
 });
 fileInput.addEventListener('change', () => setFiles(Array.from(fileInput.files)));
 
-function fileType(name) {
-  return /\.pdf$/i.test(name) ? 'pdf' : 'docx';
+function fileType(name) { return /\.pdf$/i.test(name) ? 'pdf' : 'docx'; }
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
 function setFiles(picked) {
   files = picked;
-  jobs = files.map(f => ({ name: f.name, type: fileType(f.name), status: 'pending', url: null, error: null, changes: 0, oldSupplier: '' }));
+  jobs  = files.map(f => ({ name: f.name, size: f.size, type: fileType(f.name), status: 'pending', url: null, error: null, changes: 0, oldSupplier: '' }));
   rebrandBtn.disabled = files.length === 0;
-  rebrandBtn.textContent = `Rebrand ${files.length} file${files.length !== 1 ? 's' : ''}`;
-  dlAllBtn.style.display = 'none';
+  rebrandBtn.textContent = files.length
+    ? `Rebrand ${files.length} file${files.length !== 1 ? 's' : ''}`
+    : 'Rebrand files';
   clearBtn.style.display = files.length ? 'inline-flex' : 'none';
+  dlAllWrap.style.display = 'none';
+  renderFilePills();
   renderJobs();
+}
+
+function renderFilePills() {
+  if (!files.length) { fileList.innerHTML = ''; return; }
+  fileList.innerHTML = files.map(f => `
+    <div class="file-pill">
+      <span class="type-badge type-${fileType(f.name)}">${fileType(f.name).toUpperCase()}</span>
+      <span class="fname">${esc(f.name)}</span>
+      <span class="fsize">${fmtSize(f.size)}</span>
+    </div>
+  `).join('');
 }
 
 clearBtn.addEventListener('click', () => {
@@ -143,10 +279,11 @@ clearBtn.addEventListener('click', () => {
   fileInput.value = '';
   rebrandBtn.disabled = true;
   rebrandBtn.textContent = 'Rebrand files';
-  dlAllBtn.style.display = 'none';
   clearBtn.style.display = 'none';
+  fileList.innerHTML = '';
   resultsCard.style.display = 'none';
   progressWrap.style.display = 'none';
+  dlAllWrap.style.display = 'none';
 });
 
 rebrandBtn.addEventListener('click', runRebrand);
@@ -154,25 +291,27 @@ rebrandBtn.addEventListener('click', runRebrand);
 async function runRebrand() {
   if (!files.length) return;
   rebrandBtn.disabled = true;
+  clearBtn.style.display = 'none';
   progressWrap.style.display = 'block';
   progressBar.value = 0; progressBar.max = files.length;
+  resultsCard.style.display = 'block';
 
   for (let i = 0; i < files.length; i++) {
     jobs[i].status = 'processing';
+    progressLabel.textContent = `Processing ${i + 1} of ${files.length}: ${jobs[i].name}`;
     renderJobs();
     try {
       const fd = new FormData();
       fd.append('file', files[i]);
       const api = jobs[i].type === 'pdf' ? API_PDF : API_DOCX;
-      const res = await fetch(api, { method: 'POST', body: fd, headers: _authToken ? { Authorization: `Bearer ${_authToken}` } : {} });
+      const res = await fetch(api, { method: 'POST', body: fd });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
         throw new Error(err.detail || 'Server error');
       }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
       jobs[i].status = 'done';
-      jobs[i].url = url;
+      jobs[i].url = URL.createObjectURL(blob);
       jobs[i].changes = parseInt(res.headers.get('X-CCS-Changes') || '0');
       jobs[i].oldSupplier = res.headers.get('X-CCS-Old-Supplier') || '';
     } catch (err) {
@@ -183,8 +322,11 @@ async function runRebrand() {
     renderJobs();
   }
 
+  const done = jobs.filter(j => j.status === 'done');
+  progressLabel.textContent = `Done — ${done.length} of ${files.length} file${files.length !== 1 ? 's' : ''} rebranded successfully.`;
   rebrandBtn.disabled = false;
-  if (jobs.filter(j => j.status === 'done').length > 1) dlAllBtn.style.display = 'inline-flex';
+  clearBtn.style.display = 'inline-flex';
+  if (done.length > 1) dlAllWrap.style.display = 'flex';
 }
 
 dlAllBtn.addEventListener('click', () => {
@@ -197,35 +339,40 @@ function outFilename(job) {
 
 function triggerDownload(job) {
   const a = document.createElement('a');
-  a.href = job.url;
-  a.download = outFilename(job);
+  a.href = job.url; a.download = outFilename(job);
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
 function renderJobs() {
   if (!jobs.length) { resultsCard.style.display = 'none'; return; }
-  resultsCard.style.display = 'block';
-  jobTable.innerHTML = jobs.map((job, i) => `
+  jobTable.innerHTML = jobs.map(job => `
     <tr>
       <td><strong style="font-size:0.88rem">${esc(job.name)}</strong></td>
       <td><span class="type-badge type-${job.type}">${job.type.toUpperCase()}</span></td>
       <td><span class="status-badge s-${job.status}">${statusLabel(job)}</span></td>
       <td>
-        ${job.oldSupplier ? `<span style="font-size:0.8rem;color:#475569">${esc(job.oldSupplier)}</span><div class="replaced">${job.changes} change${job.changes !== 1 ? 's' : ''}</div>` : ''}
-        ${job.error ? `<span style="font-size:0.8rem;color:#be123c">${esc(job.error)}</span>` : ''}
+        ${job.status === 'done' ? `
+          <span style="font-size:0.82rem;color:#15803d;font-weight:600">${job.changes} replacement${job.changes !== 1 ? 's' : ''}</span>
+          ${job.oldSupplier ? `<div class="replaced-info"><span>Replaced:</span> ${esc(job.oldSupplier)}</div>` : ''}
+        ` : ''}
+        ${job.status === 'error' ? `<span style="font-size:0.8rem;color:#be123c">${esc(job.error)}</span>` : ''}
+        ${job.status === 'pending' || job.status === 'processing' ? '<span style="color:#94a3b8;font-size:0.8rem">—</span>' : ''}
       </td>
       <td>
-        ${job.url ? `<a class="dl-link" href="${job.url}" download="${esc(outFilename(job))}">
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M16 12l-4 4-4-4"/></svg>
-          Download
-        </a>` : '—'}
+        ${job.url ? `
+          <a class="dl-btn" href="${job.url}" download="${esc(outFilename(job))}">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M16 12l-4 4-4-4"/></svg>
+            Download
+          </a>
+          <div style="font-size:0.72rem;color:#94a3b8;margin-top:3px">${esc(outFilename(job))}</div>
+        ` : '<span style="color:#94a3b8">—</span>'}
       </td>
     </tr>
   `).join('');
 }
 
-function statusLabel(job) {
-  return { pending: 'Pending', processing: 'Processing…', done: 'Done', error: 'Error' }[job.status] || job.status;
+function statusLabel(j) {
+  return { pending: 'Waiting', processing: 'Processing…', done: 'Done ✓', error: 'Failed' }[j.status] || j.status;
 }
 
 function esc(s) {
