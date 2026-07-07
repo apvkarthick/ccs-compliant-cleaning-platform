@@ -18,16 +18,29 @@ _ADDRESS_LABELS = ["Address"]
 _PHONE_LABELS = ["Telephone", "Phone", "Tel"]
 
 
+def _detect_sds_date(doc: fitz.Document) -> str:
+    """Extract the SDS date value from page 1."""
+    if not doc.page_count:
+        return ""
+    text = doc[0].get_text("text")
+    m = re.search(
+        r'SDS\s*Date[:\t\s]+(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})',
+        text, re.IGNORECASE,
+    )
+    return m.group(1) if m else ""
+
+
 def rebrand_pdf(pdf_bytes: bytes, sds_date: str | None = None) -> tuple[bytes, dict]:
     today = sds_date or date.today().strftime("%d/%m/%Y")
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
 
     old_supplier, old_address, old_phone = _detect_supplier_fields(doc)
+    old_sds_date = _detect_sds_date(doc)
     search_terms = _supplier_search_terms(old_supplier) if old_supplier else []
     changes: list[str] = []
 
     for page in doc:
-        page_changes = _replace_text_on_page(page, search_terms, old_address, old_phone)
+        page_changes = _replace_text_on_page(page, search_terms, old_address, old_phone, old_sds_date, today)
         changes.extend(page_changes)
 
     _replace_link_annotations(doc, changes)
@@ -130,6 +143,8 @@ def _replace_text_on_page(
     supplier_terms: list[str],
     old_address: str,
     old_phone: str,
+    old_date: str = "",
+    new_date: str = "",
 ) -> list[str]:
     changes: list[str] = []
 
@@ -142,6 +157,8 @@ def _replace_text_on_page(
         replacements.append((old_address, CCS["address"]))
     if old_phone:
         replacements.append((old_phone, CCS["telephone"]))
+    if old_date and new_date:
+        replacements.append((old_date, new_date))
 
     # Replace any URL-like text on the page that isn't already CCS
     page_text = page.get_text("text")

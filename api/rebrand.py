@@ -165,11 +165,15 @@ def _replace_after_tab(para, new_value: str) -> None:
                 run.text = ""
 
     if value_started and first_value_run is None:
-        # Tab was the last char of a run; append a new value run
         para.add_run(new_value)
     elif not value_started:
-        # No tab found — fall back to full replacement
-        _set_full_run(para, new_value)
+        # No tab — try to preserve label before colon separator
+        full_text = para.text
+        colon_m = re.search(r'^(.*?:\s*)', full_text)
+        if colon_m:
+            _set_full_run(para, colon_m.group(1) + new_value)
+        else:
+            _set_full_run(para, new_value)
 
 
 def _replace_text_in_runs(para, old: str, new: str) -> None:
