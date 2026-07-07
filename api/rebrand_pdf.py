@@ -143,15 +143,14 @@ def _replace_text_on_page(
     if old_phone:
         replacements.append((old_phone, CCS["telephone"]))
 
-    # Hardcoded domain/email replacements for known old suppliers
-    replacements += [
-        ("www.cleanplus.com.au", CCS["website"]),
-        ("cleanplus.com.au", CCS["website"]),
-        ("info@cleanplus.com.au", CCS["email"]),
-        ("sales@cleanplus.com.au", CCS["email"]),
-        ("http://www.compliantcs.com.au", CCS["website"]),
-        ("http://compliantcs.com.au", CCS["website"]),
-    ]
+    # Replace any URL-like text on the page that isn't already CCS
+    page_text = page.get_text("text")
+    for url in re.findall(r'https?://[^\s<>"\']+|www\.[^\s<>"\']+', page_text, re.IGNORECASE):
+        if "compliantcs.com.au" not in url.lower():
+            replacements.append((url, CCS["website"]))
+    for email in re.findall(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', page_text):
+        if "compliantcs.com.au" not in email.lower():
+            replacements.append((email, CCS["email"]))
 
     page_width = page.rect.width
     for old_text, new_text in replacements:
@@ -185,14 +184,13 @@ def _replace_link_annotations(doc: fitz.Document, changes: list[str]) -> None:
     for page in doc:
         for link in page.get_links():
             uri = link.get("uri", "")
-            if not uri:
+            if not uri or "compliantcs.com.au" in uri.lower():
                 continue
             new_uri = uri
-            if any(d in uri.lower() for d in _OLD_DOMAINS):
-                if "mailto:" in uri.lower():
-                    new_uri = f"mailto:{CCS['email']}"
-                else:
-                    new_uri = CCS["website"]
+            if uri.lower().startswith("mailto:"):
+                new_uri = f"mailto:{CCS['email']}"
+            elif uri.startswith(("http://", "https://")):
+                new_uri = CCS["website"]
             if new_uri != uri:
                 link["uri"] = new_uri
                 page.update_link(link)

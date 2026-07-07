@@ -26,13 +26,18 @@ _CCS_WEB_URL = "https://www.compliantcs.com.au/"
 LOGO_PATH = Path(__file__).parent / "assets" / "ccs_logo.png"
 
 # Maps paragraph label prefixes to CCS field keys (mode: "full" or "tab_value")
-# Email/Website are hyperlink paragraphs — handled by _replace_hyperlink_display_text only
 _SUPPLIER_FIELDS: list[tuple[str, str, str]] = [
     ("Supplier Name", "supplier_name", "full"),
     ("Address", "address", "tab_value"),
     ("Telephone", "telephone", "tab_value"),
     ("Emergency", "emergency", "tab_value"),
+    ("Website", "website", "tab_value"),
+    ("Web", "website", "tab_value"),
+    ("Email", "email", "tab_value"),
+    ("E-mail", "email", "tab_value"),
 ]
+
+_CCS_DOMAIN = "compliantcs.com.au"
 
 
 def rebrand_sds(docx_bytes: bytes, sds_date: str | None = None) -> tuple[bytes, dict]:
@@ -178,32 +183,31 @@ def _replace_text_in_runs(para, old: str, new: str) -> None:
 # ---------------------------------------------------------------------------
 
 def _replace_hyperlink_display_text(doc: Document, old_supplier: str) -> None:
-    """Update the visible text of hyperlinks that reference old supplier domains."""
-    old_domains = ["cleanplus.com.au"]
-    if old_supplier:
-        # Build a slug from old supplier name for fuzzy matching
-        slug = "".join(c.lower() for c in old_supplier if c.isalnum() or c == ".")
-        old_domains.append(slug[:20])  # partial match safety
+    """Replace display text of any non-CCS hyperlink with CCS contact details."""
+    def _fix(text: str) -> str | None:
+        if _CCS_DOMAIN in text.lower():
+            return None
+        if "@" in text:
+            return CCS["email"]
+        if re.search(r"https?://|www\.", text, re.IGNORECASE):
+            return CCS["website"]
+        return None
 
     for para in doc.paragraphs:
         for hyperlink in para._p.findall(".//" + qn("w:hyperlink")):
             for t_el in hyperlink.findall(".//" + qn("w:t")):
-                text = t_el.text or ""
-                if any(d in text.lower() for d in old_domains):
-                    if "@" in text:
-                        t_el.text = CCS["email"]
-                    else:
-                        t_el.text = CCS["website"]
+                replacement = _fix(t_el.text or "")
+                if replacement:
+                    t_el.text = replacement
 
-    # Also update headers
     for section in doc.sections:
         header = section.header
         for para in header.paragraphs:
             for hyperlink in para._p.findall(".//" + qn("w:hyperlink")):
                 for t_el in hyperlink.findall(".//" + qn("w:t")):
-                    text = t_el.text or ""
-                    if any(d in text.lower() for d in old_domains):
-                        t_el.text = CCS["email"] if "@" in text else CCS["website"]
+                    replacement = _fix(t_el.text or "")
+                    if replacement:
+                        t_el.text = replacement
 
 
 # ---------------------------------------------------------------------------
@@ -241,16 +245,16 @@ def _patch_zip(docx_bytes: bytes) -> bytes:
             if logo_bytes and fname_lower in header_image_paths:
                 data = logo_bytes
 
-            # Patch hyperlink URLs in any .rels file
+            # Patch hyperlink URLs in any .rels file — replace any non-CCS link
             if fname_lower.endswith(".rels"):
                 text = data.decode("utf-8")
                 text = re.sub(
-                    r'(Target=")(mailto:[^"]*cleanplus[^"]*)',
+                    r'(Target=")(mailto:(?![^"]*compliantcs\.com\.au)[^"]+)',
                     lambda m: m.group(1) + _CCS_EMAIL_URL,
                     text, flags=re.IGNORECASE,
                 )
                 text = re.sub(
-                    r'(Target=")(https?://[^"]*cleanplus[^"]*)',
+                    r'(Target=")(https?://(?![^"]*compliantcs\.com\.au)[^"]+)',
                     lambda m: m.group(1) + _CCS_WEB_URL,
                     text, flags=re.IGNORECASE,
                 )
