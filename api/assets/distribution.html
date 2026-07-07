@@ -177,7 +177,7 @@ async function doPreview() {
   fd.append('file', fileInput.files[0]);
 
   try {
-    const res = await fetch('/workbook/preview', { method: 'POST', body: fd });
+    const res = await fetch('/api/workbook/preview', { method: 'POST', body: fd });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Upload failed');
     previewData = data;
@@ -210,7 +210,7 @@ async function doSend() {
   setStatus('Sending…', 'sending');
 
   try {
-    const res = await fetch('/distribution/test-send', {
+    const res = await fetch('/api/distribution/test-send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
