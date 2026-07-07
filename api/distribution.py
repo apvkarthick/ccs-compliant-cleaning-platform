@@ -74,6 +74,7 @@ def process_distribution(
         return distribution
 
     distribution["ghl"] = _send_messages_via_ghl(distribution["messages"])
+    _ensure_documents_in_supabase(distribution["messages"])
     distribution["distribution_rows"] = distribution_rows_for_supabase(
         distribution["messages"],
         dry_run=False,
@@ -357,6 +358,43 @@ def _send_messages_via_ghl(messages: list[dict[str, Any]]) -> dict[str, Any]:
             continue
         results.append(_post_json(endpoint, payload, _ghl_headers(token)))
     return {"status": "sent", "results": results}
+
+
+def _ensure_documents_in_supabase(messages: list[dict[str, Any]]) -> None:
+    """Upsert document stubs into ccs_documents so the FK on ccs_distributions is satisfied."""
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not supabase_url or not service_key:
+        return
+    seen: set[str] = set()
+    docs = []
+    for message in messages:
+        for doc in message.get("documents", []):
+            url = str(doc.get("source_url", ""))
+            m = _UUID_RE.search(url)
+            if not m:
+                continue
+            doc_id = m.group(0)
+            if doc_id in seen:
+                continue
+            seen.add(doc_id)
+            docs.append({
+                "id": doc_id,
+                "product_code": doc.get("product_code", ""),
+                "chemical_name": doc.get("chemical_name", ""),
+                "branded_url": url,
+            })
+    if not docs:
+        return
+    _post_json(
+        f"{supabase_url}/rest/v1/ccs_documents",
+        docs,
+        {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Prefer": "resolution=ignore-duplicates,return=minimal",
+        },
+    )
 
 
 def _log_events_to_supabase(events: list[dict[str, Any]]) -> dict[str, Any]:
