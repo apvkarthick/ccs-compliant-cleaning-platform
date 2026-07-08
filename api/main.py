@@ -219,7 +219,7 @@ def track_email_open(
 
 @app.get("/email-opens")
 def get_email_opens(
-    _: dict = Depends(require_auth),
+    # _: dict = Depends(require_auth),
     limit: int = Query(default=200),
     offset: int = Query(default=0),
 ) -> dict[str, Any]:

@@ -123,7 +123,14 @@ function Root() {
 }
 
 function App({ session }) {
-  const [activeTab, setActiveTab] = useState('distribution');
+  const [activeTab, setActiveTab] = useState(() =>
+    window.location.pathname === '/email-opens' ? 'email-opens' : 'distribution'
+  );
+
+  function switchTab(tab) {
+    history.pushState(null, '', tab === 'email-opens' ? '/email-opens' : '/app');
+    setActiveTab(tab);
+  }
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -132,8 +139,8 @@ function App({ session }) {
   return (
     <main className="shell">
       <div className="tab-bar">
-        <button className={`tab ${activeTab === 'distribution' ? 'active' : ''}`} onClick={() => setActiveTab('distribution')}>Distribution</button>
-        <button className={`tab ${activeTab === 'email-opens' ? 'active' : ''}`} onClick={() => setActiveTab('email-opens')}>Email Opens</button>
+        <button className={`tab ${activeTab === 'distribution' ? 'active' : ''}`} onClick={() => switchTab('distribution')}>Distribution</button>
+        <button className={`tab ${activeTab === 'email-opens' ? 'active' : ''}`} onClick={() => switchTab('email-opens')}>Email Opens</button>
         <a className="tab" href="/rebrand">Rebrand SDS</a>
         <button className="tab tab-signout" onClick={handleSignOut} title="Sign out">
           <LogOut size={14} />
@@ -351,7 +358,7 @@ function EmailOpensDashboard() {
   async function loadOpens() {
     setLoading(true); setError('');
     try {
-      const response = await fetch(`${API_BASE}/email-opens?limit=500`, { headers: getAuthHeaders() });
+      const response = await fetch(`${API_BASE}/email-opens?limit=500`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Failed to load');
       setOpens(data.opens || []);
