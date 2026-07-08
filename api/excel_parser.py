@@ -342,13 +342,15 @@ def _products_from_sheet(
         if selected and not _is_selected(selected):
             continue
 
-        sds_url = _cell_by_headers(sheet, row_number, headers, SDS_URL_HEADERS)
-        risk_url = _cell_by_headers(sheet, row_number, headers, RISK_URL_HEADERS)
-        row_register_url = _cell_by_headers(sheet, row_number, headers, REGISTER_URL_HEADERS)
+        sds_url = _url_by_headers(sheet, row_number, headers, SDS_URL_HEADERS)
+        risk_url = _url_by_headers(sheet, row_number, headers, RISK_URL_HEADERS)
+        row_register_url = _url_by_headers(sheet, row_number, headers, REGISTER_URL_HEADERS)
         register_url = register_url or row_register_url
 
         sds_file = _match_sds_file(code, source_files) if code else None
         risk_file = _match_risk_file(code, source_files) if code else None
+        sds_url_match = _url_document_result(sds_url) if sds_url else _url_document_result("")
+        risk_url_match = _url_document_result(risk_url) if risk_url else _url_document_result("")
 
         products.append(
             {
@@ -365,8 +367,16 @@ def _products_from_sheet(
                 "packing_group": "",
                 "use": _cell_by_headers(sheet, row_number, headers, USE_HEADERS),
                 "sds_expiry": _cell_by_headers(sheet, row_number, headers, EXPIRY_HEADERS),
-                "sds": _url_document_result(sds_url) if sds_url else _document_result(sds_file, public_base_url),
-                "risk_assessment": _url_document_result(risk_url) if risk_url else _document_result(risk_file, public_base_url),
+                "sds": (
+                    sds_url_match
+                    if sds_url_match["matched"]
+                    else _document_result(sds_file, public_base_url)
+                ),
+                "risk_assessment": (
+                    _document_result(risk_file, public_base_url)
+                    if risk_file
+                    else (risk_url_match if risk_url_match["matched"] else _document_result(None, public_base_url))
+                ),
             }
         )
     return products, register_url
@@ -377,6 +387,16 @@ def _cell_by_headers(sheet: Any, row_number: int, headers: dict[str, int], candi
     if not header:
         return ""
     return _clean(sheet.cell(row=row_number, column=headers[header]).value)
+
+
+def _url_by_headers(sheet: Any, row_number: int, headers: dict[str, int], candidates: list[str]) -> str:
+    header = _find_header(headers, candidates)
+    if not header:
+        return ""
+    cell = sheet.cell(row=row_number, column=headers[header])
+    if cell.hyperlink and cell.hyperlink.target:
+        return _clean(cell.hyperlink.target)
+    return _clean(cell.value)
 
 
 def _find_header(headers: dict[str, int], candidates: list[str]) -> str:

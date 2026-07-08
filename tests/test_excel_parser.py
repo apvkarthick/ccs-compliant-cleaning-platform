@@ -159,3 +159,62 @@ def test_parse_client_workbook_attaches_site_emails_to_products():
     assert len(products) == 2
     assert products[0]["site_emails"] == ["alice@example.com"]
     assert products[1]["site_emails"] == ["bob@example.com"]
+
+
+def test_parse_client_workbook_risk_document_is_matched_by_risk_code_filename():
+    workbook = Workbook()
+    chemicals = workbook.active
+    chemicals.title = "Chemical SDS Links"
+    chemicals.append(
+        [
+            "Product Code",
+            "Chemical Name",
+            "Selected",
+            "SDS PDF Link",
+            "Risk Assessment Link",
+        ]
+    )
+    chemicals.append(
+        [
+            "BLEACH5L",
+            "Bleach 4%",
+            "yes",
+            "https://cdn.example.com/sds/bleach.pdf",
+            "https://cdn.example.com/risk/wrong-risk-link.pdf",
+        ]
+    )
+
+    stream = BytesIO()
+    workbook.save(stream)
+
+    preview = parse_client_workbook(
+        stream.getvalue(),
+        source_files=["RISK_BLEACH5L_ Bleach 4% Risk Assessment.pdf"],
+        public_base_url="https://ccs.example.test",
+    )
+
+    risk = preview["products"][0]["risk_assessment"]
+    assert risk["matched"] is True
+    assert risk["url"] == "https://ccs.example.test/api/documents/source/RISK_BLEACH5L_%20Bleach%204%25%20Risk%20Assessment.pdf"
+
+
+def test_parse_client_workbook_uses_hyperlink_targets_for_hosted_pdf_urls():
+    workbook = Workbook()
+    chemicals = workbook.active
+    chemicals.title = "Chemical SDS Links"
+    chemicals.append(["Product Code", "Chemical Name", "Selected", "SDS PDF Link", "Risk Assessment Link"])
+    chemicals.append(["BLEACH5L", "Bleach 4%", "yes", "SDS", "RISK"])
+
+    chemicals["D2"].hyperlink = "https://client.example.com/files/BLEACH5L_bleach_sds.pdf"
+    chemicals["E2"].hyperlink = "https://client.example.com/files/RISK_BLEACH5L_bleach_risk.pdf"
+
+    stream = BytesIO()
+    workbook.save(stream)
+
+    preview = parse_client_workbook(stream.getvalue(), source_files=[], public_base_url="https://ccs.example.test")
+    product = preview["products"][0]
+
+    assert product["sds"]["matched"] is True
+    assert product["sds"]["url"] == "https://client.example.com/files/BLEACH5L_bleach_sds.pdf"
+    assert product["risk_assessment"]["matched"] is True
+    assert product["risk_assessment"]["url"] == "https://client.example.com/files/RISK_BLEACH5L_bleach_risk.pdf"
