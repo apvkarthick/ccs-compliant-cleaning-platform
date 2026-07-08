@@ -123,12 +123,15 @@ function Root() {
 }
 
 function App({ session }) {
-  const [activeTab, setActiveTab] = useState(() =>
-    window.location.pathname === '/email-opens' ? 'email-opens' : 'distribution'
-  );
+  const [activeTab, setActiveTab] = useState(() => {
+    if (window.location.pathname === '/email-opens') return 'email-opens';
+    if (window.location.pathname === '/pdf-opens') return 'pdf-opens';
+    return 'distribution';
+  });
 
   function switchTab(tab) {
-    history.pushState(null, '', tab === 'email-opens' ? '/email-opens' : '/app');
+    const paths = { 'email-opens': '/email-opens', 'pdf-opens': '/pdf-opens', 'distribution': '/app' };
+    history.pushState(null, '', paths[tab] || '/app');
     setActiveTab(tab);
   }
 
@@ -141,6 +144,7 @@ function App({ session }) {
       <div className="tab-bar">
         <button className={`tab ${activeTab === 'distribution' ? 'active' : ''}`} onClick={() => switchTab('distribution')}>Distribution</button>
         <button className={`tab ${activeTab === 'email-opens' ? 'active' : ''}`} onClick={() => switchTab('email-opens')}>Email Opens</button>
+        <button className={`tab ${activeTab === 'pdf-opens' ? 'active' : ''}`} onClick={() => switchTab('pdf-opens')}>PDF Opens</button>
         <a className="tab" href="/rebrand">Rebrand SDS</a>
         <button className="tab tab-signout" onClick={handleSignOut} title="Sign out">
           <LogOut size={14} />
@@ -148,6 +152,7 @@ function App({ session }) {
       </div>
       {activeTab === 'distribution' && <DistributionDesk />}
       {activeTab === 'email-opens' && <EmailOpensDashboard />}
+      {activeTab === 'pdf-opens' && <PdfOpensDashboard />}
     </main>
   );
 }
@@ -428,6 +433,113 @@ function EmailOpensDashboard() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PDF Opens dashboard
+// ---------------------------------------------------------------------------
+
+function PdfOpensDashboard() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [filter, setFilter] = useState('all');
+
+  async function loadRows() {
+    setLoading(true); setError('');
+    try {
+      const response = await fetch(`${API_BASE}/document-opens?limit=500`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Failed to load');
+      setRows(data.rows || []);
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { loadRows(); }, []);
+
+  const filtered = useMemo(() => {
+    if (filter === 'opened') return rows.filter(r => r.status === 'downloaded');
+    if (filter === 'not-opened') return rows.filter(r => r.status !== 'downloaded');
+    return rows;
+  }, [rows, filter]);
+
+  const stats = useMemo(() => ({
+    total: rows.length,
+    opened: rows.filter(r => r.status === 'downloaded').length,
+    notOpened: rows.filter(r => r.status !== 'downloaded').length,
+  }), [rows]);
+
+  function fmt(ts) {
+    if (!ts) return '—';
+    return new Date(ts).toLocaleString('en-AU', { dateStyle: 'short', timeStyle: 'short' });
+  }
+
+  function chemName(row) {
+    return row.ccs_documents?.chemical_name || row.ccs_documents?.product_code || '—';
+  }
+
+  return (
+    <section className="workbench">
+      <div className="topbar">
+        <div>
+          <p className="eyebrow">Compliant Cleaning Supplies</p>
+          <h1>PDF Opens</h1>
+        </div>
+        <button className="tab" onClick={loadRows} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</button>
+      </div>
+      {error && <div className="notice error"><AlertCircle size={18} /><span>{error}</span></div>}
+      {!loading && rows.length > 0 && (
+        <div className="info-grid" style={{ margin: '0 0 1rem' }}>
+          <Info label="Total sent" value={String(stats.total)} />
+          <Info label="Opened" value={String(stats.opened)} />
+          <Info label="Not opened" value={String(stats.notOpened)} />
+          <Info label="Open rate" value={stats.total ? `${Math.round(stats.opened / stats.total * 100)}%` : '—'} />
+        </div>
+      )}
+      {!loading && rows.length > 0 && (
+        <div style={{ display: 'flex', gap: '0.5rem', margin: '0 0 1rem' }}>
+          {['all', 'opened', 'not-opened'].map(f => (
+            <button key={f} className={`tab ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)} style={{ fontSize: '0.8rem', padding: '4px 12px' }}>
+              {f === 'all' ? 'All' : f === 'opened' ? 'Opened' : 'Not opened'}
+            </button>
+          ))}
+        </div>
+      )}
+      {loading ? (
+        <div className="empty-state"><p>Loading…</p></div>
+      ) : filtered.length === 0 ? (
+        <div className="empty-state"><FileSpreadsheet size={34} /><h2>No records</h2><p>PDF delivery records appear here after emails are sent.</p></div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Chemical / Product</th>
+                <th>Status</th>
+                <th>Opened at</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((row, i) => (
+                <tr key={i}>
+                  <td>{row.customer_email}</td>
+                  <td>{chemName(row)}</td>
+                  <td>
+                    <span style={{ color: row.status === 'downloaded' ? '#2C6B33' : '#607080', fontWeight: 600 }}>
+                      {row.status === 'downloaded' ? 'Opened' : 'Not opened'}
+                    </span>
+                  </td>
+                  <td>{fmt(row.downloaded_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </section>

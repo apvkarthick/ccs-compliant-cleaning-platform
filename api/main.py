@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field
 
 from .distribution import (
+    fetch_document_opens,
     fetch_email_opens,
     process_distribution,
     record_download_acknowledgement,
@@ -222,6 +223,14 @@ def track_email_open(
             "Expires": "0",
         },
     )
+
+
+@app.get("/document-opens")
+def get_document_opens(
+    limit: int = Query(default=500),
+    offset: int = Query(default=0),
+) -> dict[str, Any]:
+    return fetch_document_opens(limit=limit, offset=offset)
 
 
 @app.get("/email-opens")
