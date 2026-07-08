@@ -124,6 +124,20 @@ def _compose_message(
         ]
     )
 
+    _base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
+    _secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
+    _contact_id = contact.get("id") or contact["email"]
+    if _base and _secret and contact["email"]:
+        pixel = email_open_pixel_url(
+            public_base_url=_base,
+            email=contact["email"],
+            contact_id=_contact_id,
+            secret=_secret,
+        )
+        html_lines.append(
+            f'<img src="{html.escape(pixel, quote=True)}" width="1" height="1" style="display:none;width:1px;height:1px;" alt="" />'
+        )
+
     return {
         "to": contact["email"],
         "name": contact["name"],
@@ -262,6 +276,63 @@ def tag_slug_for_chemical(chemical_name: str) -> str:
 def tracking_signature(document_id: str, contact_id: str, secret: str) -> str:
     payload = f"{document_id}:{contact_id}".encode("utf-8")
     return hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()[:16]
+
+
+def email_open_signature(email: str, contact_id: str, secret: str) -> str:
+    payload = f"open:{email}:{contact_id}".encode("utf-8")
+    return hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()[:16]
+
+
+def email_open_pixel_url(
+    *,
+    public_base_url: str,
+    email: str,
+    contact_id: str,
+    secret: str,
+) -> str:
+    query = urlencode({"email": email, "contact": contact_id, "sig": email_open_signature(email, contact_id, secret)})
+    return f"{public_base_url.rstrip('/')}/api/ccs-email-open?{query}"
+
+
+def validate_email_open_signature(email: str, contact_id: str, signature: str) -> bool:
+    secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
+    if not secret:
+        return False
+    expected = email_open_signature(email, contact_id, secret)
+    return hmac.compare_digest(expected, signature)
+
+
+def record_email_open(email: str, contact_id: str, user_agent: str, ip_address: str) -> dict[str, Any]:
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not supabase_url or not service_key:
+        return {"status": "skipped", "reason": "Supabase not configured"}
+    return _post_json(
+        f"{supabase_url}/rest/v1/ccs_email_opens",
+        {
+            "customer_email": email,
+            "contact_id": contact_id,
+            "opened_at": _now(),
+            "user_agent": (user_agent or "")[:500],
+            "ip_address": ip_address or "",
+        },
+        {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Prefer": "return=minimal",
+        },
+    )
+
+
+def fetch_email_opens(*, limit: int = 200, offset: int = 0) -> dict[str, Any]:
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not supabase_url or not service_key:
+        return {"opens": [], "error": "Supabase not configured"}
+    endpoint = f"{supabase_url}/rest/v1/ccs_email_opens?order=opened_at.desc&limit={limit}&offset={offset}"
+    response = _get_json(endpoint, {"apikey": service_key, "Authorization": f"Bearer {service_key}"})
+    body = response.get("body") or []
+    return {"opens": body if isinstance(body, list) else []}
 
 
 def tracking_url(

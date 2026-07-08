@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
-import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Link2, LogOut, Send, Upload } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Link2, LogOut, Mail, Send, Upload } from 'lucide-react';
 import './styles.css';
 
 const supabase = createClient(
@@ -123,6 +123,8 @@ function Root() {
 }
 
 function App({ session }) {
+  const [activeTab, setActiveTab] = useState('distribution');
+
   async function handleSignOut() {
     await supabase.auth.signOut();
   }
@@ -130,13 +132,15 @@ function App({ session }) {
   return (
     <main className="shell">
       <div className="tab-bar">
-        <button className="tab active">Distribution</button>
+        <button className={`tab ${activeTab === 'distribution' ? 'active' : ''}`} onClick={() => setActiveTab('distribution')}>Distribution</button>
+        <button className={`tab ${activeTab === 'email-opens' ? 'active' : ''}`} onClick={() => setActiveTab('email-opens')}>Email Opens</button>
         <a className="tab" href="/rebrand">Rebrand SDS</a>
         <button className="tab tab-signout" onClick={handleSignOut} title="Sign out">
           <LogOut size={14} />
         </button>
       </div>
-      <DistributionDesk />
+      {activeTab === 'distribution' && <DistributionDesk />}
+      {activeTab === 'email-opens' && <EmailOpensDashboard />}
     </main>
   );
 }
@@ -332,6 +336,94 @@ function SendResult({ result }) {
         ))}
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Email Opens dashboard
+// ---------------------------------------------------------------------------
+
+function EmailOpensDashboard() {
+  const [opens, setOpens] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  async function loadOpens() {
+    setLoading(true); setError('');
+    try {
+      const response = await fetch(`${API_BASE}/email-opens?limit=500`, { headers: getAuthHeaders() });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Failed to load');
+      setOpens(data.opens || []);
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { loadOpens(); }, []);
+
+  const byEmail = useMemo(() => {
+    const map = {};
+    for (const open of opens) {
+      const e = open.customer_email;
+      if (!map[e]) map[e] = { email: e, contact_id: open.contact_id, first: open.opened_at, last: open.opened_at, count: 0 };
+      map[e].count++;
+      if (open.opened_at < map[e].first) map[e].first = open.opened_at;
+      if (open.opened_at > map[e].last) map[e].last = open.opened_at;
+    }
+    return Object.values(map).sort((a, b) => (b.last || '').localeCompare(a.last || ''));
+  }, [opens]);
+
+  function fmt(ts) {
+    if (!ts) return '-';
+    return new Date(ts).toLocaleString('en-AU', { dateStyle: 'short', timeStyle: 'short' });
+  }
+
+  return (
+    <section className="workbench">
+      <div className="topbar">
+        <div>
+          <p className="eyebrow">Compliant Cleaning Supplies</p>
+          <h1>Email Opens</h1>
+        </div>
+        <button className="tab" onClick={loadOpens} disabled={loading}>
+          {loading ? 'Loading…' : 'Refresh'}
+        </button>
+      </div>
+      {error && <div className="notice error"><AlertCircle size={18} /><span>{error}</span></div>}
+      {loading ? (
+        <div className="empty-state"><p>Loading…</p></div>
+      ) : byEmail.length === 0 ? (
+        <div className="empty-state">
+          <Mail size={34} />
+          <h2>No opens recorded yet</h2>
+          <p>Opens appear here once clients open their SDS emails.</p>
+        </div>
+      ) : (
+        <div className="main-panel">
+          <div className="section-head">
+            <div><p className="eyebrow">Tracking</p><h2>{byEmail.length} unique recipients</h2></div>
+            <span className="count">{opens.length} total opens</span>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Email</th><th>First opened</th><th>Last opened</th><th style={{ textAlign: 'center' }}>Opens</th></tr>
+              </thead>
+              <tbody>
+                {byEmail.map(row => (
+                  <tr key={row.email}>
+                    <td>{row.email}</td>
+                    <td>{fmt(row.first)}</td>
+                    <td>{fmt(row.last)}</td>
+                    <td style={{ textAlign: 'center' }}>{row.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

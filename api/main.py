@@ -7,12 +7,19 @@ from typing import Any
 
 import jwt
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field
 
-from .distribution import process_distribution, record_download_acknowledgement, validate_tracking_signature
+from .distribution import (
+    fetch_email_opens,
+    process_distribution,
+    record_download_acknowledgement,
+    record_email_open,
+    validate_email_open_signature,
+    validate_tracking_signature,
+)
 from .excel_parser import list_source_documents, parse_client_workbook
 from .rebrand import rebrand_sds
 from .rebrand_pdf import rebrand_pdf
@@ -21,6 +28,7 @@ from .tasks import ping_task
 load_dotenv()
 
 APP_ROOT = Path(__file__).resolve().parents[1]
+_TRACKING_GIF = base64.b64decode("R0lGODlhAQABAIAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==")
 SOURCE_DIR = APP_ROOT / "storage" / "source"
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
@@ -185,6 +193,37 @@ def track_msds_download(
     response = HTMLResponse(page)
     response.headers["X-CCS-Acknowledgement"] = str(acknowledgement)
     return response
+
+
+@app.get("/ccs-email-open")
+def track_email_open(
+    request: Request,
+    email: str = Query(default=""),
+    contact: str = Query(default=""),
+    sig: str = Query(default=""),
+) -> Response:
+    if email and contact and sig and validate_email_open_signature(email, contact, sig):
+        ua = request.headers.get("user-agent", "")
+        ip = request.client.host if request.client else ""
+        record_email_open(email, contact, ua, ip)
+    return Response(
+        content=_TRACKING_GIF,
+        media_type="image/gif",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@app.get("/email-opens")
+def get_email_opens(
+    _: dict = Depends(require_auth),
+    limit: int = Query(default=200),
+    offset: int = Query(default=0),
+) -> dict[str, Any]:
+    return fetch_email_opens(limit=limit, offset=offset)
 
 
 @app.post("/rebrand/sds")
