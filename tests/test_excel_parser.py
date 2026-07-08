@@ -131,3 +131,31 @@ def test_parse_client_workbook_extracts_customers_products_and_pdf_links_across_
     assert preview["products"][0]["sds"]["url"] == "https://cdn.example.com/sds/allpurp.pdf"
     assert preview["products"][0]["risk_assessment"]["matched"] is False
     assert preview["products"][1]["risk_assessment"]["url"] == "https://cdn.example.com/risk/bleach.pdf"
+
+
+def test_parse_client_workbook_attaches_site_emails_to_products():
+    workbook = Workbook()
+    site_a = workbook.active
+    site_a.title = "Site A"
+    site_a.append(["Customer", "Contact Name", "Email"])
+    site_a.append(["Site A Pty Ltd", "Alice A", "alice@example.com"])
+    site_a.append([])
+    site_a.append(["Product Code", "Chemical Name", "Selected", "SDS PDF Link"])
+    site_a.append(["ALLPURP5L", "All Purpose Sanitiser Soak", "yes", "https://cdn.example.com/sds/allpurp.pdf"])
+
+    site_b = workbook.create_sheet("Site B")
+    site_b.append(["Customer", "Contact Name", "Email"])
+    site_b.append(["Site B Pty Ltd", "Bob B", "bob@example.com"])
+    site_b.append([])
+    site_b.append(["Product Code", "Chemical Name", "Selected", "SDS PDF Link"])
+    site_b.append(["ALLPURP5L", "All Purpose Sanitiser Soak", "yes", "https://cdn.example.com/sds/allpurp.pdf"])
+
+    stream = BytesIO()
+    workbook.save(stream)
+
+    preview = parse_client_workbook(stream.getvalue(), public_base_url="https://ccs.example.test")
+    products = preview["products"]
+
+    assert len(products) == 2
+    assert products[0]["site_emails"] == ["alice@example.com"]
+    assert products[1]["site_emails"] == ["bob@example.com"]

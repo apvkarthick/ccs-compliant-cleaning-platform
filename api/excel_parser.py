@@ -134,12 +134,17 @@ def _parse_structured_workbook(
     files = source_files or []
     contacts: list[dict[str, str]] = []
     products: list[dict[str, Any]] = []
+    sheet_contacts: dict[str, set[str]] = {}
     register_url = ""
 
     for sheet in workbook.worksheets:
         for header_row, headers in _header_rows(sheet):
             if _is_customer_header(headers):
-                contacts.extend(_contacts_from_sheet(sheet, header_row, headers))
+                parsed_contacts = _contacts_from_sheet(sheet, header_row, headers)
+                contacts.extend(parsed_contacts)
+                emails = {c.get("email", "").strip().lower() for c in parsed_contacts if c.get("email")}
+                if emails:
+                    sheet_contacts.setdefault(sheet.title, set()).update(emails)
             if _is_product_header(headers):
                 parsed_products, parsed_register_url = _products_from_sheet(
                     sheet,
@@ -150,6 +155,9 @@ def _parse_structured_workbook(
                 )
                 products.extend(parsed_products)
                 register_url = register_url or parsed_register_url
+
+    for product in products:
+        product["site_emails"] = sorted(sheet_contacts.get(str(product.get("sheet", "")), set()))
 
     customer = _customer_from_contacts(contacts)
     return {
@@ -264,9 +272,14 @@ def _find_email(sheet: Any) -> str:
     for row in sheet.iter_rows(min_row=1, max_row=25, values_only=True):
         for value in row:
             text = _clean(value)
-            if "@" in text and "." in text:
+            if _looks_like_email(text):
                 return text
     return ""
+
+
+def _looks_like_email(value: str) -> bool:
+    text = _clean(value)
+    return "@" in text and "." in text
 
 
 def _header_rows(sheet: Any) -> list[tuple[int, dict[str, int]]]:
@@ -303,7 +316,7 @@ def _contacts_from_sheet(sheet: Any, header_row: int, headers: dict[str, int]) -
         phone = _cell_by_headers(sheet, row_number, headers, CUSTOMER_PHONE_HEADERS)
         if not any([email, company, name, phone]):
             continue
-        if not email:
+        if not email or not _looks_like_email(email):
             continue
         contacts.append({"company": company, "name": name, "email": email, "phone": phone})
     return contacts

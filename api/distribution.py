@@ -90,17 +90,18 @@ def _compose_message(
     products: list[dict[str, Any]],
 ) -> dict[str, Any]:
     customer = preview.get("customer", {})
-    product_names = ", ".join(product.get("name", "") for product in products if product.get("name"))
-    subject_product = product_names if len(product_names) <= 72 else f"{len(products)} selected products"
+    contact_products = _products_for_contact(contact, products)
+    product_names = ", ".join(product.get("name", "") for product in contact_products if product.get("name"))
+    subject_product = product_names if len(product_names) <= 72 else f"{len(contact_products)} selected products"
     subject = f"CCS SDS pack: {subject_product}"
-    documents = _message_documents(contact, products, preview)
+    documents = _message_documents(contact, contact_products, preview)
     html_lines = [
         f"<p>Hi {html.escape(contact['name'] or 'there')},</p>",
         f"<p>Please find the SDS, chemical-register, and risk-assessment links for {html.escape(customer.get('company', 'your site'))}.</p>",
         "<ul>",
     ]
 
-    for product in products:
+    for product in contact_products:
         html_lines.append("<li>")
         html_lines.append(f"<strong>{html.escape(product.get('code', ''))} - {html.escape(product.get('name', ''))}</strong>")
         product_docs = [doc for doc in documents if doc["product_code"] == product.get("code", "")]
@@ -154,6 +155,7 @@ def _message_documents(
     preview: dict[str, Any],
 ) -> list[dict[str, str]]:
     documents: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
     public_base_url = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
     secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
     contact_id = contact.get("id") or contact["email"]
@@ -162,30 +164,48 @@ def _message_documents(
         for label, key in [("SDS", "sds"), ("Risk Assessment", "risk_assessment")]:
             document = product.get(key, {})
             if document.get("matched") and document.get("url"):
-                documents.append(
-                    _tracked_document(
-                        label=label,
-                        document=document,
-                        product=product,
-                        contact_id=contact_id,
-                        public_base_url=public_base_url,
-                        secret=secret,
-                    )
-                )
-        register = preview.get("register", {})
-        register_url = register.get("url")
-        if register_url:
-            documents.append(
-                _tracked_document(
-                    label="Chemical Register",
-                    document={"filename": register_url.rsplit("/", 1)[-1] or "Chemical Register", "url": register_url},
+                tracked = _tracked_document(
+                    label=label,
+                    document=document,
                     product=product,
                     contact_id=contact_id,
                     public_base_url=public_base_url,
                     secret=secret,
                 )
+                doc_key = (tracked["product_code"], tracked["label"], tracked["source_url"])
+                if doc_key not in seen:
+                    documents.append(tracked)
+                    seen.add(doc_key)
+        register = preview.get("register", {})
+        register_url = register.get("url")
+        if register_url:
+            tracked = _tracked_document(
+                label="Chemical Register",
+                document={"filename": register_url.rsplit("/", 1)[-1] or "Chemical Register", "url": register_url},
+                product=product,
+                contact_id=contact_id,
+                public_base_url=public_base_url,
+                secret=secret,
             )
+            doc_key = (tracked["product_code"], tracked["label"], tracked["source_url"])
+            if doc_key not in seen:
+                documents.append(tracked)
+                seen.add(doc_key)
     return documents
+
+
+def _products_for_contact(contact: dict[str, Any], products: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    email = str(contact.get("email", "")).strip().lower()
+    filtered: list[dict[str, Any]] = []
+    for product in products:
+        site_emails = product.get("site_emails")
+        if not site_emails:
+            filtered.append(product)
+            continue
+        normalized = {str(item).strip().lower() for item in site_emails if str(item).strip()}
+        if email in normalized:
+            filtered.append(product)
+    return filtered
 
 
 def _tracked_document(
@@ -322,6 +342,24 @@ def record_email_open(email: str, contact_id: str, user_agent: str, ip_address: 
             "Prefer": "return=minimal",
         },
     )
+
+
+def fetch_document_opens(*, limit: int = 500, offset: int = 0) -> dict[str, Any]:
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    table = os.getenv("SUPABASE_DISTRIBUTION_TABLE", "ccs_distributions")
+    if not supabase_url or not service_key:
+        return {"rows": [], "error": "Supabase not configured"}
+    endpoint = (
+        f"{supabase_url}/rest/v1/{table}"
+        f"?select=customer_email,ghl_contact_id,status,downloaded_at,ccs_documents(product_code,chemical_name)"
+        f"&status=neq.dry_run"
+        f"&order=downloaded_at.desc.nullslast"
+        f"&limit={limit}&offset={offset}"
+    )
+    response = _get_json(endpoint, {"apikey": service_key, "Authorization": f"Bearer {service_key}"})
+    body = response.get("body") or []
+    return {"rows": body if isinstance(body, list) else []}
 
 
 def fetch_email_opens(*, limit: int = 200, offset: int = 0) -> dict[str, Any]:

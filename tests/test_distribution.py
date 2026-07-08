@@ -92,3 +92,45 @@ def test_distribution_rows_skip_non_uuid_document_ids_for_ccs_distributions():
             "status": "sent",
         }
     ]
+
+
+def test_build_test_distribution_filters_products_by_site_email_and_dedupes_documents():
+    preview = {
+        "customer": {"company": "CCS"},
+        "register": {"title": "Client Workbook", "date": ""},
+        "products": [
+            {
+                "code": "ALLPURP5L",
+                "name": "All Purpose Sanitiser Soak",
+                "site_emails": ["site-a@example.com"],
+                "sds": {"matched": True, "filename": "allpurp.pdf", "url": "https://cdn.example.com/allpurp.pdf"},
+                "risk_assessment": {"matched": False, "url": None},
+            },
+            {
+                "code": "ALLPURP5L",
+                "name": "All Purpose Sanitiser Soak",
+                "site_emails": ["site-a@example.com"],
+                "sds": {"matched": True, "filename": "allpurp.pdf", "url": "https://cdn.example.com/allpurp.pdf"},
+                "risk_assessment": {"matched": False, "url": None},
+            },
+            {
+                "code": "BLEACH5L",
+                "name": "Bleach 4%",
+                "site_emails": ["site-b@example.com"],
+                "sds": {"matched": True, "filename": "bleach.pdf", "url": "https://cdn.example.com/bleach.pdf"},
+                "risk_assessment": {"matched": True, "filename": "risk-bleach.pdf", "url": "https://cdn.example.com/risk-bleach.pdf"},
+            },
+        ],
+    }
+
+    result = build_test_distribution(
+        preview=preview,
+        contacts=[{"name": "Site A", "email": "site-a@example.com"}],
+        dry_run=True,
+    )
+
+    message = result["messages"][0]
+    assert "All Purpose Sanitiser Soak" in message["subject"]
+    assert "Bleach 4%" not in message["html"]
+    assert len(message["documents"]) == 1
+    assert message["documents"][0]["source_url"] == "https://cdn.example.com/allpurp.pdf"
