@@ -227,10 +227,11 @@ def track_email_open(
 
 @app.get("/document-opens")
 def get_document_opens(
-    limit: int = Query(default=500),
+    email: str = Query(default=""),
+    limit: int = Query(default=200),
     offset: int = Query(default=0),
 ) -> dict[str, Any]:
-    return fetch_document_opens(limit=limit, offset=offset)
+    return fetch_document_opens(email=email, limit=limit, offset=offset)
 
 
 @app.get("/email-opens")

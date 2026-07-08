@@ -344,17 +344,20 @@ def record_email_open(email: str, contact_id: str, user_agent: str, ip_address: 
     )
 
 
-def fetch_document_opens(*, limit: int = 500, offset: int = 0) -> dict[str, Any]:
+def fetch_document_opens(*, email: str = "", limit: int = 200, offset: int = 0) -> dict[str, Any]:
     supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     table = os.getenv("SUPABASE_DISTRIBUTION_TABLE", "ccs_distributions")
     if not supabase_url or not service_key:
         return {"rows": [], "error": "Supabase not configured"}
+    filters = "&status=neq.dry_run"
+    if email:
+        filters += f"&customer_email=ilike.*{quote(email, safe='')}*"
     endpoint = (
         f"{supabase_url}/rest/v1/{table}"
         f"?select=customer_email,ghl_contact_id,status,downloaded_at,ccs_documents(product_code,chemical_name)"
-        f"&status=neq.dry_run"
-        f"&order=downloaded_at.desc.nullslast"
+        f"{filters}"
+        f"&order=customer_email.asc,downloaded_at.desc.nullslast"
         f"&limit={limit}&offset={offset}"
     )
     response = _get_json(endpoint, {"apikey": service_key, "Authorization": f"Bearer {service_key}"})

@@ -144,7 +144,6 @@ function App({ session }) {
       <div className="tab-bar">
         <button className={`tab ${activeTab === 'distribution' ? 'active' : ''}`} onClick={() => switchTab('distribution')}>Distribution</button>
         <button className={`tab ${activeTab === 'email-opens' ? 'active' : ''}`} onClick={() => switchTab('email-opens')}>Email Opens</button>
-        <button className={`tab ${activeTab === 'pdf-opens' ? 'active' : ''}`} onClick={() => switchTab('pdf-opens')}>PDF Opens</button>
         <a className="tab" href="/rebrand">Rebrand SDS</a>
         <button className="tab tab-signout" onClick={handleSignOut} title="Sign out">
           <LogOut size={14} />
@@ -444,15 +443,19 @@ function EmailOpensDashboard() {
 // ---------------------------------------------------------------------------
 
 function PdfOpensDashboard() {
+  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
   const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [filter, setFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
 
-  async function loadRows() {
+  async function runSearch(q) {
+    if (!q.trim()) { setRows([]); return; }
     setLoading(true); setError('');
     try {
-      const response = await fetch(`${API_BASE}/document-opens?limit=500`);
+      const params = new URLSearchParams({ email: q.trim(), limit: 200 });
+      const response = await fetch(`${API_BASE}/document-opens?${params}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Failed to load');
       setRows(data.rows || []);
@@ -460,13 +463,17 @@ function PdfOpensDashboard() {
     finally { setLoading(false); }
   }
 
-  useEffect(() => { loadRows(); }, []);
+  function handleSearch(e) {
+    e.preventDefault();
+    setQuery(search);
+    runSearch(search);
+  }
 
   const filtered = useMemo(() => {
-    if (filter === 'opened') return rows.filter(r => r.status === 'downloaded');
-    if (filter === 'not-opened') return rows.filter(r => r.status !== 'downloaded');
+    if (statusFilter === 'opened') return rows.filter(r => r.status === 'downloaded');
+    if (statusFilter === 'not-opened') return rows.filter(r => r.status !== 'downloaded');
     return rows;
-  }, [rows, filter]);
+  }, [rows, statusFilter]);
 
   const stats = useMemo(() => ({
     total: rows.length,
@@ -490,30 +497,53 @@ function PdfOpensDashboard() {
           <p className="eyebrow">Compliant Cleaning Supplies</p>
           <h1>PDF Opens</h1>
         </div>
-        <button className="tab" onClick={loadRows} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</button>
       </div>
+
+      <form onSubmit={handleSearch} style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by contact email…"
+          style={{ flex: 1, padding: '8px 12px', border: '1px solid #d9e1e8', borderRadius: '6px', fontSize: '0.95rem' }}
+        />
+        <button type="submit" className="primary" disabled={loading} style={{ whiteSpace: 'nowrap' }}>
+          {loading ? 'Searching…' : 'Search'}
+        </button>
+      </form>
+
       {error && <div className="notice error"><AlertCircle size={18} /><span>{error}</span></div>}
+
       {!loading && rows.length > 0 && (
-        <div className="info-grid" style={{ margin: '0 0 1rem' }}>
-          <Info label="Total sent" value={String(stats.total)} />
-          <Info label="Opened" value={String(stats.opened)} />
-          <Info label="Not opened" value={String(stats.notOpened)} />
-          <Info label="Open rate" value={stats.total ? `${Math.round(stats.opened / stats.total * 100)}%` : '—'} />
-        </div>
+        <>
+          <div className="info-grid" style={{ margin: '0 0 1rem' }}>
+            <Info label="Total sent" value={String(stats.total)} />
+            <Info label="Opened" value={String(stats.opened)} />
+            <Info label="Not opened" value={String(stats.notOpened)} />
+            <Info label="Open rate" value={`${Math.round(stats.opened / stats.total * 100)}%`} />
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', margin: '0 0 1rem' }}>
+            {[['all', 'All'], ['opened', 'Opened'], ['not-opened', 'Not opened']].map(([val, label]) => (
+              <button key={val} className={`tab ${statusFilter === val ? 'active' : ''}`}
+                onClick={() => setStatusFilter(val)}
+                style={{ fontSize: '0.8rem', padding: '4px 12px' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
       )}
-      {!loading && rows.length > 0 && (
-        <div style={{ display: 'flex', gap: '0.5rem', margin: '0 0 1rem' }}>
-          {['all', 'opened', 'not-opened'].map(f => (
-            <button key={f} className={`tab ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)} style={{ fontSize: '0.8rem', padding: '4px 12px' }}>
-              {f === 'all' ? 'All' : f === 'opened' ? 'Opened' : 'Not opened'}
-            </button>
-          ))}
+
+      {!query ? (
+        <div className="empty-state">
+          <FileSpreadsheet size={34} />
+          <h2>Search a contact</h2>
+          <p>Enter a full or partial email address to view their PDF delivery and open status.</p>
         </div>
-      )}
-      {loading ? (
-        <div className="empty-state"><p>Loading…</p></div>
+      ) : loading ? (
+        <div className="empty-state"><p>Searching…</p></div>
       ) : filtered.length === 0 ? (
-        <div className="empty-state"><FileSpreadsheet size={34} /><h2>No records</h2><p>PDF delivery records appear here after emails are sent.</p></div>
+        <div className="empty-state"><p>No records found for <strong>{query}</strong>.</p></div>
       ) : (
         <div className="table-wrap">
           <table>
