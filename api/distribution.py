@@ -538,7 +538,8 @@ def _mark_distribution_downloaded(document_id: str, contact_id: str) -> dict[str
         {
             "apikey": service_key,
             "Authorization": f"Bearer {service_key}",
-            "Prefer": "return=representation",
+            # We don't need row payloads here; keeping responses minimal reduces noise and header bloat risk.
+            "Prefer": "return=minimal",
         },
         method="PATCH",
     )

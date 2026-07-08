@@ -51,7 +51,7 @@ def _top_image_digest(doc: fitz.Document, page_index: int) -> str:
     return hashlib.sha256(img_bytes).hexdigest()
 
 
-def test_rebrand_pdf_does_not_replace_supplier_name_in_page2_body_text() -> None:
+def test_rebrand_pdf_replaces_supplier_name_in_page2_body_text() -> None:
     src = _make_pdf_with_supplier_body_and_two_logos()
     out_bytes, _summary = rebrand_pdf(src, "08/07/2026")
     out = fitz.open(stream=out_bytes, filetype="pdf")
@@ -59,8 +59,9 @@ def test_rebrand_pdf_does_not_replace_supplier_name_in_page2_body_text() -> None
     page2_text = out[1].get_text("text")
     out.close()
 
-    assert "compiled by CLEAN PLUS CHEMICALS" in page2_text
-    assert "compiled by Compliant Cleaning Supplies" not in page2_text
+    assert "compiled by CLEAN PLUS CHEMICALS" not in page2_text
+    assert "Compliant Cleaning Supplies" in page2_text
+    assert "remain readable." in page2_text
 
 
 def test_rebrand_pdf_replaces_header_logo_on_all_pages() -> None:

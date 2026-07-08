@@ -16,6 +16,7 @@ _OLD_DOMAINS = ["cleanplus.com.au"]
 _SUPPLIER_LABELS = ["Supplier Name", "Company Name", "Supplier", "Manufacturer Name"]
 _ADDRESS_LABELS = ["Address"]
 _PHONE_LABELS = ["Telephone", "Phone", "Tel"]
+_CCS_BODY_SUPPLIER_NAME = "Compliant Cleaning Supplies"
 _PAGE1_SUPPLIER_Y_RATIO = 0.50
 _OTHER_PAGE_SUPPLIER_Y_RATIO = 0.22
 _HEADER_LOGO_Y_RATIO = 0.35
@@ -207,17 +208,25 @@ def _replace_text_on_page(
         if "compliantcs.com.au" not in email.lower():
             full_replacements.append((email, CCS["email"]))
 
-    def _redact(old_text: str, new_text: str, y_max: float) -> None:
+    def _redact(
+        old_text: str,
+        new_text: str,
+        y_max: float,
+        y_min: float = 0.0,
+        min_ratio: float = 1.0,
+        max_ratio: float = 1.45,
+        width_pad: float = 1.08,
+    ) -> None:
         if not old_text:
             return
         for rect in page.search_for(old_text):
-            if rect.y0 > y_max:
+            if rect.y0 > y_max or rect.y0 < y_min:
                 continue
             char_ratio = len(new_text) / max(len(old_text), 1)
-            safe_ratio = min(max(char_ratio, 1.0), 1.45)
+            safe_ratio = min(max(char_ratio, min_ratio), max_ratio)
             expanded = fitz.Rect(
                 rect.x0, rect.y0,
-                min(rect.x0 + rect.width * safe_ratio * 1.08, page_width - 4),
+                min(rect.x0 + rect.width * safe_ratio * width_pad, page_width - 4),
                 rect.y1,
             )
             page.add_redact_annot(expanded, text=new_text, fontsize=9, align=fitz.TEXT_ALIGN_LEFT)
@@ -225,6 +234,17 @@ def _replace_text_on_page(
 
     for old_text, new_text in header_replacements:
         _redact(old_text, new_text, header_y_max)
+    # Keep body paragraph replacements, but use a shorter supplier string to reduce visual artifacts.
+    for term in supplier_terms:
+        _redact(
+            term,
+            _CCS_BODY_SUPPLIER_NAME,
+            page_height,
+            y_min=header_y_max,
+            min_ratio=0.9,
+            max_ratio=1.0,
+            width_pad=1.0,
+        )
     for old_text, new_text in full_replacements:
         _redact(old_text, new_text, page_height)
 

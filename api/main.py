@@ -191,7 +191,14 @@ def track_msds_download(
 </body>
 </html>"""
     response = HTMLResponse(page)
-    response.headers["X-CCS-Acknowledgement"] = str(acknowledgement)
+    # Keep header intentionally small so nginx never rejects oversized upstream headers.
+    ack_status = "ok"
+    if any(
+        isinstance(part, dict) and part.get("status") == "error"
+        for part in [acknowledgement.get("supabase"), acknowledgement.get("ghl")]
+    ):
+        ack_status = "error"
+    response.headers["X-CCS-Acknowledgement"] = ack_status
     return response
 
 
