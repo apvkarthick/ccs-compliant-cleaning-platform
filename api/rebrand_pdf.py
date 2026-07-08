@@ -16,6 +16,10 @@ _OLD_DOMAINS = ["cleanplus.com.au"]
 _SUPPLIER_LABELS = ["Supplier Name", "Company Name", "Supplier", "Manufacturer Name"]
 _ADDRESS_LABELS = ["Address"]
 _PHONE_LABELS = ["Telephone", "Phone", "Tel"]
+_PAGE1_SUPPLIER_Y_RATIO = 0.50
+_OTHER_PAGE_SUPPLIER_Y_RATIO = 0.22
+_HEADER_LOGO_Y_RATIO = 0.35
+_HEADER_LOGO_RIGHT_X_RATIO = 0.45
 
 
 def _detect_sds_date(doc: fitz.Document) -> str:
@@ -42,15 +46,16 @@ def rebrand_pdf(pdf_bytes: bytes, sds_date: str | None = None) -> tuple[bytes, d
     for page_idx, page in enumerate(doc):
         page_changes = _replace_text_on_page(
             page, search_terms, old_address, old_phone, old_sds_date, today,
-            header_only=(page_idx == 0),
+            page_index=page_idx,
         )
         changes.extend(page_changes)
 
     _replace_link_annotations(doc, changes)
 
     if LOGO_PATH.exists():
-        if _replace_header_image(doc, LOGO_PATH.read_bytes()):
-            changes.append("Logo replaced")
+        logo_changes = _replace_header_images(doc, LOGO_PATH.read_bytes())
+        if logo_changes:
+            changes.append(f"Logo replaced on {logo_changes} page(s)")
 
     out = io.BytesIO()
     doc.save(out, garbage=4, deflate=True)
@@ -172,13 +177,14 @@ def _replace_text_on_page(
     old_phone: str,
     old_date: str = "",
     new_date: str = "",
-    header_only: bool = False,
+    page_index: int = 0,
 ) -> list[str]:
     changes: list[str] = []
     page_height = page.rect.height
     page_width = page.rect.width
-    # Supplier block is always in the top half of page 1; never replace in body text
-    header_y_max = page_height * 0.50 if header_only else page_height
+    # Keep supplier-name replacements in header space to avoid body-text artifacts.
+    header_ratio = _PAGE1_SUPPLIER_Y_RATIO if page_index == 0 else _OTHER_PAGE_SUPPLIER_Y_RATIO
+    header_y_max = page_height * header_ratio
 
     # Header-restricted replacements (supplier name, address, phone)
     header_replacements: list[tuple[str, str]] = []
@@ -208,9 +214,10 @@ def _replace_text_on_page(
             if rect.y0 > y_max:
                 continue
             char_ratio = len(new_text) / max(len(old_text), 1)
+            safe_ratio = min(max(char_ratio, 1.0), 1.45)
             expanded = fitz.Rect(
                 rect.x0, rect.y0,
-                min(rect.x0 + rect.width * char_ratio * 1.15, page_width - 4),
+                min(rect.x0 + rect.width * safe_ratio * 1.08, page_width - 4),
                 rect.y1,
             )
             page.add_redact_annot(expanded, text=new_text, fontsize=9, align=fitz.TEXT_ALIGN_LEFT)
@@ -252,41 +259,58 @@ def _replace_link_annotations(doc: fitz.Document, changes: list[str]) -> None:
 # Logo replacement
 # ---------------------------------------------------------------------------
 
-def _replace_header_image(doc: fitz.Document, logo_bytes: bytes) -> bool:
-    """Replace the image in the top 35% of page 1 with the CCS logo."""
-    if not doc.page_count:
-        return False
-    page = doc[0]
-    page_height = page.rect.height
+def _replace_header_images(doc: fitz.Document, logo_bytes: bytes) -> int:
+    """Replace one header logo per page, preferring top-right candidates."""
+    replaced = 0
+    for page in doc:
+        xref = _select_header_logo_xref(page)
+        if xref is None:
+            continue
+        try:
+            page.replace_image(xref, stream=logo_bytes)
+            replaced += 1
+        except Exception:
+            pass
+    return replaced
 
-    # Map each xref to its on-page position using get_image_rects
-    candidates = []
+
+def _select_header_logo_xref(page: fitz.Page) -> int | None:
+    page_height = page.rect.height
+    page_width = page.rect.width
+    ranked: dict[int, tuple[int, float, float]] = {}
+
     for img in page.get_images(full=True):
         xref = img[0]
         try:
             rects = page.get_image_rects(xref)
-            for r in rects:
-                y_center = (r.y0 + r.y1) / 2
-                candidates.append((y_center, xref))
         except Exception:
-            pass
+            continue
 
-    # Replace the topmost image that sits in the top 35% of the page
-    candidates.sort(key=lambda c: c[0])
-    for y_center, xref in candidates:
-        if y_center < page_height * 0.35:
-            try:
-                page.replace_image(xref, stream=logo_bytes)
-                return True
-            except Exception:
-                pass
+        for rect in rects:
+            y_center = (rect.y0 + rect.y1) / 2
+            in_header = y_center < page_height * _HEADER_LOGO_Y_RATIO
+            if not in_header:
+                continue
+            right_side = 0 if rect.x0 > page_width * _HEADER_LOGO_RIGHT_X_RATIO else 1
+            rank = (right_side, y_center, -rect.x0)
+            if xref not in ranked or rank < ranked[xref]:
+                ranked[xref] = rank
 
-    # Fallback: replace topmost image regardless of position
-    if candidates:
+    if ranked:
+        return min(ranked.items(), key=lambda item: item[1])[0]
+
+    # Fallback: topmost image on page.
+    fallback: list[tuple[float, int]] = []
+    for img in page.get_images(full=True):
+        xref = img[0]
         try:
-            page.replace_image(candidates[0][1], stream=logo_bytes)
-            return True
+            rects = page.get_image_rects(xref)
         except Exception:
-            pass
-
-    return False
+            continue
+        for rect in rects:
+            y_center = (rect.y0 + rect.y1) / 2
+            fallback.append((y_center, xref))
+    if not fallback:
+        return None
+    fallback.sort(key=lambda item: item[0])
+    return fallback[0][1]
