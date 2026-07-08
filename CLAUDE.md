@@ -35,6 +35,8 @@ Include: what was built, key decisions, URLs, open items. Do this automatically 
 `SUPABASE_JWT_SECRET`, `GHL_ACCESS_TOKEN`, `GHL_LOCATION_ID`, `GHL_EMAIL_ENDPOINT`
 
 ## Deploy
-After frontend changes: `npm run build` in `frontend/`, copy `dist/` to `/var/www/ccs-frontend/dist` on droplet.
-After backend changes: `systemctl restart ccs-api` on droplet.
-After nginx changes: `nginx -s reload` on droplet.
+Deployment is fully automated via GitHub Actions. Pushing to `main` triggers the pipeline — no manual SSH, build, or restart steps needed.
+
+**Workflow:** commit changes → get user approval → `git push origin main` → GitHub Actions deploys automatically.
+
+IMPORTANT: Always get explicit user approval before running `git push`. Never push without the user saying to.
