@@ -13,8 +13,9 @@ def ping_task() -> dict[str, str]:
 
 
 @celery_app.task(bind=True, name="ccs.bulk_distribute", max_retries=2, time_limit=1800)
-def bulk_distribute_task(self, preview: dict, dry_run: bool = True) -> dict:
+def bulk_distribute_task(self, preview: dict, contacts: list, dry_run: bool = True) -> dict:
     import os
+    import time
 
     from .distribution import (
         _ensure_documents_in_supabase,
@@ -26,17 +27,29 @@ def bulk_distribute_task(self, preview: dict, dry_run: bool = True) -> dict:
         distribution_rows_for_supabase,
     )
 
-    contacts = [_normalize_contact(c) for c in preview.get("contacts", [])]
+    contacts = [_normalize_contact(c) for c in contacts]
     contacts = [c for c in contacts if c.get("email")]
     total = len(contacts)
     summary = {"sent": 0, "failed": 0, "dry_run": dry_run, "total": total, "done": 0}
     self.update_state(state="PROGRESS", meta=summary)
 
+    # Pre-group products by contact email for O(1) lookup — avoids O(contacts × products) per iteration
+    all_products = preview.get("products", [])
+    universal = [p for p in all_products if not p.get("site_emails")]
+    by_email: dict[str, list] = {}
+    for p in all_products:
+        for em in (p.get("site_emails") or []):
+            by_email.setdefault(str(em).strip().lower(), []).append(p)
+
     for i, contact in enumerate(contacts):
         try:
+            email_key = str(contact.get("email", "")).strip().lower()
+            contact_products = universal + by_email.get(email_key, [])
+            contact_preview = {**preview, "products": contact_products}
+
             if not dry_run:
                 contact = _with_ghl_contact_id(contact)
-            dist = build_test_distribution(preview=preview, contacts=[contact], dry_run=dry_run)
+            dist = build_test_distribution(preview=contact_preview, contacts=[contact], dry_run=dry_run)
             if not dry_run and dist.get("messages"):
                 ghl_result = _send_messages_via_ghl(dist["messages"])
                 if ghl_result.get("status") == "skipped":
@@ -54,10 +67,6 @@ def bulk_distribute_task(self, preview: dict, dry_run: bool = True) -> dict:
                             "errors": ghl_errors,
                         })
                     else:
-                        summary.setdefault("ghl_responses", []).append({
-                            "email": contact.get("email"),
-                            "results": ghl_result.get("results", []),
-                        })
                         _ensure_documents_in_supabase(dist["messages"])
                         rows = distribution_rows_for_supabase(
                             dist["messages"],
@@ -67,6 +76,9 @@ def bulk_distribute_task(self, preview: dict, dry_run: bool = True) -> dict:
                         if rows:
                             _log_events_to_supabase(rows)
                         summary["sent"] += 1
+                # Rate limit: pause between GHL calls (skip after last contact)
+                if i < total - 1:
+                    time.sleep(0.5)
             else:
                 summary["sent"] += 1
         except Exception as exc:

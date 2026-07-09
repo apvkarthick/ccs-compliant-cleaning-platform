@@ -419,6 +419,11 @@ async function doBulkSend() {
   clearError();
   const btn = document.getElementById('btn-bulk-send');
   const dryRun = document.getElementById('bulk-dry-run').checked;
+  const count = parseInt(document.getElementById('bulk-count').textContent) || 0;
+  if (!dryRun && count > 200) {
+    const ok = confirm(`⚠️ ${count} contacts exceeds the safe limit of ~200.\n\nThe task may hit the 30-minute time limit and leave contacts unsent. Consider splitting the workbook into smaller batches.\n\nProceed anyway?`);
+    if (!ok) return;
+  }
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Queuing…';
 

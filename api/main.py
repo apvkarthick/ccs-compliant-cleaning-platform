@@ -157,7 +157,9 @@ def send_bulk_distribution(request: BulkDistributionRequest) -> dict[str, Any]:
             status_code=400,
             detail="No contacts found in workbook — parse the workbook first and ensure it has a customer sheet with email addresses",
         )
-    task = bulk_distribute_task.delay(request.preview, request.dry_run)
+    # Strip contacts from preview — keeps the Redis task-arg payload small
+    preview_slim = {k: v for k, v in request.preview.items() if k != "contacts"}
+    task = bulk_distribute_task.delay(preview_slim, contacts, request.dry_run)
     return {"task_id": task.id, "status": "queued", "total": len(contacts)}
 
 
