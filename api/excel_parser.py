@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
@@ -135,9 +136,16 @@ def _parse_structured_workbook(
     contacts: list[dict[str, str]] = []
     products: list[dict[str, Any]] = []
     sheet_contacts: dict[str, set[str]] = {}
+    cust_num_to_email: dict[str, str] = {}
     register_url = ""
 
     for sheet in workbook.worksheets:
+        # Try transposed layout (field labels in col A, customer data in cols B+)
+        transposed, num_map = _parse_transposed_customer_sheet(sheet)
+        if transposed:
+            contacts.extend(transposed)
+            cust_num_to_email.update(num_map)
+
         for header_row, headers in _header_rows(sheet):
             if _is_customer_header(headers):
                 parsed_contacts = _contacts_from_sheet(sheet, header_row, headers)
@@ -157,7 +165,14 @@ def _parse_structured_workbook(
                 register_url = register_url or parsed_register_url
 
     for product in products:
-        product["site_emails"] = sorted(sheet_contacts.get(str(product.get("sheet", "")), set()))
+        sheet_name = str(product.get("sheet", ""))
+        # Match "Cust 38 - ..." sheet names to the customer number → email map
+        cust_match = re.search(r"cust(?:omer)?\s*[\-#]?\s*(\d+)", sheet_name, re.IGNORECASE)
+        if cust_match and cust_num_to_email:
+            email = cust_num_to_email.get(cust_match.group(1), "")
+            product["site_emails"] = [email] if email else []
+        else:
+            product["site_emails"] = sorted(sheet_contacts.get(sheet_name, set()))
 
     customer = _customer_from_contacts(contacts)
     return {
@@ -450,6 +465,60 @@ def _missing_documents(products: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for product in products
     ]
     return [item for item in missing_documents if item["missing"]]
+
+
+def _parse_transposed_customer_sheet(sheet: Any) -> tuple[list[dict[str, str]], dict[str, str]]:
+    """
+    Parse sheets where field labels are in column A and each column B+ is a customer.
+    Returns (contacts, customer_number_to_email_map).
+    Example layout:
+        A1: Customer No. | B1: 38  | C1: 248 | D1: 391
+        A3: Site Name    | B3: ... | C3: ... | D3: ...
+        A5: Email        | B5: a@b | C5: c@d | D5: e@f
+    """
+    _email_keys = {_normalize_header(h) for h in ["email", "email address", "contact email", "customer email"]}
+    _company_keys = {_normalize_header(h) for h in ["site name", "company", "company name", "customer name", "site", "client"]}
+    _name_keys = {_normalize_header(h) for h in ["contact", "contact name", "name"]}
+    _phone_keys = {_normalize_header(h) for h in ["phone", "phone number", "mobile"]}
+    _cust_num_keys = {"customer_no", "cust_no", "customer_number", "customer_num", "customer_no_"}
+
+    email_row = company_row = name_row = phone_row = cust_num_row = None
+
+    for row in sheet.iter_rows(min_row=1, max_row=min(sheet.max_row, 30)):
+        label = _normalize_header(row[0].value)
+        if not label:
+            continue
+        if label in _email_keys:
+            email_row = row
+        elif label in _company_keys:
+            company_row = row
+        elif label in _name_keys:
+            name_row = row
+        elif label in _phone_keys:
+            phone_row = row
+        elif label in _cust_num_keys or label.startswith("customer_n"):
+            cust_num_row = row
+
+    if not email_row:
+        return [], {}
+
+    contacts: list[dict[str, str]] = []
+    cust_num_to_email: dict[str, str] = {}
+
+    for col_idx in range(1, len(email_row)):
+        email = _clean(email_row[col_idx].value)
+        if not email or not _looks_like_email(email):
+            continue
+        company = _clean(company_row[col_idx].value) if company_row is not None else ""
+        name = _clean(name_row[col_idx].value) if name_row is not None else ""
+        phone = _clean(phone_row[col_idx].value) if phone_row is not None else ""
+        contacts.append({"company": company, "name": name, "email": email, "phone": phone})
+        if cust_num_row is not None:
+            num = _clean(cust_num_row[col_idx].value)
+            if num:
+                cust_num_to_email[num] = email
+
+    return contacts, cust_num_to_email
 
 
 CUSTOMER_COMPANY_HEADERS = ["customer", "customer name", "company", "company name", "client", "site", "site name"]
