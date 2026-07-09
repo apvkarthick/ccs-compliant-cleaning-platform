@@ -49,6 +49,23 @@
   .empty-state h2{font-size:1.1rem;color:#607080;margin-bottom:6px}
   .empty-state p{font-size:0.85rem;line-height:1.5;max-width:400px;margin:0 auto}
 
+  /* Instructions */
+  .steps{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:0}
+  @media(max-width:700px){.steps{grid-template-columns:1fr}}
+  .step{background:#f8fafc;border:1px solid #e2eaef;border-radius:8px;padding:16px 18px;display:flex;gap:12px;align-items:flex-start}
+  .step-num{background:#2C6B33;color:#fff;font-size:0.75rem;font-weight:800;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+  .step-body strong{display:block;font-size:0.88rem;margin-bottom:3px}
+  .step-body p{font-size:0.8rem;color:#607080;line-height:1.45}
+
+  .format-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+  @media(max-width:640px){.format-grid{grid-template-columns:1fr}}
+  .format-box{border-radius:6px;padding:14px 16px;background:#f0fdf4;border:1px solid #86efac}
+  .format-box.alt{background:#eff6ff;border-color:#bfdbfe}
+  .format-box .badge{display:inline-block;font-size:0.68rem;font-weight:800;padding:2px 8px;border-radius:10px;margin-bottom:8px;background:#166534;color:#fff}
+  .format-box.alt .badge{background:#1d4ed8;color:#fff}
+  .format-box ul{margin:0;padding-left:16px;font-size:0.82rem;color:#374151;line-height:1.7}
+  .format-box p{font-size:0.82rem;color:#374151;margin-bottom:6px}
+
   /* Preview table */
   .section-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px}
   .section-head h2{font-size:1.1rem;font-weight:700}
@@ -91,11 +108,62 @@
     </div>
   </header>
 
+  <!-- How it works -->
+  <div class="card" style="margin-bottom:20px">
+    <p class="eyebrow" style="margin-bottom:12px">How it works</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Upload your workbook</strong>
+          <p>Select the CCS Chemical Register (.xlsx or .xlsm). The system reads customer details and product list automatically.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Review the preview</strong>
+          <p>Check the parsed products, SDS links, and risk assessment links. Missing documents are flagged in red.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Test &amp; send</strong>
+          <p>Enter recipient email(s), run a dry-run first to confirm, then switch off dry-run to send the real SDS pack.</p>
+        </div>
+      </div>
+    </div>
+
+    <p class="eyebrow" style="margin-top:20px;margin-bottom:10px">Accepted workbook formats</p>
+    <div class="format-grid">
+      <div class="format-box">
+        <div class="badge">CCS Chemical Register</div>
+        <p>The standard CCS template. The parser reads:</p>
+        <ul>
+          <li>Customer info from cells C8, C10, C12</li>
+          <li>Products from rows 16–120 (columns A &amp; B)</li>
+          <li><strong>Column N must be marked</strong> — put <code>Yes</code>, <code>1</code>, or <code>✓</code> to include a product</li>
+          <li>SDS and Risk Assessment files are matched by product code from the server's document library</li>
+        </ul>
+      </div>
+      <div class="format-box alt">
+        <div class="badge">Structured / Client Workbook</div>
+        <p>Any sheet with clearly labelled columns. The parser auto-detects header rows containing:</p>
+        <ul>
+          <li>Customer sheet: <code>email</code>, <code>company</code>, <code>name</code></li>
+          <li>Products sheet: <code>product code</code> or <code>product name</code> + <code>sds url</code> / <code>sds link</code></li>
+          <li>Optional: <code>risk assessment url</code>, <code>chemical register url</code>, <code>selected</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
   <div class="layout">
     <!-- Left panel -->
     <div>
       <div class="card">
-        <label for="wb-file">Client workbook (.xlsx)</label>
+        <label for="wb-file">Client workbook (.xlsx or .xlsm)</label>
         <input type="file" id="wb-file" accept=".xlsx,.xlsm">
         <button class="primary" id="btn-preview" onclick="doPreview()">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -127,7 +195,8 @@
           <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
         </svg>
         <h2>Upload the client workbook</h2>
-        <p>Preview will show each product's SDS and Risk Assessment links, plus the customer details parsed from the sheet.</p>
+        <p>Select an <strong>.xlsx</strong> or <strong>.xlsm</strong> file, then click <strong>Preview workbook</strong>. The preview will show parsed customer info, each product's SDS and Risk Assessment links, and flag any missing documents.</p>
+        <p style="margin-top:10px;font-size:0.8rem">Tip: for the CCS Chemical Register format, make sure column N is marked <strong>Yes</strong> or <strong>1</strong> for each product you want to include.</p>
       </div>
     </div>
   </div>
@@ -182,8 +251,9 @@ async function doPreview() {
     if (!res.ok) throw new Error(data.detail || 'Upload failed');
     previewData = data;
     renderPreview(data);
-    document.getElementById('btn-send').disabled = false;
-    setStatus('Workbook parsed', 'success');
+    const hasProducts = data.products && data.products.length > 0;
+    document.getElementById('btn-send').disabled = !hasProducts;
+    if (hasProducts) setStatus('Workbook parsed', 'success');
 
     // Pre-fill contacts from workbook if available
     if (data.contacts && data.contacts.length) {
@@ -238,12 +308,29 @@ function docCell(doc) {
 }
 
 function renderPreview(data) {
+  const products = data.products || [];
   const missing = data.missing_documents ? data.missing_documents.length : 0;
+
+  if (!products.length) {
+    document.getElementById('main-panel').innerHTML = `
+      <div class="card">
+        <div class="notice warning">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span><strong>No products found in this workbook.</strong><br>
+          <span style="font-size:0.82rem">For the CCS Chemical Register format: ensure column N is marked <strong>Yes</strong> or <strong>1</strong> for each product. For structured workbooks: confirm the sheet has columns named <code>product code</code> (or <code>product name</code>) and <code>sds url</code> (or <code>sds link</code>).</span>
+          </span>
+        </div>
+      </div>`;
+    document.getElementById('btn-send').disabled = true;
+    setStatus('No products found', 'neutral');
+    return;
+  }
+
   const missingNote = missing > 0
     ? `<div class="notice warning" style="margin-top:12px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span>${missing} product(s) missing source documents</span></div>`
     : '';
 
-  const rows = (data.products || []).map(p => `
+  const rows = products.map(p => `
     <tr>
       <td><strong>${p.code || '-'}</strong></td>
       <td>${p.name || '-'}</td>
@@ -259,7 +346,7 @@ function renderPreview(data) {
           <p class="eyebrow">Preview</p>
           <h2>${(data.register && data.register.title) || 'Chemical Register'}</h2>
         </div>
-        <span class="count-badge">${(data.products || []).length} products</span>
+        <span class="count-badge">${products.length} products</span>
       </div>
       <div class="info-grid">
         <div class="info-item"><span>Customer</span><strong>${(data.customer && data.customer.company) || 'Not found'}</strong></div>
