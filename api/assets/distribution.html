@@ -468,11 +468,23 @@ async function pollBulkStatus(taskId, dryRun) {
       document.getElementById('bulk-progress-label').textContent = `Processing… (${done}/${total})`;
     } else if (state === 'SUCCESS') {
       clearInterval(bulkPollTimer);
-      document.getElementById('bulk-progress-label').textContent = dryRun ? 'Dry run complete' : 'All sent';
-      document.getElementById('bulk-progress-bar').style.background = '#166534';
       document.getElementById('btn-bulk-send').disabled = false;
       document.getElementById('btn-bulk-send').innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Send to all contacts';
-      setStatus(dryRun ? 'Dry run complete' : `Sent to ${sent} contacts`, 'success');
+      const ghlErrors = meta.ghl_errors || [];
+      const exceptions = meta.exceptions || [];
+      if (failed > 0 || ghlErrors.length || exceptions.length) {
+        document.getElementById('bulk-progress-label').textContent = `Done — ${failed} failed`;
+        document.getElementById('bulk-progress-bar').style.background = '#dc2626';
+        const errDetail = [...ghlErrors, ...exceptions].map(e => {
+          const errs = e.errors ? e.errors.map(x => x.body || x.reason || JSON.stringify(x)).join('; ') : (e.error || '');
+          return `<strong>${e.email}</strong>: ${errs}`;
+        }).join('<br>');
+        showError(`${failed} contact(s) failed to send.<br>${errDetail}`);
+      } else {
+        document.getElementById('bulk-progress-label').textContent = dryRun ? 'Dry run complete' : 'All sent';
+        document.getElementById('bulk-progress-bar').style.background = '#166534';
+        setStatus(dryRun ? 'Dry run complete' : `Sent to ${sent} contacts`, 'success');
+      }
     } else if (state === 'FAILURE') {
       clearInterval(bulkPollTimer);
       document.getElementById('bulk-progress-label').textContent = 'Failed';

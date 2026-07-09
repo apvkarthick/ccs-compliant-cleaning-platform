@@ -35,18 +35,29 @@ def bulk_distribute_task(self, preview: dict, dry_run: bool = True) -> dict:
         try:
             dist = build_test_distribution(preview=preview, contacts=[contact], dry_run=dry_run)
             if not dry_run and dist.get("messages"):
-                _send_messages_via_ghl(dist["messages"])
-                _ensure_documents_in_supabase(dist["messages"])
-                rows = distribution_rows_for_supabase(
-                    dist["messages"],
-                    dry_run=False,
-                    table=os.getenv("SUPABASE_DISTRIBUTION_TABLE", "ccs_distributions"),
-                )
-                if rows:
-                    _log_events_to_supabase(rows)
-            summary["sent"] += 1
-        except Exception:
+                ghl_result = _send_messages_via_ghl(dist["messages"])
+                ghl_errors = [r for r in (ghl_result.get("results") or []) if r.get("status") == "error"]
+                if ghl_errors:
+                    summary["failed"] += 1
+                    summary.setdefault("ghl_errors", []).append({
+                        "email": contact.get("email"),
+                        "errors": ghl_errors,
+                    })
+                else:
+                    _ensure_documents_in_supabase(dist["messages"])
+                    rows = distribution_rows_for_supabase(
+                        dist["messages"],
+                        dry_run=False,
+                        table=os.getenv("SUPABASE_DISTRIBUTION_TABLE", "ccs_distributions"),
+                    )
+                    if rows:
+                        _log_events_to_supabase(rows)
+                    summary["sent"] += 1
+            else:
+                summary["sent"] += 1
+        except Exception as exc:
             summary["failed"] += 1
+            summary.setdefault("exceptions", []).append({"email": contact.get("email"), "error": str(exc)})
         summary["done"] = i + 1
         if (i + 1) % 50 == 0 or i == total - 1:
             self.update_state(state="PROGRESS", meta=dict(summary))
