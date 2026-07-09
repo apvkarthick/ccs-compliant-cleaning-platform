@@ -447,6 +447,8 @@ def _fetch_ghl_contacts() -> list[dict[str, Any]]:
 
 def _send_messages_via_ghl(messages: list[dict[str, Any]]) -> dict[str, Any]:
     token = os.getenv("GHL_ACCESS_TOKEN") or os.getenv("GHL_API_KEY")
+    location_id = os.getenv("GHL_LOCATION_ID", "")
+    from_email = os.getenv("GHL_FROM_EMAIL", "")
     endpoint = os.getenv("GHL_EMAIL_ENDPOINT") or "https://services.leadconnectorhq.com/conversations/messages"
     if not token or not endpoint:
         return {"status": "skipped", "reason": "GHL_ACCESS_TOKEN and GHL_EMAIL_ENDPOINT required"}
@@ -457,20 +459,20 @@ def _send_messages_via_ghl(messages: list[dict[str, Any]]) -> dict[str, Any]:
             "email": message.get("to", ""),
             "name": message.get("name", ""),
         })
-        if contact_id:
-            message["contact_id"] = contact_id
-        payload = {
-            "type": "Email",
-            "subject": message["subject"],
-            "html": message["html"],
-        }
-        if contact_id:
-            payload["contactId"] = contact_id
-        if message.get("to"):
-            payload["emailTo"] = message["to"]
         if not contact_id:
             results.append({"status": "error", "reason": "GHL contact id required — contact upsert failed", "email": message.get("to", "")})
             continue
+        message["contact_id"] = contact_id
+        payload = {
+            "type": "Email",
+            "contactId": contact_id,
+            "subject": message["subject"],
+            "html": message["html"],
+        }
+        if location_id:
+            payload["locationId"] = location_id
+        if from_email:
+            payload["emailFrom"] = from_email
         results.append(_post_json(endpoint, payload, _ghl_headers(token)))
     return {"status": "sent", "results": results}
 
