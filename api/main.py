@@ -24,7 +24,8 @@ from .distribution import (
 from .excel_parser import list_source_documents, parse_client_workbook
 from .rebrand import rebrand_sds
 from .rebrand_pdf import rebrand_pdf
-from .tasks import ping_task
+from .celery_app import celery_app
+from .tasks import bulk_distribute_task, ping_task
 
 load_dotenv()
 
@@ -99,6 +100,11 @@ class DistributionRequest(BaseModel):
     dry_run: bool = True
 
 
+class BulkDistributionRequest(BaseModel):
+    preview: dict[str, Any]
+    dry_run: bool = True
+
+
 @app.get("/rebrand", response_class=HTMLResponse)
 def rebrand_ui() -> HTMLResponse:
     return HTMLResponse((ASSETS_DIR / "rebrand.html").read_text(encoding="utf-8"))
@@ -141,6 +147,33 @@ async def preview_register(
     file: UploadFile = File(...),
 ) -> dict[str, Any]:
     return await preview_workbook(file)
+
+
+@app.post("/distribution/send")
+def send_bulk_distribution(request: BulkDistributionRequest) -> dict[str, Any]:
+    contacts = request.preview.get("contacts") or []
+    if not contacts:
+        raise HTTPException(
+            status_code=400,
+            detail="No contacts found in workbook — parse the workbook first and ensure it has a customer sheet with email addresses",
+        )
+    task = bulk_distribute_task.delay(request.preview, request.dry_run)
+    return {"task_id": task.id, "status": "queued", "total": len(contacts)}
+
+
+@app.get("/distribution/status/{task_id}")
+def get_distribution_status(task_id: str) -> dict[str, Any]:
+    from celery.result import AsyncResult
+
+    result = AsyncResult(task_id, app=celery_app)
+    out: dict[str, Any] = {"task_id": task_id, "state": result.state}
+    if result.state == "PROGRESS":
+        out["meta"] = result.info or {}
+    elif result.successful():
+        out["result"] = result.result
+    elif result.failed():
+        out["error"] = str(result.result)
+    return out
 
 
 @app.post("/distribution/test-send")

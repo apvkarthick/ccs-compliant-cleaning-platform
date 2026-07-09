@@ -185,6 +185,34 @@
       </div>
 
       <div id="error-box" style="display:none"></div>
+
+      <!-- Bulk send card — shown after workbook parsed with contacts -->
+      <div class="card" id="bulk-card" style="display:none">
+        <p class="eyebrow" style="margin-bottom:8px">Bulk distribution</p>
+        <p style="font-size:0.83rem;color:#607080;margin-bottom:12px">Send SDS packs to <strong id="bulk-count">0</strong> contacts parsed from the workbook.</p>
+        <div class="toggle-row">
+          <input type="checkbox" id="bulk-dry-run" checked>
+          <label for="bulk-dry-run">Dry run (no emails sent)</label>
+        </div>
+        <button class="primary" id="btn-bulk-send" onclick="doBulkSend()">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          Send to all contacts
+        </button>
+        <div id="bulk-progress" style="display:none;margin-top:14px">
+          <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:#607080;margin-bottom:4px">
+            <span id="bulk-progress-label">Queued…</span>
+            <span id="bulk-progress-pct">0%</span>
+          </div>
+          <div style="background:#e2eaef;border-radius:6px;height:8px;overflow:hidden">
+            <div id="bulk-progress-bar" style="background:#2C6B33;height:100%;width:0%;transition:width .3s"></div>
+          </div>
+          <div style="display:flex;gap:16px;margin-top:8px;font-size:0.8rem">
+            <span>Sent: <strong id="bulk-sent">0</strong></span>
+            <span>Failed: <strong id="bulk-failed">0</strong></span>
+            <span>Total: <strong id="bulk-total">0</strong></span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Right panel -->
@@ -264,6 +292,16 @@ async function doPreview() {
     const hasProducts = data.products && data.products.length > 0;
     document.getElementById('btn-send').disabled = !hasProducts;
     if (hasProducts) setStatus('Workbook parsed', 'success');
+
+    // Show bulk send card if workbook has contacts
+    const workbookContacts = data.contacts || [];
+    const bulkCard = document.getElementById('bulk-card');
+    if (workbookContacts.length && hasProducts) {
+      document.getElementById('bulk-count').textContent = workbookContacts.length;
+      bulkCard.style.display = 'block';
+    } else {
+      bulkCard.style.display = 'none';
+    }
 
     // Pre-fill contacts from workbook if available
     if (data.contacts && data.contacts.length) {
@@ -372,6 +410,77 @@ function renderPreview(data) {
       </div>
       ${missingNote}
     </div>`;
+}
+
+let bulkPollTimer = null;
+
+async function doBulkSend() {
+  if (!previewData) { showError('Preview a workbook first.'); return; }
+  clearError();
+  const btn = document.getElementById('btn-bulk-send');
+  const dryRun = document.getElementById('bulk-dry-run').checked;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Queuing…';
+
+  try {
+    const res = await fetch('/api/distribution/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preview: previewData, dry_run: dryRun }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to queue bulk send');
+    startBulkPoll(data.task_id, data.total, dryRun);
+  } catch (err) {
+    showError(err.message);
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Send to all contacts';
+  }
+}
+
+function startBulkPoll(taskId, total, dryRun) {
+  document.getElementById('bulk-progress').style.display = 'block';
+  document.getElementById('bulk-progress-label').textContent = 'Queued…';
+  document.getElementById('bulk-total').textContent = total;
+  if (bulkPollTimer) clearInterval(bulkPollTimer);
+  bulkPollTimer = setInterval(() => pollBulkStatus(taskId, dryRun), 2000);
+}
+
+async function pollBulkStatus(taskId, dryRun) {
+  try {
+    const res = await fetch(`/api/distribution/status/${taskId}`);
+    const data = await res.json();
+    const state = data.state;
+    const meta = data.meta || data.result || {};
+    const done = meta.done || 0;
+    const total = meta.total || 0;
+    const sent = meta.sent || 0;
+    const failed = meta.failed || 0;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+    document.getElementById('bulk-progress-bar').style.width = pct + '%';
+    document.getElementById('bulk-progress-pct').textContent = pct + '%';
+    document.getElementById('bulk-sent').textContent = sent;
+    document.getElementById('bulk-failed').textContent = failed;
+    document.getElementById('bulk-total').textContent = total;
+
+    if (state === 'PROGRESS') {
+      document.getElementById('bulk-progress-label').textContent = `Processing… (${done}/${total})`;
+    } else if (state === 'SUCCESS') {
+      clearInterval(bulkPollTimer);
+      document.getElementById('bulk-progress-label').textContent = dryRun ? 'Dry run complete' : 'All sent';
+      document.getElementById('bulk-progress-bar').style.background = '#166534';
+      document.getElementById('btn-bulk-send').disabled = false;
+      document.getElementById('btn-bulk-send').innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Send to all contacts';
+      setStatus(dryRun ? 'Dry run complete' : `Sent to ${sent} contacts`, 'success');
+    } else if (state === 'FAILURE') {
+      clearInterval(bulkPollTimer);
+      document.getElementById('bulk-progress-label').textContent = 'Failed';
+      showError(data.error || 'Bulk send failed');
+      document.getElementById('btn-bulk-send').disabled = false;
+      document.getElementById('btn-bulk-send').innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Send to all contacts';
+    }
+  } catch (_) {}
 }
 
 function renderSendResult(data) {
