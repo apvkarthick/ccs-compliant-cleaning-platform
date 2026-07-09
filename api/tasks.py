@@ -21,6 +21,7 @@ def bulk_distribute_task(self, preview: dict, dry_run: bool = True) -> dict:
         _log_events_to_supabase,
         _normalize_contact,
         _send_messages_via_ghl,
+        _with_ghl_contact_id,
         build_test_distribution,
         distribution_rows_for_supabase,
     )
@@ -33,6 +34,8 @@ def bulk_distribute_task(self, preview: dict, dry_run: bool = True) -> dict:
 
     for i, contact in enumerate(contacts):
         try:
+            if not dry_run:
+                contact = _with_ghl_contact_id(contact)
             dist = build_test_distribution(preview=preview, contacts=[contact], dry_run=dry_run)
             if not dry_run and dist.get("messages"):
                 ghl_result = _send_messages_via_ghl(dist["messages"])
