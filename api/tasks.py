@@ -39,23 +39,34 @@ def bulk_distribute_task(self, preview: dict, dry_run: bool = True) -> dict:
             dist = build_test_distribution(preview=preview, contacts=[contact], dry_run=dry_run)
             if not dry_run and dist.get("messages"):
                 ghl_result = _send_messages_via_ghl(dist["messages"])
-                ghl_errors = [r for r in (ghl_result.get("results") or []) if r.get("status") == "error"]
-                if ghl_errors:
+                if ghl_result.get("status") == "skipped":
                     summary["failed"] += 1
                     summary.setdefault("ghl_errors", []).append({
                         "email": contact.get("email"),
-                        "errors": ghl_errors,
+                        "errors": [{"reason": ghl_result.get("reason", "GHL skipped — check GHL_ACCESS_TOKEN and GHL_LOCATION_ID env vars on the worker")}],
                     })
                 else:
-                    _ensure_documents_in_supabase(dist["messages"])
-                    rows = distribution_rows_for_supabase(
-                        dist["messages"],
-                        dry_run=False,
-                        table=os.getenv("SUPABASE_DISTRIBUTION_TABLE", "ccs_distributions"),
-                    )
-                    if rows:
-                        _log_events_to_supabase(rows)
-                    summary["sent"] += 1
+                    ghl_errors = [r for r in (ghl_result.get("results") or []) if r.get("status") == "error"]
+                    if ghl_errors:
+                        summary["failed"] += 1
+                        summary.setdefault("ghl_errors", []).append({
+                            "email": contact.get("email"),
+                            "errors": ghl_errors,
+                        })
+                    else:
+                        summary.setdefault("ghl_responses", []).append({
+                            "email": contact.get("email"),
+                            "results": ghl_result.get("results", []),
+                        })
+                        _ensure_documents_in_supabase(dist["messages"])
+                        rows = distribution_rows_for_supabase(
+                            dist["messages"],
+                            dry_run=False,
+                            table=os.getenv("SUPABASE_DISTRIBUTION_TABLE", "ccs_distributions"),
+                        )
+                        if rows:
+                            _log_events_to_supabase(rows)
+                        summary["sent"] += 1
             else:
                 summary["sent"] += 1
         except Exception as exc:
