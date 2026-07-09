@@ -453,7 +453,10 @@ def _send_messages_via_ghl(messages: list[dict[str, Any]]) -> dict[str, Any]:
 
     results = []
     for message in messages:
-        contact_id = message.get("contact_id") or _find_ghl_contact_id_by_email(message.get("to", ""))
+        contact_id = message.get("contact_id") or _find_or_create_ghl_contact_id({
+            "email": message.get("to", ""),
+            "name": message.get("name", ""),
+        })
         if contact_id:
             message["contact_id"] = contact_id
         payload = {
@@ -466,7 +469,7 @@ def _send_messages_via_ghl(messages: list[dict[str, Any]]) -> dict[str, Any]:
         if message.get("to"):
             payload["emailTo"] = message["to"]
         if not contact_id:
-            results.append({"status": "error", "reason": "GHL contact id required", "email": message.get("to", "")})
+            results.append({"status": "error", "reason": "GHL contact id required — contact upsert failed", "email": message.get("to", "")})
             continue
         results.append(_post_json(endpoint, payload, _ghl_headers(token)))
     return {"status": "sent", "results": results}
