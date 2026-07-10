@@ -292,6 +292,10 @@ def _find_email(sheet: Any) -> str:
     return ""
 
 
+def _looks_like_url(value: str) -> bool:
+    return bool(value) and value.startswith(("http://", "https://", "/"))
+
+
 def _looks_like_email(value: str) -> bool:
     text = _clean(value)
     return "@" in text and "." in text
@@ -358,9 +362,13 @@ def _products_from_sheet(
             continue
 
         sds_url = _url_by_headers(sheet, row_number, headers, SDS_URL_HEADERS)
-        risk_url = _url_by_headers(sheet, row_number, headers, RISK_URL_HEADERS)
+        risk_raw = _url_by_headers(sheet, row_number, headers, RISK_URL_HEADERS)
         row_register_url = _url_by_headers(sheet, row_number, headers, REGISTER_URL_HEADERS)
         register_url = register_url or row_register_url
+
+        # "risk assessment" column may hold a URL or a yes/no flag
+        risk_url = risk_raw if _looks_like_url(risk_raw) else ""
+        risk_required_by_flag = _truthy_label(risk_raw) if not risk_url else False
 
         sds_file = _match_sds_file(code, source_files) if code else None
         risk_file = _match_risk_file(code, source_files) if code else None
@@ -376,7 +384,7 @@ def _products_from_sheet(
                 "hazardous": _cell_by_headers(sheet, row_number, headers, HAZARD_HEADERS),
                 "un_number": _cell_by_headers(sheet, row_number, headers, UN_HEADERS),
                 "max_quantity": _cell_by_headers(sheet, row_number, headers, QUANTITY_HEADERS),
-                "risk_required": bool(risk_url or risk_file),
+                "risk_required": bool(risk_url or risk_file or risk_required_by_flag),
                 "hazchem": "",
                 "class": "",
                 "packing_group": "",
@@ -452,19 +460,22 @@ def _contacts_from_customer(customer: dict[str, str]) -> list[dict[str, str]]:
 
 
 def _missing_documents(products: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    missing_documents = [
-        {
-            "code": product["code"],
-            "name": product["name"],
-            "missing": [
-                label
-                for label, key in [("SDS", "sds"), ("Risk Assessment", "risk_assessment")]
-                if not product[key]["matched"] and (key == "sds" or product["risk_required"])
-            ],
-        }
-        for product in products
-    ]
-    return [item for item in missing_documents if item["missing"]]
+    seen: set[tuple[str, str]] = set()
+    result = []
+    for product in products:
+        missing = [
+            label
+            for label, key in [("SDS", "sds"), ("Risk Assessment", "risk_assessment")]
+            if not product[key]["matched"] and (key == "sds" or product["risk_required"])
+        ]
+        if not missing:
+            continue
+        dedup_key = (product.get("code") or "", product.get("name") or "")
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+        result.append({"code": product["code"], "name": product["name"], "missing": missing})
+    return result
 
 
 def _parse_transposed_customer_sheet(sheet: Any) -> tuple[list[dict[str, str]], dict[str, str]]:

@@ -350,8 +350,9 @@ async function doSend() {
   }
 }
 
-function docCell(doc) {
-  if (!doc || !doc.matched) return '<span class="missing">Missing</span>';
+function docCell(doc, required) {
+  if (required === undefined) required = true;
+  if (!doc || !doc.matched) return required ? '<span class="missing">Missing</span>' : '<span style="color:#8899aa">—</span>';
   return `<a class="doc-link" href="${doc.url}" target="_blank" rel="noreferrer">Open ↗</a>`;
 }
 
@@ -379,7 +380,7 @@ function renderPreview(data) {
       <td><strong>${p.code || '-'}</strong></td>
       <td>${p.name || '-'}</td>
       <td>${docCell(p.sds)}</td>
-      <td>${docCell(p.risk_assessment)}</td>
+      <td>${docCell(p.risk_assessment, p.risk_required)}</td>
       <td>${p.sds_expiry || '-'}</td>
     </tr>`).join('');
 
