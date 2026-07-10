@@ -13,7 +13,7 @@ def ping_task() -> dict[str, str]:
 
 
 @celery_app.task(bind=True, name="ccs.bulk_distribute", max_retries=2, time_limit=3600)
-def bulk_distribute_task(self, preview: dict, contacts: list, dry_run: bool = True) -> dict:
+def bulk_distribute_task(self, preview: dict, contacts: list, dry_run: bool = True, batch_id: str = "") -> dict:
     import os
     import time
 
@@ -49,7 +49,7 @@ def bulk_distribute_task(self, preview: dict, contacts: list, dry_run: bool = Tr
 
             if not dry_run:
                 contact = _with_ghl_contact_id(contact)
-            dist = build_test_distribution(preview=contact_preview, contacts=[contact], dry_run=dry_run)
+            dist = build_test_distribution(preview=contact_preview, contacts=[contact], dry_run=dry_run, batch_id=batch_id)
             if not dry_run and dist.get("messages"):
                 ghl_result = _send_messages_via_ghl(dist["messages"])
                 if ghl_result.get("status") == "skipped":
@@ -72,6 +72,7 @@ def bulk_distribute_task(self, preview: dict, contacts: list, dry_run: bool = Tr
                             dist["messages"],
                             dry_run=False,
                             table=os.getenv("SUPABASE_DISTRIBUTION_TABLE", "ccs_distributions"),
+                            batch_id=batch_id,
                         )
                         if rows:
                             _log_events_to_supabase(rows)

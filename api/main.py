@@ -2,6 +2,7 @@ import base64
 import html
 import json as _json
 import os
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field
 
 from .distribution import (
+    fetch_distribution_batches,
     fetch_document_opens,
     fetch_email_opens,
     process_distribution,
@@ -157,10 +159,16 @@ def send_bulk_distribution(request: BulkDistributionRequest) -> dict[str, Any]:
             status_code=400,
             detail="No contacts found in workbook — parse the workbook first and ensure it has a customer sheet with email addresses",
         )
+    batch_id = str(uuid.uuid4())
     # Strip contacts from preview — keeps the Redis task-arg payload small
     preview_slim = {k: v for k, v in request.preview.items() if k != "contacts"}
-    task = bulk_distribute_task.delay(preview_slim, contacts, request.dry_run)
-    return {"task_id": task.id, "status": "queued", "total": len(contacts)}
+    task = bulk_distribute_task.delay(preview_slim, contacts, request.dry_run, batch_id)
+    return {"task_id": task.id, "status": "queued", "total": len(contacts), "batch_id": batch_id}
+
+
+@app.get("/distribution/batches")
+def list_distribution_batches() -> dict[str, Any]:
+    return fetch_distribution_batches()
 
 
 @app.get("/distribution/status/{task_id}")
@@ -182,10 +190,12 @@ def get_distribution_status(task_id: str) -> dict[str, Any]:
 def test_send_distribution(
     request: DistributionRequest,
 ) -> dict[str, Any]:
+    batch_id = str(uuid.uuid4()) if not request.dry_run else ""
     return process_distribution(
         preview=request.preview,
         contacts=[contact.model_dump() for contact in request.contacts],
         dry_run=request.dry_run,
+        batch_id=batch_id,
     )
 
 
@@ -244,11 +254,12 @@ def track_email_open(
     email: str = Query(default=""),
     contact: str = Query(default=""),
     sig: str = Query(default=""),
+    batch: str = Query(default=""),
 ) -> Response:
     if email and contact and sig and validate_email_open_signature(email, contact, sig):
         ua = request.headers.get("user-agent", "")
         ip = request.client.host if request.client else ""
-        record_email_open(email, contact, ua, ip)
+        record_email_open(email, contact, ua, ip, batch_id=batch)
     return Response(
         content=_TRACKING_GIF,
         media_type="image/gif",
@@ -263,19 +274,21 @@ def track_email_open(
 @app.get("/document-opens")
 def get_document_opens(
     email: str = Query(default=""),
+    batch_id: str = Query(default=""),
     limit: int = Query(default=200),
     offset: int = Query(default=0),
 ) -> dict[str, Any]:
-    return fetch_document_opens(email=email, limit=limit, offset=offset)
+    return fetch_document_opens(email=email, batch_id=batch_id, limit=limit, offset=offset)
 
 
 @app.get("/email-opens")
 def get_email_opens(
     # _: dict = Depends(require_auth),
-    limit: int = Query(default=200),
+    batch_id: str = Query(default=""),
+    limit: int = Query(default=500),
     offset: int = Query(default=0),
 ) -> dict[str, Any]:
-    return fetch_email_opens(limit=limit, offset=offset)
+    return fetch_email_opens(batch_id=batch_id, limit=limit, offset=offset)
 
 
 @app.post("/rebrand/sds")

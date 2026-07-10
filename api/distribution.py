@@ -21,11 +21,12 @@ def build_test_distribution(
     preview: dict[str, Any],
     contacts: list[dict[str, Any]],
     dry_run: bool = True,
+    batch_id: str = "",
 ) -> dict[str, Any]:
     valid_contacts = [_normalize_contact(contact) for contact in contacts]
     valid_contacts = [contact for contact in valid_contacts if contact["email"]]
     products = preview.get("products", [])
-    messages = [_compose_message(preview, contact, products) for contact in valid_contacts]
+    messages = [_compose_message(preview, contact, products, batch_id=batch_id) for contact in valid_contacts]
     audit_events = [
         {
             "event_type": "dry_run_email_prepared" if dry_run else "email_send_requested",
@@ -62,11 +63,12 @@ def process_distribution(
     preview: dict[str, Any],
     contacts: list[dict[str, Any]],
     dry_run: bool = True,
+    batch_id: str = "",
 ) -> dict[str, Any]:
     selected_contacts = contacts or _filter_contacts_by_products(_fetch_ghl_contacts(), preview.get("products", []))
     if not dry_run:
         selected_contacts = [_with_ghl_contact_id(contact) for contact in selected_contacts]
-    distribution = build_test_distribution(preview=preview, contacts=selected_contacts, dry_run=dry_run)
+    distribution = build_test_distribution(preview=preview, contacts=selected_contacts, dry_run=dry_run, batch_id=batch_id)
 
     if dry_run:
         distribution["ghl"] = {"status": "skipped", "reason": "dry_run"}
@@ -79,6 +81,7 @@ def process_distribution(
         distribution["messages"],
         dry_run=False,
         table=os.getenv("SUPABASE_DISTRIBUTION_TABLE", "ccs_distributions"),
+        batch_id=batch_id,
     )
     distribution["supabase"] = _log_events_to_supabase(distribution["distribution_rows"])
     return distribution
@@ -88,6 +91,8 @@ def _compose_message(
     preview: dict[str, Any],
     contact: dict[str, Any],
     products: list[dict[str, Any]],
+    *,
+    batch_id: str = "",
 ) -> dict[str, Any]:
     customer = preview.get("customer", {})
     contact_products = _products_for_contact(contact, products)
@@ -136,6 +141,7 @@ def _compose_message(
             email=contact["email"],
             contact_id=_contact_id,
             secret=_secret,
+            batch_id=batch_id,
         )
         html_lines.append(
             f'<img src="{html.escape(pixel, quote=True)}" width="1" height="1" style="display:none;width:1px;height:1px;" alt="" />'
@@ -311,9 +317,12 @@ def email_open_pixel_url(
     email: str,
     contact_id: str,
     secret: str,
+    batch_id: str = "",
 ) -> str:
-    query = urlencode({"email": email, "contact": contact_id, "sig": email_open_signature(email, contact_id, secret)})
-    return f"{public_base_url.rstrip('/')}/api/ccs-email-open?{query}"
+    params: dict[str, str] = {"email": email, "contact": contact_id, "sig": email_open_signature(email, contact_id, secret)}
+    if batch_id:
+        params["batch"] = batch_id
+    return f"{public_base_url.rstrip('/')}/api/ccs-email-open?{urlencode(params)}"
 
 
 def validate_email_open_signature(email: str, contact_id: str, signature: str) -> bool:
@@ -324,20 +333,23 @@ def validate_email_open_signature(email: str, contact_id: str, signature: str) -
     return hmac.compare_digest(expected, signature)
 
 
-def record_email_open(email: str, contact_id: str, user_agent: str, ip_address: str) -> dict[str, Any]:
+def record_email_open(email: str, contact_id: str, user_agent: str, ip_address: str, *, batch_id: str = "") -> dict[str, Any]:
     supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     if not supabase_url or not service_key:
         return {"status": "skipped", "reason": "Supabase not configured"}
+    payload: dict[str, Any] = {
+        "customer_email": email,
+        "contact_id": contact_id,
+        "opened_at": _now(),
+        "user_agent": (user_agent or "")[:500],
+        "ip_address": ip_address or "",
+    }
+    if batch_id:
+        payload["batch_id"] = batch_id
     return _post_json(
         f"{supabase_url}/rest/v1/ccs_email_opens",
-        {
-            "customer_email": email,
-            "contact_id": contact_id,
-            "opened_at": _now(),
-            "user_agent": (user_agent or "")[:500],
-            "ip_address": ip_address or "",
-        },
+        payload,
         {
             "apikey": service_key,
             "Authorization": f"Bearer {service_key}",
@@ -346,7 +358,18 @@ def record_email_open(email: str, contact_id: str, user_agent: str, ip_address: 
     )
 
 
-def fetch_document_opens(*, email: str = "", limit: int = 200, offset: int = 0) -> dict[str, Any]:
+def fetch_distribution_batches() -> dict[str, Any]:
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not supabase_url or not service_key:
+        return {"batches": [], "error": "Supabase not configured"}
+    endpoint = f"{supabase_url}/rest/v1/ccs_distribution_batches?order=sent_at.desc"
+    response = _get_json(endpoint, {"apikey": service_key, "Authorization": f"Bearer {service_key}"})
+    body = response.get("body") or []
+    return {"batches": body if isinstance(body, list) else []}
+
+
+def fetch_document_opens(*, email: str = "", batch_id: str = "", limit: int = 200, offset: int = 0) -> dict[str, Any]:
     supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     table = os.getenv("SUPABASE_DISTRIBUTION_TABLE", "ccs_distributions")
@@ -355,6 +378,8 @@ def fetch_document_opens(*, email: str = "", limit: int = 200, offset: int = 0) 
     filters = "&status=neq.dry_run"
     if email:
         filters += f"&customer_email=ilike.*{quote(email, safe='')}*"
+    if batch_id:
+        filters += f"&batch_id=eq.{quote(batch_id, safe='')}"
     endpoint = (
         f"{supabase_url}/rest/v1/{table}"
         f"?select=customer_email,ghl_contact_id,status,downloaded_at,ccs_documents(product_code,chemical_name)"
@@ -367,12 +392,15 @@ def fetch_document_opens(*, email: str = "", limit: int = 200, offset: int = 0) 
     return {"rows": body if isinstance(body, list) else []}
 
 
-def fetch_email_opens(*, limit: int = 200, offset: int = 0) -> dict[str, Any]:
+def fetch_email_opens(*, batch_id: str = "", limit: int = 500, offset: int = 0) -> dict[str, Any]:
     supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     if not supabase_url or not service_key:
         return {"opens": [], "error": "Supabase not configured"}
-    endpoint = f"{supabase_url}/rest/v1/ccs_email_opens?order=opened_at.desc&limit={limit}&offset={offset}"
+    filters = ""
+    if batch_id:
+        filters = f"&batch_id=eq.{quote(batch_id, safe='')}"
+    endpoint = f"{supabase_url}/rest/v1/ccs_email_opens?order=opened_at.desc{filters}&limit={limit}&offset={offset}"
     response = _get_json(endpoint, {"apikey": service_key, "Authorization": f"Bearer {service_key}"})
     body = response.get("body") or []
     return {"opens": body if isinstance(body, list) else []}
@@ -550,6 +578,7 @@ def distribution_rows_for_supabase(
     *,
     dry_run: bool,
     table: str,
+    batch_id: str = "",
 ) -> list[dict[str, Any]]:
     rows = []
     for message in messages:
@@ -557,14 +586,15 @@ def distribution_rows_for_supabase(
             document_id = document["document_id"]
             if table == "ccs_distributions" and not _is_uuid(document_id):
                 continue
-            rows.append(
-                {
-                    "document_id": document_id,
-                    "customer_email": message["to"],
-                    "ghl_contact_id": message.get("contact_id") or document.get("contact_id", ""),
-                    "status": "dry_run" if dry_run else "sent",
-                }
-            )
+            row: dict[str, Any] = {
+                "document_id": document_id,
+                "customer_email": message["to"],
+                "ghl_contact_id": message.get("contact_id") or document.get("contact_id", ""),
+                "status": "dry_run" if dry_run else "sent",
+            }
+            if batch_id:
+                row["batch_id"] = batch_id
+            rows.append(row)
     return rows
 
 

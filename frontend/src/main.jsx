@@ -351,6 +351,42 @@ function SendResult({ result }) {
 }
 
 // ---------------------------------------------------------------------------
+// Shared batch dropdown hook
+// ---------------------------------------------------------------------------
+
+function useBatches() {
+  const [batches, setBatches] = useState([]);
+  useEffect(() => {
+    fetch(`${API_BASE}/distribution/batches`)
+      .then(r => r.json())
+      .then(d => setBatches(d.batches || []))
+      .catch(() => {});
+  }, []);
+  return batches;
+}
+
+function fmtBatchLabel(b) {
+  const d = new Date(b.sent_at);
+  const date = d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${date} — ${b.contact_count} contact${b.contact_count !== 1 ? 's' : ''}`;
+}
+
+function BatchSelect({ batches, value, onChange }) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      style={{ padding: '7px 12px', border: '1px solid #d9e1e8', borderRadius: '6px', fontSize: '0.88rem', background: '#fff', cursor: 'pointer' }}
+    >
+      <option value="">All sends</option>
+      {batches.map(b => (
+        <option key={b.batch_id} value={b.batch_id}>{fmtBatchLabel(b)}</option>
+      ))}
+    </select>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Email Opens dashboard
 // ---------------------------------------------------------------------------
 
@@ -358,11 +394,15 @@ function EmailOpensDashboard() {
   const [opens, setOpens] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [batchId, setBatchId] = useState('');
+  const batches = useBatches();
 
-  async function loadOpens() {
+  async function loadOpens(bid) {
     setLoading(true); setError('');
     try {
-      const response = await fetch(`${API_BASE}/email-opens?limit=500`);
+      const params = new URLSearchParams({ limit: 500 });
+      if (bid) params.set('batch_id', bid);
+      const response = await fetch(`${API_BASE}/email-opens?${params}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Failed to load');
       setOpens(data.opens || []);
@@ -370,7 +410,11 @@ function EmailOpensDashboard() {
     finally { setLoading(false); }
   }
 
-  useEffect(() => { loadOpens(); }, []);
+  useEffect(() => { loadOpens(batchId); }, [batchId]);
+
+  function handleBatchChange(bid) {
+    setBatchId(bid);
+  }
 
   const byEmail = useMemo(() => {
     const map = {};
@@ -396,9 +440,12 @@ function EmailOpensDashboard() {
           <p className="eyebrow">Compliant Cleaning Supplies</p>
           <h1>Email Opens</h1>
         </div>
-        <button className="tab" onClick={loadOpens} disabled={loading}>
-          {loading ? 'Loading…' : 'Refresh'}
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <BatchSelect batches={batches} value={batchId} onChange={handleBatchChange} />
+          <button className="tab" onClick={() => loadOpens(batchId)} disabled={loading}>
+            {loading ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
       </div>
       {error && <div className="notice error"><AlertCircle size={18} /><span>{error}</span></div>}
       {loading ? (
@@ -449,12 +496,18 @@ function PdfOpensDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [batchId, setBatchId] = useState('');
+  const batches = useBatches();
 
-  async function runSearch(q) {
-    if (!q.trim()) { setRows([]); return; }
+  async function runSearch(q, bid) {
+    const email = (q ?? query).trim();
+    const batch = bid ?? batchId;
+    if (!email && !batch) { setRows([]); return; }
     setLoading(true); setError('');
     try {
-      const params = new URLSearchParams({ email: q.trim(), limit: 200 });
+      const params = new URLSearchParams({ limit: 200 });
+      if (email) params.set('email', email);
+      if (batch) params.set('batch_id', batch);
       const response = await fetch(`${API_BASE}/document-opens?${params}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Failed to load');
@@ -466,7 +519,13 @@ function PdfOpensDashboard() {
   function handleSearch(e) {
     e.preventDefault();
     setQuery(search);
-    runSearch(search);
+    runSearch(search, batchId);
+  }
+
+  function handleBatchChange(bid) {
+    setBatchId(bid);
+    if (query || bid) runSearch(query, bid);
+    else setRows([]);
   }
 
   const filtered = useMemo(() => {
@@ -497,6 +556,7 @@ function PdfOpensDashboard() {
           <p className="eyebrow">Compliant Cleaning Supplies</p>
           <h1>PDF Opens</h1>
         </div>
+        <BatchSelect batches={batches} value={batchId} onChange={handleBatchChange} />
       </div>
 
       <form onSubmit={handleSearch} style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
@@ -534,11 +594,11 @@ function PdfOpensDashboard() {
         </>
       )}
 
-      {!query ? (
+      {!query && !batchId ? (
         <div className="empty-state">
           <FileSpreadsheet size={34} />
           <h2>Search a contact</h2>
-          <p>Enter a full or partial email address to view their PDF delivery and open status.</p>
+          <p>Enter an email address, or select a send campaign above to view PDF delivery status.</p>
         </div>
       ) : loading ? (
         <div className="empty-state"><p>Searching…</p></div>
