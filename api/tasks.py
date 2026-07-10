@@ -12,7 +12,7 @@ def ping_task() -> dict[str, str]:
     }
 
 
-@celery_app.task(bind=True, name="ccs.bulk_distribute", max_retries=2, time_limit=1800)
+@celery_app.task(bind=True, name="ccs.bulk_distribute", max_retries=2, time_limit=3600)
 def bulk_distribute_task(self, preview: dict, contacts: list, dry_run: bool = True) -> dict:
     import os
     import time
