@@ -91,31 +91,33 @@ def _compose_message(
 ) -> dict[str, Any]:
     customer = preview.get("customer", {})
     contact_products = _products_for_contact(contact, products)
-    product_names = ", ".join(product.get("name", "") for product in contact_products if product.get("name"))
-    subject_product = product_names if len(product_names) <= 72 else f"{len(contact_products)} selected products"
-    subject = f"CCS SDS pack: {subject_product}"
     documents = _message_documents(contact, contact_products, preview)
+    # Only include products that have at least one document — skip silently if missing
+    products_in_email = [
+        p for p in contact_products
+        if any(doc["product_code"] == p.get("code", "") for doc in documents)
+    ]
+    product_names = ", ".join(p.get("name", "") for p in products_in_email if p.get("name"))
+    subject_product = product_names if len(product_names) <= 72 else f"{len(products_in_email)} selected products"
+    subject = f"CCS SDS pack: {subject_product}"
     html_lines = [
         f"<p>Hi {html.escape(contact['name'] or 'there')},</p>",
         f"<p>Please find the SDS, chemical-register, and risk-assessment links for {html.escape(customer.get('company', 'your site'))}.</p>",
         "<ul>",
     ]
 
-    for product in contact_products:
+    for product in products_in_email:
+        product_docs = [doc for doc in documents if doc["product_code"] == product.get("code", "")]
         html_lines.append("<li>")
         html_lines.append(f"<strong>{html.escape(product.get('code', ''))} - {html.escape(product.get('name', ''))}</strong>")
-        product_docs = [doc for doc in documents if doc["product_code"] == product.get("code", "")]
-        if product_docs:
-            html_lines.append("<ul>")
-            for document in product_docs:
-                html_lines.append(
-                    f'<li>{html.escape(document["label"])}: '
-                    f'<a href="{html.escape(document["delivery_url"], quote=True)}">'
-                    f'{html.escape(document["filename"] or "Open document")}</a></li>'
-                )
-            html_lines.append("</ul>")
-        else:
-            html_lines.append("<br>Documents: missing")
+        html_lines.append("<ul>")
+        for document in product_docs:
+            html_lines.append(
+                f'<li>{html.escape(document["label"])}: '
+                f'<a href="{html.escape(document["delivery_url"], quote=True)}">'
+                f'{html.escape(document["filename"] or "Open document")}</a></li>'
+            )
+        html_lines.append("</ul>")
         html_lines.append("</li>")
 
     html_lines.extend(

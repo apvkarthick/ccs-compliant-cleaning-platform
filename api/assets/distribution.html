@@ -374,10 +374,6 @@ function renderPreview(data) {
     return;
   }
 
-  const missingNote = missing > 0
-    ? `<div class="notice warning" style="margin-top:12px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span>${missing} product(s) missing source documents</span></div>`
-    : '';
-
   const rows = products.map(p => `
     <tr>
       <td><strong>${p.code || '-'}</strong></td>
@@ -408,8 +404,8 @@ function renderPreview(data) {
           <tbody>${rows}</tbody>
         </table>
       </div>
-      ${missingNote}
-    </div>`;
+    </div>
+    ${renderMissingReport(data)}`;
 }
 
 let bulkPollTimer = null;
@@ -498,6 +494,87 @@ async function pollBulkStatus(taskId, dryRun) {
       document.getElementById('btn-bulk-send').innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Send to all contacts';
     }
   } catch (_) {}
+}
+
+function renderMissingReport(data) {
+  const missing = data.missing_documents || [];
+  const registerUrl = data.register && data.register.url;
+  const sdsMissing = missing.filter(m => m.missing.includes('SDS'));
+  const riskMissing = missing.filter(m => m.missing.includes('Risk Assessment'));
+  const registerMissing = !registerUrl;
+  if (!sdsMissing.length && !riskMissing.length && !registerMissing) return '';
+
+  const makeRows = (items) => items.map(m => `
+    <tr>
+      <td><strong>${m.code || '-'}</strong></td>
+      <td>${m.name || '-'}</td>
+    </tr>`).join('');
+
+  const sdsSection = sdsMissing.length ? `
+    <div style="margin-bottom:16px">
+      <p style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#8899aa;margin-bottom:8px">SDS Missing <span class="count-badge" style="margin-left:6px">${sdsMissing.length}</span></p>
+      <div class="table-wrap">
+        <table><thead><tr><th>Code</th><th>Product</th></tr></thead><tbody>${makeRows(sdsMissing)}</tbody></table>
+      </div>
+    </div>` : '';
+
+  const riskSection = riskMissing.length ? `
+    <div style="margin-bottom:16px">
+      <p style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#8899aa;margin-bottom:8px">Risk Assessment Missing <span class="count-badge" style="margin-left:6px">${riskMissing.length}</span></p>
+      <div class="table-wrap">
+        <table><thead><tr><th>Code</th><th>Product</th></tr></thead><tbody>${makeRows(riskMissing)}</tbody></table>
+      </div>
+    </div>` : '';
+
+  const registerSection = registerMissing ? `
+    <div class="notice warning" style="margin-top:0">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span><strong>Chemical Register URL missing</strong> — add the register URL to the workbook's register column</span>
+    </div>` : '';
+
+  const totalIssues = sdsMissing.length + riskMissing.length + (registerMissing ? 1 : 0);
+  return `
+    <div class="card" id="missing-report-card">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Missing Documents Report</p>
+          <h2>PDFs to fill in the sheet</h2>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span class="count-badge" style="background:#fee2e2;color:#991b1b">${totalIssues} issue${totalIssues !== 1 ? 's' : ''}</span>
+          <button class="secondary" style="width:auto;padding:7px 14px;margin-top:0;font-size:0.82rem" onclick="downloadMissingReport()">
+            ↓ Download CSV
+          </button>
+        </div>
+      </div>
+      <p style="font-size:0.82rem;color:#607080;margin-bottom:16px">These documents are required but not yet linked in the workbook. Add the PDF URLs to the spreadsheet before the next distribution run.</p>
+      ${sdsSection}${riskSection}${registerSection}
+    </div>`;
+}
+
+function downloadMissingReport() {
+  if (!previewData) return;
+  const missing = previewData.missing_documents || [];
+  const registerUrl = previewData.register && previewData.register.url;
+  const customer = (previewData.customer && previewData.customer.company) || 'report';
+
+  const rows = [['Category', 'Product Code', 'Product Name']];
+  missing.filter(m => m.missing.includes('SDS')).forEach(m => {
+    rows.push(['SDS Missing', m.code || '', m.name || '']);
+  });
+  missing.filter(m => m.missing.includes('Risk Assessment')).forEach(m => {
+    rows.push(['Risk Assessment Missing', m.code || '', m.name || '']);
+  });
+  if (!registerUrl) rows.push(['Chemical Register Missing', '-', '-']);
+
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `missing_docs_${customer.replace(/\s+/g, '_')}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function renderSendResult(data) {
