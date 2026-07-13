@@ -685,8 +685,6 @@ def distribution_rows_for_supabase(
     for message in messages:
         for document in message["documents"]:
             document_id = document["document_id"]
-            if table == "ccs_distributions" and not _is_uuid(document_id):
-                continue
             row: dict[str, Any] = {
                 "document_id": document_id,
                 "customer_email": message["to"],
