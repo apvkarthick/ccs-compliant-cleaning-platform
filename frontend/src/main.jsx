@@ -546,7 +546,7 @@ function PdfOpensDashboard() {
   }
 
   function chemName(row) {
-    return row.ccs_documents?.chemical_name || row.ccs_documents?.product_code || '—';
+    return row.chemical_name || row.product_code || row.document_id || '—';
   }
 
   return (

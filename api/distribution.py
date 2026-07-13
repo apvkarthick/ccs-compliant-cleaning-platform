@@ -483,7 +483,7 @@ def fetch_document_opens(*, email: str = "", batch_id: str = "", limit: int = 20
         filters += f"&batch_id=eq.{quote(batch_id, safe='')}"
     endpoint = (
         f"{supabase_url}/rest/v1/{table}"
-        f"?select=customer_email,ghl_contact_id,status,downloaded_at,ccs_documents(product_code,chemical_name)"
+        f"?select=customer_email,ghl_contact_id,document_id,chemical_name,product_code,status,downloaded_at,batch_id"
         f"{filters}"
         f"&order=customer_email.asc,downloaded_at.desc.nullslast"
         f"&limit={limit}&offset={offset}"
@@ -690,6 +690,8 @@ def distribution_rows_for_supabase(
                 "customer_email": message["to"],
                 "ghl_contact_id": message.get("contact_id") or document.get("contact_id", ""),
                 "status": "dry_run" if dry_run else "sent",
+                "chemical_name": document.get("chemical_name", ""),
+                "product_code": document.get("product_code", ""),
             }
             if batch_id:
                 row["batch_id"] = batch_id
