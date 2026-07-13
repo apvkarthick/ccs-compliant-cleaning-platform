@@ -171,6 +171,16 @@
 
     <div class="file-list" id="fileList"></div>
 
+    <div style="margin-top:14px">
+      <label style="font-size:0.75rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#667789;display:block;margin-bottom:6px">Supplier brand</label>
+      <select id="brandSelect" style="padding:9px 12px;border:1px solid #d8e1e8;border-radius:6px;font-size:0.88rem;font-family:inherit;color:#17202a;background:#fff;min-width:280px;outline:none">
+        <option value="auto">Auto-detect (recommended)</option>
+        <option value="spill_crew">Spill Crew / CleanPlus</option>
+        <option value="sampson">Sampson Chemical Products</option>
+        <option value="smart_clean">Solopak / Smart Clean</option>
+      </select>
+    </div>
+
     <div class="actions">
       <button class="btn btn-primary" id="rebrandBtn" disabled>
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M8 8l4-4 4 4"/></svg>
@@ -213,7 +223,7 @@
   <!-- Disclaimer -->
   <div style="background:#f8fafc;border:1px solid #e2eaef;border-radius:8px;padding:20px 24px;margin-bottom:16px;font-size:0.82rem;color:#475569;line-height:1.6">
     <p style="font-size:0.72rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#94a3b8;margin-bottom:10px">Compatibility Notice</p>
-    <p style="margin-bottom:10px">This tool was built specifically for the <strong style="color:#17202a">Spill Crew / CleanPlus SDS format</strong> — two-column GHS header table, standard label names (Supplier Name, Address, Telephone, etc.), logo in the top-left. SDS documents that match that layout will rebrand reliably.</p>
+    <p style="margin-bottom:10px">Three supplier formats are supported: <strong style="color:#17202a">Spill Crew / CleanPlus</strong> (tab-separated GHS table), <strong style="color:#17202a">Sampson Chemical Products</strong> (GHS REACH block format), and <strong style="color:#17202a">Solopak / Smart Clean</strong> (Australian MSDS format with Mail Address field). Select the matching brand from the dropdown — or leave it on <em>Auto-detect</em> and the tool will identify the format automatically.</p>
     <p style="margin-bottom:10px">Other formats — brochures, non-GHS layouts, or differently-structured SDS documents — may not work correctly. If the tool can't detect the supplier block, it will return empty replacements and no body text will be changed (though the logo swap will still attempt).</p>
     <p style="margin-bottom:10px"><strong style="color:#be123c">Scanned or photographed PDFs will not work</strong> — the tool reads live text only and cannot process image-based documents.</p>
     <p>To add support for a new supplier's SDS format, email the document to <a href="mailto:support@nxai.com.au" style="color:#0f766e;font-weight:600">support@nxai.com.au</a> and we'll build it in.</p>
@@ -222,8 +232,12 @@
 </div>
 
 <script>
-const API_DOCX = '/api/rebrand/sds';
 const API_PDF  = '/api/rebrand/pdf';
+
+function docxApiUrl() {
+  const brand = document.getElementById('brandSelect').value;
+  return `/api/rebrand/sds?brand=${encodeURIComponent(brand)}`;
+}
 
 let files = [];
 let jobs  = [];
@@ -313,7 +327,7 @@ async function runRebrand() {
     try {
       const fd = new FormData();
       fd.append('file', files[i]);
-      const api = jobs[i].type === 'pdf' ? API_PDF : API_DOCX;
+      const api = jobs[i].type === 'pdf' ? API_PDF : docxApiUrl();
       const res = await fetch(api, { method: 'POST', body: fd });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));

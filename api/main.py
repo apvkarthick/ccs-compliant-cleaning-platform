@@ -414,6 +414,7 @@ def get_email_opens(
 async def rebrand_sds_endpoint(
     file: UploadFile = File(...),
     sds_date: str = Query(default="", description="SDS date override DD/MM/YYYY"),
+    brand: str = Query(default="", description="Supplier brand: auto | spill_crew | sampson | smart_clean"),
 ) -> Response:
     if not file.filename or not file.filename.lower().endswith(".docx"):
         raise HTTPException(status_code=400, detail="Upload a .docx SDS file")
@@ -421,7 +422,7 @@ async def rebrand_sds_endpoint(
     if not docx_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    rebranded_docx, summary = rebrand_sds(docx_bytes, sds_date or None)
+    rebranded_docx, summary = rebrand_sds(docx_bytes, sds_date or None, brand or "")
 
     stem = Path(file.filename).stem
     return Response(

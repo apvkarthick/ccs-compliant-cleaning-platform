@@ -22,6 +22,7 @@ CCS = {
 }
 _CCS_EMAIL_URL = "mailto:sales@compliantcs.com.au"
 _CCS_WEB_URL = "https://www.compliantcs.com.au/"
+_CCS_ABN = "27 144 521 200"
 
 LOGO_PATH = Path(__file__).parent / "assets" / "ccs_logo.png"
 
@@ -36,25 +37,34 @@ _SUPPLIER_FIELDS: list[tuple[str, str, str]] = [
 _CCS_DOMAIN = "compliantcs.com.au"
 
 
-def rebrand_sds(docx_bytes: bytes, sds_date: str | None = None) -> tuple[bytes, dict]:
+def rebrand_sds(docx_bytes: bytes, sds_date: str | None = None, brand: str = "") -> tuple[bytes, dict]:
     """
     Rebrand a supplier SDS DOCX with CCS identity.
 
     Returns (rebranded_bytes, summary_dict).
     sds_date: DD/MM/YYYY string; defaults to today.
+    brand: "spill_crew" | "sampson" | "smart_clean" | "auto" (default auto-detect).
     """
     today = sds_date or date.today().strftime("%d/%m/%Y")
     doc = Document(io.BytesIO(docx_bytes))
 
-    old_supplier = _detect_supplier_name(doc)
-    changes = _apply_supplier_block(doc, today, old_supplier)
-    _replace_hyperlink_display_text(doc, old_supplier)
+    effective_brand = brand if brand and brand != "auto" else _detect_brand(doc)
+
+    if effective_brand == "sampson":
+        changes = _rebrand_sampson(doc, today)
+    elif effective_brand == "smart_clean":
+        changes = _rebrand_smart_clean(doc, today)
+    else:
+        old_supplier = _detect_supplier_name(doc)
+        changes = _apply_supplier_block(doc, today, old_supplier)
+        _replace_hyperlink_display_text(doc, old_supplier)
+        changes["old_supplier"] = old_supplier
+
+    changes["brand"] = effective_brand
+    changes["sds_date"] = today
 
     out_bytes = _save_to_bytes(doc)
     out_bytes = _patch_zip(out_bytes)
-
-    changes["old_supplier"] = old_supplier
-    changes["sds_date"] = today
     return out_bytes, changes
 
 
@@ -123,6 +133,107 @@ def _supplier_search_terms(full_name: str) -> list[str]:
 def _extract_version(text: str) -> str:
     match = re.search(r"Version\s*[\d.]+", text, re.IGNORECASE)
     return match.group(0).strip() if match else ""
+
+
+# ---------------------------------------------------------------------------
+# Brand detection
+# ---------------------------------------------------------------------------
+
+def _detect_brand(doc: Document) -> str:
+    """Auto-detect supplier brand from document content."""
+    texts: list[str] = [p.text for p in doc.paragraphs]
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                texts.append(cell.text)
+    all_text = "\n".join(texts)
+    if re.search(r"sampson", all_text, re.IGNORECASE):
+        return "sampson"
+    if "Chemical Product and Company Identification" in all_text or re.search(r"\bMail Address\b", all_text):
+        return "smart_clean"
+    return "spill_crew"
+
+
+# ---------------------------------------------------------------------------
+# Sampson Chemical Products handler
+# ---------------------------------------------------------------------------
+
+def _replace_cell_lines(cell, lines: list[str]) -> None:
+    """Replace paragraph content in a table cell line by line, blanking extras."""
+    paras = cell.paragraphs
+    for i, text in enumerate(lines):
+        if i < len(paras):
+            _set_full_run(paras[i], text)
+    for i in range(len(lines), len(paras)):
+        _set_full_run(paras[i], "")
+
+
+def _rebrand_sampson(doc: Document, today: str) -> dict:
+    """Rebrand a Sampson Chemical Products GHS SDS DOCX."""
+    changes: list[str] = []
+    ccs_block = [
+        CCS["supplier_name"],
+        CCS["address"],
+        CCS["telephone"],
+        CCS["email"],
+    ]
+    for table in doc.tables:
+        for row in table.rows:
+            cells = row.cells
+            if not cells:
+                continue
+            label = cells[0].text.strip()
+            if label in ("Supplier", "Manufacturer") and len(cells) > 1:
+                if re.search(r"sampson|eco\s*pro|bigpond", cells[1].text, re.IGNORECASE):
+                    _replace_cell_lines(cells[1], ccs_block)
+                    changes.append(f"{label} block → CCS")
+            if re.match(r"Revision\s+date", label, re.IGNORECASE) and len(cells) > 1:
+                _replace_cell_lines(cells[1], [today])
+                changes.append(f"Revision date → {today}")
+    for para in doc.paragraphs:
+        text = para.text
+        if re.search(r"sampson|sampson_office", text, re.IGNORECASE):
+            _replace_text_in_runs(para, "Sampson Chemical Products", CCS["supplier_name"])
+            _replace_text_in_runs(para, "sampson_office@bigpond.com", CCS["email"])
+            changes.append("Body text: replaced Sampson reference")
+    return {"changes": changes, "old_supplier": "Sampson Chemical Products"}
+
+
+# ---------------------------------------------------------------------------
+# Smart Clean / Solopak handler
+# ---------------------------------------------------------------------------
+
+def _rebrand_smart_clean(doc: Document, today: str) -> dict:
+    """Rebrand a Smart Clean / Solopak Australian MSDS DOCX."""
+    changes: list[str] = []
+    old_supplier = ""
+    replacements: dict[str, str] = {
+        "Supplier": CCS["supplier_name"],
+        "ABN": _CCS_ABN,
+        "Mail Address": CCS["address"],
+        "Email": CCS["email"],
+        "Telephone": CCS["telephone"],
+        "Emergency Telephone": f"Poisons Information Centre (National) {CCS['emergency']}",
+        "Date of Issue": today,
+        "Issue Date": today,
+        "Revision Date": today,
+        "Prepared By": "Compliant Cleaning Supplies & Systems",
+    }
+    for table in doc.tables:
+        for row in table.rows:
+            if len(row.cells) < 2:
+                continue
+            raw_label = row.cells[0].text.strip()
+            # Match with or without trailing colon
+            label = raw_label.rstrip(":")
+            value_cell = row.cells[1]
+            if label == "Supplier":
+                old_supplier = value_cell.text.strip()
+            new_val = replacements.get(label) or replacements.get(raw_label)
+            if new_val:
+                _replace_cell_lines(value_cell, [new_val])
+                changes.append(f"{raw_label} → {new_val}")
+    return {"changes": changes, "old_supplier": old_supplier or "Smart Clean / Solopak"}
 
 
 # ---------------------------------------------------------------------------
