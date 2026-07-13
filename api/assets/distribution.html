@@ -93,6 +93,18 @@
 
   .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* Saved workbooks + schedule */
+  select{width:100%;padding:8px 10px;border:1px solid #c8d6e0;border-radius:6px;font-size:0.85rem;background:#fafcfd;color:#17202a;cursor:pointer}
+  input[type=date]{width:100%;padding:8px 10px;border:1px solid #c8d6e0;border-radius:6px;font-size:0.85rem;background:#fafcfd;margin-bottom:10px}
+  input[type=number]{padding:6px 8px;border:1px solid #c8d6e0;border-radius:6px;font-size:0.85rem;width:72px}
+  .freq-option{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid #e2eaef;border-radius:6px;cursor:pointer;transition:border-color .15s;margin:0}
+  .freq-option:hover{border-color:#2C6B33}
+  .freq-option.selected{border-color:#2C6B33;background:#f0fdf4}
+  .freq-option input[type=radio]{accent-color:#2C6B33;width:15px;height:15px;flex-shrink:0}
+  .freq-option span{font-size:0.85rem;font-weight:500}
+  .schedule-status{padding:10px 12px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;font-size:0.82rem;color:#166534;margin-top:10px;line-height:1.6}
+  .save-badge{display:inline-flex;align-items:center;gap:4px;font-size:0.75rem;color:#166534;font-weight:600;background:#dcfce7;padding:2px 8px;border-radius:10px}
 </style>
 </head>
 <body>
@@ -162,8 +174,20 @@
   <div class="layout">
     <!-- Left panel -->
     <div>
+      <!-- Saved workbooks -->
       <div class="card">
-        <label for="wb-file">Client workbook (.xlsx or .xlsm)</label>
+        <label for="saved-workbook-select">Load saved workbook</label>
+        <select id="saved-workbook-select" onchange="onSavedWorkbookSelect()">
+          <option value="">— select a saved client —</option>
+        </select>
+        <p id="saved-hint" style="font-size:0.75rem;color:#8899aa;margin-top:6px">Searching…</p>
+        <button class="secondary" id="btn-load-workbook" onclick="doLoadWorkbook()" style="display:none">
+          Load workbook
+        </button>
+      </div>
+
+      <div class="card">
+        <label for="wb-file">Or upload new workbook (.xlsx or .xlsm)</label>
         <input type="file" id="wb-file" accept=".xlsx,.xlsm">
         <button class="primary" id="btn-preview" onclick="doPreview()">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -213,6 +237,37 @@
           </div>
         </div>
       </div>
+
+      <!-- Schedule card — shown after workbook parsed with contacts -->
+      <div class="card" id="schedule-card" style="display:none">
+        <p class="eyebrow" style="margin-bottom:6px">Recurring schedule</p>
+        <p style="font-size:0.83rem;color:#607080;margin-bottom:12px">Automatically resend SDS packs on a recurring basis.</p>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+          <label class="freq-option"><input type="radio" name="schedule-freq" value="weekly"> <span>Weekly</span></label>
+          <label class="freq-option"><input type="radio" name="schedule-freq" value="biweekly"> <span>Every 2 weeks</span></label>
+          <label class="freq-option"><input type="radio" name="schedule-freq" value="monthly"> <span>Monthly (30 days)</span></label>
+          <label class="freq-option"><input type="radio" name="schedule-freq" value="custom"> <span>Custom interval</span></label>
+        </div>
+        <div id="custom-interval-row" style="display:none;align-items:center;gap:8px;margin-bottom:12px">
+          <span style="font-size:0.85rem;color:#34495e">Every</span>
+          <input type="number" id="schedule-custom-days" min="1" max="365" value="30">
+          <span style="font-size:0.85rem;color:#34495e">days</span>
+        </div>
+        <label>First send date</label>
+        <input type="date" id="schedule-start-date">
+        <div class="toggle-row" style="margin-bottom:4px">
+          <input type="checkbox" id="schedule-dry-run" checked>
+          <label for="schedule-dry-run">Dry run (no emails sent)</label>
+        </div>
+        <div id="schedule-status-box" style="display:none" class="schedule-status"></div>
+        <button class="primary" id="btn-save-schedule" onclick="doSaveSchedule()" style="margin-top:10px">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Save schedule
+        </button>
+        <button class="secondary" id="btn-disable-schedule" onclick="doDisableSchedule()" style="display:none">
+          Disable schedule
+        </button>
+      </div>
     </div>
 
     <!-- Right panel -->
@@ -242,6 +297,182 @@
 
 <script>
 let previewData = null;
+let currentCustomerId = null;
+
+window.addEventListener('DOMContentLoaded', () => {
+  loadSavedWorkbooks();
+  // Default first-send date to tomorrow
+  const di = document.getElementById('schedule-start-date');
+  if (di) {
+    const t = new Date(); t.setDate(t.getDate() + 1);
+    di.value = t.toISOString().split('T')[0];
+  }
+  document.querySelectorAll('input[name="schedule-freq"]').forEach(r => r.addEventListener('change', onFreqChange));
+});
+
+// ─── Saved workbooks ──────────────────────────────────────────────────────────
+
+async function loadSavedWorkbooks() {
+  const hint = document.getElementById('saved-hint');
+  try {
+    const res = await fetch('/api/workbooks');
+    const data = await res.json();
+    const sel = document.getElementById('saved-workbook-select');
+    if (Array.isArray(data) && data.length) {
+      data.forEach(wb => {
+        const opt = document.createElement('option');
+        opt.value = wb.customer_id;
+        const d = wb.uploaded_at ? new Date(wb.uploaded_at).toLocaleDateString('en-AU') : '';
+        opt.textContent = `${wb.customer_name}${d ? ' — ' + d : ''}`;
+        sel.appendChild(opt);
+      });
+      hint.textContent = `${data.length} saved workbook${data.length !== 1 ? 's' : ''}`;
+    } else {
+      hint.textContent = 'No saved workbooks yet — upload one below.';
+    }
+  } catch (_) {
+    hint.textContent = 'Could not load saved workbooks.';
+  }
+}
+
+function onSavedWorkbookSelect() {
+  const val = document.getElementById('saved-workbook-select').value;
+  document.getElementById('btn-load-workbook').style.display = val ? 'flex' : 'none';
+}
+
+async function doLoadWorkbook() {
+  const customerId = document.getElementById('saved-workbook-select').value;
+  if (!customerId) return;
+  clearError();
+  const btn = document.getElementById('btn-load-workbook');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="border-color:rgba(44,107,51,.3);border-top-color:#2C6B33"></span> Loading…';
+  setStatus('Loading…', 'sending');
+  try {
+    const res = await fetch(`/api/workbooks/${encodeURIComponent(customerId)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Load failed');
+    previewData = data.parsed_json;
+    currentCustomerId = data.customer_id;
+    renderPreview(previewData);
+    const hasProducts = (previewData.products || []).length > 0;
+    document.getElementById('btn-send').disabled = !hasProducts;
+    if (hasProducts) setStatus('Workbook loaded', 'success');
+    const workbookContacts = previewData.contacts || [];
+    const bulkCard = document.getElementById('bulk-card');
+    if (workbookContacts.length && hasProducts) {
+      document.getElementById('bulk-count').textContent = workbookContacts.length;
+      bulkCard.style.display = 'block';
+      document.getElementById('schedule-card').style.display = 'block';
+      loadSchedule(currentCustomerId);
+    } else {
+      bulkCard.style.display = 'none';
+      document.getElementById('schedule-card').style.display = 'none';
+    }
+    if (previewData.contacts && previewData.contacts.length) {
+      document.getElementById('contacts').value = previewData.contacts
+        .map(c => `${c.name || c.company || 'Contact'} <${c.email}>`).join('\n');
+    }
+    document.getElementById('saved-hint').innerHTML = `<span class="save-badge">✓ Loaded — ${data.filename || 'workbook'}</span>`;
+  } catch (err) {
+    showError(err.message);
+    setStatus('Awaiting workbook', 'neutral');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Load workbook';
+  }
+}
+
+// ─── Schedule ─────────────────────────────────────────────────────────────────
+
+function onFreqChange() {
+  const val = document.querySelector('input[name="schedule-freq"]:checked')?.value;
+  document.getElementById('custom-interval-row').style.display = val === 'custom' ? 'flex' : 'none';
+  document.querySelectorAll('.freq-option').forEach(el => el.classList.remove('selected'));
+  if (val) {
+    const lbl = document.querySelector(`input[value="${val}"]`)?.closest('.freq-option');
+    if (lbl) lbl.classList.add('selected');
+  }
+}
+
+async function loadSchedule(customerId) {
+  if (!customerId) return;
+  try {
+    const res = await fetch(`/api/schedules/${encodeURIComponent(customerId)}`);
+    if (res.status === 404) {
+      document.getElementById('schedule-status-box').style.display = 'none';
+      document.getElementById('btn-disable-schedule').style.display = 'none';
+      return;
+    }
+    const schedule = await res.json();
+    renderScheduleStatus(schedule);
+  } catch (_) {}
+}
+
+function renderScheduleStatus(schedule) {
+  const box = document.getElementById('schedule-status-box');
+  const disBtn = document.getElementById('btn-disable-schedule');
+  if (!schedule) { box.style.display = 'none'; disBtn.style.display = 'none'; return; }
+  const freqLabel = { weekly: 'Weekly', biweekly: 'Every 2 weeks', monthly: 'Monthly', custom: `Every ${schedule.custom_interval_days || '?'} days` };
+  const nextSend = schedule.next_send_at
+    ? new Date(schedule.next_send_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+    : 'Not set';
+  box.style.display = 'block';
+  box.innerHTML = `<strong>${schedule.active ? '● Active' : '○ Inactive'}</strong> &nbsp;·&nbsp; ${freqLabel[schedule.frequency] || schedule.frequency} &nbsp;·&nbsp; ${schedule.dry_run ? 'Dry run' : 'Live sends'}<br><small style="color:#607080">Next send: ${nextSend}</small>`;
+  // Pre-fill form
+  const radio = document.querySelector(`input[name="schedule-freq"][value="${schedule.frequency}"]`);
+  if (radio) { radio.checked = true; onFreqChange(); }
+  if (schedule.custom_interval_days) document.getElementById('schedule-custom-days').value = schedule.custom_interval_days;
+  document.getElementById('schedule-dry-run').checked = !!schedule.dry_run;
+  disBtn.style.display = schedule.active ? 'flex' : 'none';
+}
+
+async function doSaveSchedule() {
+  if (!currentCustomerId) { showError('Load or preview a workbook first.'); return; }
+  const freq = document.querySelector('input[name="schedule-freq"]:checked')?.value;
+  if (!freq) { showError('Select a frequency.'); return; }
+  const customDays = freq === 'custom' ? parseInt(document.getElementById('schedule-custom-days').value) : null;
+  if (freq === 'custom' && (!customDays || customDays < 1)) { showError('Enter a valid number of days.'); return; }
+  const startDate = document.getElementById('schedule-start-date').value;
+  const dryRun = document.getElementById('schedule-dry-run').checked;
+  const customerName = (previewData && previewData.customer && previewData.customer.company) || currentCustomerId;
+  const btn = document.getElementById('btn-save-schedule');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Saving…';
+  try {
+    const res = await fetch('/api/schedules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customer_id: currentCustomerId,
+        customer_name: customerName,
+        frequency: freq,
+        custom_interval_days: customDays,
+        dry_run: dryRun,
+        start_from: startDate ? new Date(startDate).toISOString() : null,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Save failed');
+    await loadSchedule(currentCustomerId);
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save schedule';
+  }
+}
+
+async function doDisableSchedule() {
+  if (!currentCustomerId) return;
+  if (!confirm('Disable recurring schedule for this client?')) return;
+  try {
+    await fetch(`/api/schedules/${encodeURIComponent(currentCustomerId)}`, { method: 'DELETE' });
+    await loadSchedule(currentCustomerId);
+  } catch (err) {
+    showError(err.message);
+  }
+}
 
 function setStatus(text, cls) {
   const el = document.getElementById('status-pill');
@@ -288,6 +519,7 @@ async function doPreview() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Upload failed');
     previewData = data;
+    currentCustomerId = data._customer_id || null;
     renderPreview(data);
     const hasProducts = data.products && data.products.length > 0;
     document.getElementById('btn-send').disabled = !hasProducts;
@@ -299,14 +531,22 @@ async function doPreview() {
     if (workbookContacts.length && hasProducts) {
       document.getElementById('bulk-count').textContent = workbookContacts.length;
       bulkCard.style.display = 'block';
+      document.getElementById('schedule-card').style.display = 'block';
+      if (currentCustomerId) loadSchedule(currentCustomerId);
     } else {
       bulkCard.style.display = 'none';
+      document.getElementById('schedule-card').style.display = 'none';
     }
 
     // Pre-fill contacts from workbook if available
     if (data.contacts && data.contacts.length) {
       document.getElementById('contacts').value = data.contacts
         .map(c => `${c.name || c.company || 'Contact'} <${c.email}>`).join('\n');
+    }
+
+    // Show saved badge
+    if (currentCustomerId) {
+      document.getElementById('saved-hint').innerHTML = '<span class="save-badge">✓ Saved</span>';
     }
   } catch (err) {
     showError(err.message);

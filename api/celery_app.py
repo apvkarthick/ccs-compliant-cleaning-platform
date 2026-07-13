@@ -1,6 +1,7 @@
 import os
 
 from celery import Celery
+from celery.schedules import crontab
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -21,4 +22,11 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    beat_schedule={
+        # Daily at 06:00 UTC (16:00 AEST / 17:00 AEDT)
+        "run-scheduled-distributions": {
+            "task": "ccs.run_scheduled_distributions",
+            "schedule": crontab(hour=6, minute=0),
+        },
+    },
 )

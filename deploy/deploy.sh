@@ -43,3 +43,4 @@ fi
 
 systemctl restart ccs-api
 systemctl restart ccs-worker
+systemctl restart ccs-beat 2>/dev/null || echo "[deploy] ccs-beat not found — create /etc/systemd/system/ccs-beat.service if you want scheduled sends"

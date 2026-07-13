@@ -28,6 +28,15 @@ from .rebrand import rebrand_sds
 from .rebrand_pdf import rebrand_pdf
 from .celery_app import celery_app
 from .tasks import bulk_distribute_task, ping_task
+from .workbooks import (
+    disable_schedule,
+    get_schedule,
+    list_workbooks,
+    load_workbook,
+    make_customer_id,
+    save_schedule,
+    save_workbook,
+)
 
 load_dotenv()
 
@@ -107,6 +116,15 @@ class BulkDistributionRequest(BaseModel):
     dry_run: bool = True
 
 
+class ScheduleRequest(BaseModel):
+    customer_id: str
+    customer_name: str
+    frequency: str  # weekly | biweekly | monthly | custom
+    custom_interval_days: int | None = None
+    dry_run: bool = True
+    start_from: str | None = None  # ISO datetime for first send; omit to calculate from now
+
+
 @app.get("/rebrand", response_class=HTMLResponse)
 def rebrand_ui() -> HTMLResponse:
     return HTMLResponse((ASSETS_DIR / "rebrand.html").read_text(encoding="utf-8"))
@@ -137,11 +155,65 @@ async def preview_workbook(
     workbook_bytes = await file.read()
     if not workbook_bytes:
         raise HTTPException(status_code=400, detail="Uploaded workbook is empty")
-    return parse_client_workbook(
+    result = parse_client_workbook(
         workbook_bytes,
         source_files=list_source_documents(SOURCE_DIR),
         public_base_url=os.getenv("CCS_PUBLIC_BASE_URL", ""),
     )
+    customer_name = (result.get("customer") or {}).get("company", "")
+    customer_id = ""
+    if customer_name:
+        customer_id = make_customer_id(customer_name)
+        save_workbook(customer_id, customer_name, file.filename or "", result)
+    result["_customer_id"] = customer_id
+    return result
+
+
+@app.get("/workbooks")
+def list_saved_workbooks() -> list[dict[str, Any]]:
+    return list_workbooks()
+
+
+@app.get("/workbooks/{customer_id}")
+def get_saved_workbook(customer_id: str) -> dict[str, Any]:
+    wb = load_workbook(customer_id)
+    if not wb:
+        raise HTTPException(status_code=404, detail="Workbook not found")
+    parsed: dict[str, Any] = wb.get("parsed_json") or {}
+    parsed["_customer_id"] = customer_id
+    return {
+        "customer_id": customer_id,
+        "customer_name": wb.get("customer_name", ""),
+        "filename": wb.get("filename", ""),
+        "uploaded_at": wb.get("uploaded_at", ""),
+        "parsed_json": parsed,
+    }
+
+
+@app.post("/schedules")
+def upsert_schedule(request: ScheduleRequest) -> dict[str, Any]:
+    result = save_schedule(
+        customer_id=request.customer_id,
+        customer_name=request.customer_name,
+        frequency=request.frequency,
+        custom_interval_days=request.custom_interval_days,
+        dry_run=request.dry_run,
+        start_from=request.start_from,
+    )
+    return result
+
+
+@app.get("/schedules/{customer_id}")
+def get_schedule_endpoint(customer_id: str) -> dict[str, Any]:
+    schedule = get_schedule(customer_id)
+    if not schedule:
+        raise HTTPException(status_code=404, detail="No schedule found")
+    return schedule
+
+
+@app.delete("/schedules/{customer_id}")
+def disable_schedule_endpoint(customer_id: str) -> dict[str, Any]:
+    return disable_schedule(customer_id)
 
 
 @app.post("/register/preview")

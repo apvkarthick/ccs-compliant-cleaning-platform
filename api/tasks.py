@@ -3,6 +3,43 @@ import fitz
 from .celery_app import celery_app
 
 
+@celery_app.task(name="ccs.run_scheduled_distributions")
+def run_scheduled_distributions() -> dict:
+    """Celery Beat task: find due schedules, trigger bulk sends, advance next_send_at."""
+    from datetime import datetime, timezone
+
+    from .workbooks import advance_schedule, get_due_schedules, load_workbook
+
+    due = get_due_schedules()
+    if not due:
+        return {"triggered": 0, "errors": []}
+
+    triggered = 0
+    errors: list[dict] = []
+    for schedule in due:
+        customer_id = schedule.get("customer_id", "")
+        try:
+            wb = load_workbook(customer_id)
+            if not wb or not wb.get("parsed_json"):
+                errors.append({"customer_id": customer_id, "error": "No saved workbook found"})
+                continue
+            parsed = wb["parsed_json"]
+            contacts = parsed.get("contacts", [])
+            if not contacts:
+                errors.append({"customer_id": customer_id, "error": "No contacts in workbook"})
+                continue
+            preview_slim = {k: v for k, v in parsed.items() if k != "contacts"}
+            dry_run = schedule.get("dry_run", True)
+            batch_id = f"sched_{customer_id}_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
+            bulk_distribute_task.delay(preview_slim, contacts, dry_run, batch_id)
+            advance_schedule(customer_id, schedule.get("frequency", "weekly"), schedule.get("custom_interval_days"))
+            triggered += 1
+        except Exception as exc:
+            errors.append({"customer_id": customer_id, "error": str(exc)})
+
+    return {"triggered": triggered, "errors": errors}
+
+
 @celery_app.task(name="ccs.ping")
 def ping_task() -> dict[str, str]:
     return {
