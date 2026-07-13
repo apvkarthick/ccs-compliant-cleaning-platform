@@ -461,6 +461,14 @@ async def rebrand_pdf_endpoint(
     )
 
 
+@app.get("/assets/{filename:path}")
+def get_static_asset(filename: str) -> FileResponse:
+    path = (ASSETS_DIR / filename).resolve()
+    if ASSETS_DIR.resolve() not in path.parents or not path.is_file():
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return FileResponse(path)
+
+
 @app.get("/documents/source/{filename:path}")
 def get_source_document(filename: str) -> FileResponse:
     path = (SOURCE_DIR / filename).resolve()

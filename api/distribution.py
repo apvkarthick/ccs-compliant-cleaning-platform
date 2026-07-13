@@ -93,6 +93,7 @@ def _render_branded_html(
     products_in_email: list[dict[str, Any]],
     documents: list[dict[str, Any]],
     tracking_pixel_url: str = "",
+    logo_url: str = "",
 ) -> str:
     """Branded HTML email template — table-based for email client compatibility."""
     product_cards: list[str] = []
@@ -136,6 +137,30 @@ def _render_branded_html(
     )
     safe_name = html.escape(contact_name or "there")
     safe_company = html.escape(company or "your site")
+    safe_logo_url = html.escape(logo_url, quote=True) if logo_url else ""
+
+    # Header: logo + wordmark side by side when logo URL is provided
+    if safe_logo_url:
+        header_inner = (
+            '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
+            f'<td width="72" valign="middle" style="padding-right:16px;">'
+            f'<img src="{safe_logo_url}" width="64" height="64" '
+            f'style="display:block;border-radius:50%;border:2px solid rgba(255,255,255,0.25);" alt="CCS Logo" />'
+            f'</td>'
+            '<td valign="middle">'
+            '<div style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.5px;'
+            'font-family:Arial,Helvetica,sans-serif;">COMPLIANT CLEANING SUPPLIES</div>'
+            '<div style="color:#a8d5b5;font-size:13px;margin-top:4px;font-family:Arial,Helvetica,sans-serif;">'
+            'Safety Document Pack</div>'
+            '</td></tr></table>'
+        )
+    else:
+        header_inner = (
+            '<div style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.5px;'
+            'font-family:Arial,Helvetica,sans-serif;">COMPLIANT CLEANING SUPPLIES</div>'
+            '<div style="color:#a8d5b5;font-size:13px;margin-top:4px;font-family:Arial,Helvetica,sans-serif;">'
+            'Safety Document Pack</div>'
+        )
 
     return (
         '<!DOCTYPE html><html><head>'
@@ -149,12 +174,7 @@ def _render_branded_html(
         'style="max-width:600px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden;'
         'box-shadow:0 2px 8px rgba(0,0,0,0.08);">'
         # Header
-        '<tr><td style="background:#2C6B33;padding:26px 32px;">'
-        '<div style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.5px;'
-        'font-family:Arial,Helvetica,sans-serif;">COMPLIANT CLEANING SUPPLIES</div>'
-        '<div style="color:#a8d5b5;font-size:13px;margin-top:4px;font-family:Arial,Helvetica,sans-serif;">'
-        'Safety Document Pack</div>'
-        '</td></tr>'
+        f'<tr><td style="background:#2C6B33;padding:22px 32px;">{header_inner}</td></tr>'
         # Body
         '<tr><td style="padding:28px 32px;">'
         f'<p style="margin:0 0 14px;color:#17202a;font-size:15px;line-height:1.6;">Hi <strong>{safe_name}</strong>,</p>'
@@ -218,12 +238,14 @@ def _compose_message(
             batch_id=batch_id,
         )
 
+    logo_url = f"{_base}/api/assets/ccs_logo.png" if _base else ""
     email_html = _render_branded_html(
         contact_name=contact["name"],
         company=customer.get("company", ""),
         products_in_email=products_in_email,
         documents=documents,
         tracking_pixel_url=pixel_url,
+        logo_url=logo_url,
     )
 
     return {
