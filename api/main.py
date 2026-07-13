@@ -216,6 +216,53 @@ def disable_schedule_endpoint(customer_id: str) -> dict[str, Any]:
     return disable_schedule(customer_id)
 
 
+@app.post("/schedules/{customer_id}/send-now")
+def send_schedule_now(customer_id: str) -> dict[str, Any]:
+    """Immediately queue a bulk send for this client and advance the schedule's next_send_at."""
+    schedule = get_schedule(customer_id)
+    if not schedule:
+        raise HTTPException(status_code=404, detail="No schedule found for this client")
+    wb = load_workbook(customer_id)
+    if not wb or not wb.get("parsed_json"):
+        raise HTTPException(status_code=404, detail="No saved workbook found — upload and preview first")
+    parsed: dict[str, Any] = wb["parsed_json"]
+    contacts = parsed.get("contacts", [])
+    if not contacts:
+        raise HTTPException(status_code=400, detail="Workbook has no contacts to send to")
+    preview_slim = {k: v for k, v in parsed.items() if k != "contacts"}
+    dry_run = schedule.get("dry_run", True)
+    batch_id = f"sendnow_{customer_id}_{uuid.uuid4().hex[:8]}"
+    task = bulk_distribute_task.delay(preview_slim, contacts, dry_run, batch_id)
+    from .workbooks import advance_schedule as _advance
+    _advance(customer_id, schedule.get("frequency", "weekly"), schedule.get("custom_interval_days"))
+    return {"task_id": task.id, "status": "queued", "total": len(contacts), "batch_id": batch_id, "dry_run": dry_run}
+
+
+class StressTestRequest(BaseModel):
+    preview: dict[str, Any]
+    contact_count: int = 100
+
+
+@app.post("/distribution/stress-test")
+def run_stress_test(request: StressTestRequest) -> dict[str, Any]:
+    """Generate N fake contacts and run a dry-run bulk send as a load/stress test."""
+    count = max(1, min(request.contact_count, 5000))
+    fake_contacts = [
+        {
+            "id": f"stress-{i}",
+            "name": f"Test Contact {i + 1}",
+            "email": f"stress-test-{i + 1}@nxai-test.invalid",
+            "tags": [],
+            "customFields": [],
+        }
+        for i in range(count)
+    ]
+    preview_slim = {k: v for k, v in request.preview.items() if k != "contacts"}
+    batch_id = f"stress_test_{count}_{uuid.uuid4().hex[:6]}"
+    task = bulk_distribute_task.delay(preview_slim, fake_contacts, True, batch_id)
+    return {"task_id": task.id, "status": "queued", "total": count, "batch_id": batch_id, "dry_run": True}
+
+
 @app.post("/register/preview")
 async def preview_register(
     file: UploadFile = File(...),

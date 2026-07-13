@@ -105,6 +105,13 @@
   .freq-option span{font-size:0.85rem;font-weight:500}
   .schedule-status{padding:10px 12px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;font-size:0.82rem;color:#166534;margin-top:10px;line-height:1.6}
   .save-badge{display:inline-flex;align-items:center;gap:4px;font-size:0.75rem;color:#166534;font-weight:600;background:#dcfce7;padding:2px 8px;border-radius:10px}
+  .workbook-item{padding:9px 12px;cursor:pointer;border-bottom:1px solid #f0f4f7;font-size:0.84rem;color:#17202a;transition:background .1s}
+  .workbook-item:last-child{border-bottom:none}
+  .workbook-item:hover{background:#f0fdf4}
+  .workbook-item.selected{background:#dcfce7;font-weight:600}
+  .workbook-item small{display:block;font-size:0.73rem;color:#8899aa;margin-top:1px;font-weight:400}
+  #workbook-search{width:100%;padding:8px 10px;border:1px solid #c8d6e0;border-radius:6px;font-size:0.85rem;background:#fafcfd;margin-bottom:6px;outline:none}
+  #workbook-search:focus{border-color:#2C6B33;box-shadow:0 0 0 2px rgba(44,107,51,.15)}
 </style>
 </head>
 <body>
@@ -176,10 +183,9 @@
     <div>
       <!-- Saved workbooks -->
       <div class="card">
-        <label for="saved-workbook-select">Load saved workbook</label>
-        <select id="saved-workbook-select" onchange="onSavedWorkbookSelect()">
-          <option value="">— select a saved client —</option>
-        </select>
+        <label>Load saved workbook</label>
+        <input type="text" id="workbook-search" placeholder="Search clients…" oninput="filterWorkbooks()" style="display:none" autocomplete="off">
+        <div id="workbook-list" style="max-height:200px;overflow-y:auto;border:1px solid #c8d6e0;border-radius:6px;display:none"></div>
         <p id="saved-hint" style="font-size:0.75rem;color:#8899aa;margin-top:6px">Searching…</p>
         <button class="secondary" id="btn-load-workbook" onclick="doLoadWorkbook()" style="display:none">
           Load workbook
@@ -260,12 +266,42 @@
           <label for="schedule-dry-run">Dry run (no emails sent)</label>
         </div>
         <div id="schedule-status-box" style="display:none" class="schedule-status"></div>
+        <button class="secondary" id="btn-send-now" onclick="doSendNow()" style="display:none;border-color:#dc2626;color:#dc2626;margin-top:10px">
+          ⚡ Send now (override schedule date)
+        </button>
         <button class="primary" id="btn-save-schedule" onclick="doSaveSchedule()" style="margin-top:10px">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
           Save schedule
         </button>
         <button class="secondary" id="btn-disable-schedule" onclick="doDisableSchedule()" style="display:none">
           Disable schedule
+        </button>
+      </div>
+
+      <!-- Stress test card — shown after workbook parsed with contacts -->
+      <div class="card" id="stress-card" style="display:none">
+        <p class="eyebrow" style="margin-bottom:6px">Stress test</p>
+        <p style="font-size:0.83rem;color:#607080;margin-bottom:12px">Simulate bulk sends with fake contacts (always dry-run) to verify throughput and progress tracking.</p>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <label style="margin:0;white-space:nowrap;font-size:0.82rem">Contacts to simulate</label>
+          <input type="number" id="stress-count" min="1" max="5000" value="100" style="width:80px">
+        </div>
+        <div id="stress-progress" style="display:none;margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:#607080;margin-bottom:4px">
+            <span id="stress-progress-label">Running…</span>
+            <span id="stress-progress-pct">0%</span>
+          </div>
+          <div style="background:#e2eaef;border-radius:6px;height:8px;overflow:hidden">
+            <div id="stress-progress-bar" style="background:#7c3aed;height:100%;width:0%;transition:width .3s"></div>
+          </div>
+          <div style="display:flex;gap:16px;margin-top:8px;font-size:0.8rem">
+            <span>Done: <strong id="stress-done">0</strong></span>
+            <span>Failed: <strong id="stress-failed">0</strong></span>
+            <span>Total: <strong id="stress-total">0</strong></span>
+          </div>
+        </div>
+        <button class="secondary" id="btn-stress-test" onclick="doStressTest()" style="border-color:#7c3aed;color:#7c3aed">
+          Run stress test (dry-run only)
         </button>
       </div>
     </div>
@@ -312,20 +348,19 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // ─── Saved workbooks ──────────────────────────────────────────────────────────
 
+let _allWorkbooks = [];
+let _selectedCustomerId = null;
+
 async function loadSavedWorkbooks() {
   const hint = document.getElementById('saved-hint');
   try {
     const res = await fetch('/api/workbooks');
     const data = await res.json();
-    const sel = document.getElementById('saved-workbook-select');
     if (Array.isArray(data) && data.length) {
-      data.forEach(wb => {
-        const opt = document.createElement('option');
-        opt.value = wb.customer_id;
-        const d = wb.uploaded_at ? new Date(wb.uploaded_at).toLocaleDateString('en-AU') : '';
-        opt.textContent = `${wb.customer_name}${d ? ' — ' + d : ''}`;
-        sel.appendChild(opt);
-      });
+      _allWorkbooks = data;
+      renderWorkbookList(data);
+      document.getElementById('workbook-list').style.display = 'block';
+      if (data.length > 5) document.getElementById('workbook-search').style.display = 'block';
       hint.textContent = `${data.length} saved workbook${data.length !== 1 ? 's' : ''}`;
     } else {
       hint.textContent = 'No saved workbooks yet — upload one below.';
@@ -335,13 +370,38 @@ async function loadSavedWorkbooks() {
   }
 }
 
-function onSavedWorkbookSelect() {
-  const val = document.getElementById('saved-workbook-select').value;
-  document.getElementById('btn-load-workbook').style.display = val ? 'flex' : 'none';
+function renderWorkbookList(items) {
+  const list = document.getElementById('workbook-list');
+  list.innerHTML = items.map(wb => {
+    const d = wb.uploaded_at ? new Date(wb.uploaded_at).toLocaleDateString('en-AU') : '';
+    return `<div class="workbook-item" data-id="${wb.customer_id}" onclick="selectWorkbook(this)">
+      ${wb.customer_name}<small>${wb.filename || ''}${d ? ' — ' + d : ''}</small>
+    </div>`;
+  }).join('');
+}
+
+function filterWorkbooks() {
+  const q = document.getElementById('workbook-search').value.trim().toLowerCase();
+  const filtered = q ? _allWorkbooks.filter(wb =>
+    wb.customer_name.toLowerCase().includes(q) || (wb.filename || '').toLowerCase().includes(q)
+  ) : _allWorkbooks;
+  renderWorkbookList(filtered);
+  // Deselect if the current selection no longer appears
+  if (_selectedCustomerId && !filtered.some(wb => wb.customer_id === _selectedCustomerId)) {
+    _selectedCustomerId = null;
+    document.getElementById('btn-load-workbook').style.display = 'none';
+  }
+}
+
+function selectWorkbook(el) {
+  document.querySelectorAll('.workbook-item').forEach(i => i.classList.remove('selected'));
+  el.classList.add('selected');
+  _selectedCustomerId = el.dataset.id;
+  document.getElementById('btn-load-workbook').style.display = 'flex';
 }
 
 async function doLoadWorkbook() {
-  const customerId = document.getElementById('saved-workbook-select').value;
+  const customerId = _selectedCustomerId;
   if (!customerId) return;
   clearError();
   const btn = document.getElementById('btn-load-workbook');
@@ -364,10 +424,12 @@ async function doLoadWorkbook() {
       document.getElementById('bulk-count').textContent = workbookContacts.length;
       bulkCard.style.display = 'block';
       document.getElementById('schedule-card').style.display = 'block';
+      document.getElementById('stress-card').style.display = 'block';
       loadSchedule(currentCustomerId);
     } else {
       bulkCard.style.display = 'none';
       document.getElementById('schedule-card').style.display = 'none';
+      document.getElementById('stress-card').style.display = 'none';
     }
     if (previewData.contacts && previewData.contacts.length) {
       document.getElementById('contacts').value = previewData.contacts
@@ -412,7 +474,13 @@ async function loadSchedule(customerId) {
 function renderScheduleStatus(schedule) {
   const box = document.getElementById('schedule-status-box');
   const disBtn = document.getElementById('btn-disable-schedule');
-  if (!schedule) { box.style.display = 'none'; disBtn.style.display = 'none'; return; }
+  const sendNowBtn = document.getElementById('btn-send-now');
+  if (!schedule) {
+    box.style.display = 'none';
+    disBtn.style.display = 'none';
+    sendNowBtn.style.display = 'none';
+    return;
+  }
   const freqLabel = { weekly: 'Weekly', biweekly: 'Every 2 weeks', monthly: 'Monthly', custom: `Every ${schedule.custom_interval_days || '?'} days` };
   const nextSend = schedule.next_send_at
     ? new Date(schedule.next_send_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
@@ -425,6 +493,7 @@ function renderScheduleStatus(schedule) {
   if (schedule.custom_interval_days) document.getElementById('schedule-custom-days').value = schedule.custom_interval_days;
   document.getElementById('schedule-dry-run').checked = !!schedule.dry_run;
   disBtn.style.display = schedule.active ? 'flex' : 'none';
+  sendNowBtn.style.display = schedule.active ? 'flex' : 'none';
 }
 
 async function doSaveSchedule() {
@@ -472,6 +541,97 @@ async function doDisableSchedule() {
   } catch (err) {
     showError(err.message);
   }
+}
+
+async function doSendNow() {
+  if (!currentCustomerId) { showError('Load a workbook first.'); return; }
+  const schedule = await fetch(`/api/schedules/${encodeURIComponent(currentCustomerId)}`).then(r => r.json()).catch(() => null);
+  const isDryRun = schedule ? schedule.dry_run : true;
+  if (!isDryRun && !confirm(`This will send live emails to all contacts immediately — not on the scheduled date.\n\nProceed?`)) return;
+  clearError();
+  const btn = document.getElementById('btn-send-now');
+  btn.disabled = true;
+  btn.textContent = '⏳ Sending…';
+  try {
+    const res = await fetch(`/api/schedules/${encodeURIComponent(currentCustomerId)}/send-now`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Send now failed');
+    document.getElementById('bulk-card').style.display = 'block';
+    startBulkPoll(data.task_id, data.total, data.dry_run);
+    document.getElementById('bulk-count').textContent = data.total;
+    await loadSchedule(currentCustomerId);
+    setStatus('Send queued', 'sending');
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ Send now (override schedule date)';
+  }
+}
+
+let _stressPollTimer = null;
+
+async function doStressTest() {
+  if (!previewData) { showError('Load or preview a workbook first.'); return; }
+  const count = parseInt(document.getElementById('stress-count').value) || 100;
+  if (count < 1 || count > 5000) { showError('Enter a contact count between 1 and 5000.'); return; }
+  clearError();
+  const btn = document.getElementById('btn-stress-test');
+  btn.disabled = true;
+  btn.textContent = '⏳ Running…';
+  document.getElementById('stress-progress').style.display = 'block';
+  document.getElementById('stress-progress-label').textContent = 'Queued…';
+  document.getElementById('stress-progress-bar').style.width = '0%';
+  document.getElementById('stress-progress-bar').style.background = '#7c3aed';
+  document.getElementById('stress-done').textContent = '0';
+  document.getElementById('stress-failed').textContent = '0';
+  document.getElementById('stress-total').textContent = count;
+  try {
+    const res = await fetch('/api/distribution/stress-test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preview: previewData, contact_count: count }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Stress test failed to start');
+    if (_stressPollTimer) clearInterval(_stressPollTimer);
+    _stressPollTimer = setInterval(() => pollStressStatus(data.task_id, count, btn), 2000);
+  } catch (err) {
+    showError(err.message);
+    btn.disabled = false;
+    btn.textContent = 'Run stress test (dry-run only)';
+  }
+}
+
+async function pollStressStatus(taskId, total, btn) {
+  try {
+    const res = await fetch(`/api/distribution/status/${taskId}`);
+    const data = await res.json();
+    const state = data.state;
+    const meta = data.meta || data.result || {};
+    const done = meta.done || 0;
+    const failed = meta.failed || 0;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    document.getElementById('stress-progress-bar').style.width = pct + '%';
+    document.getElementById('stress-progress-pct').textContent = pct + '%';
+    document.getElementById('stress-done').textContent = done;
+    document.getElementById('stress-failed').textContent = failed;
+    if (state === 'PROGRESS') {
+      document.getElementById('stress-progress-label').textContent = `Processing… (${done}/${total})`;
+    } else if (state === 'SUCCESS') {
+      clearInterval(_stressPollTimer);
+      document.getElementById('stress-progress-label').textContent = `Complete — ${done} processed${failed ? ', ' + failed + ' failed' : ''}`;
+      document.getElementById('stress-progress-bar').style.background = failed ? '#dc2626' : '#166534';
+      btn.disabled = false;
+      btn.textContent = 'Run stress test (dry-run only)';
+    } else if (state === 'FAILURE') {
+      clearInterval(_stressPollTimer);
+      document.getElementById('stress-progress-label').textContent = 'Failed';
+      showError(data.error || 'Stress test failed');
+      btn.disabled = false;
+      btn.textContent = 'Run stress test (dry-run only)';
+    }
+  } catch (_) {}
 }
 
 function setStatus(text, cls) {
@@ -532,10 +692,12 @@ async function doPreview() {
       document.getElementById('bulk-count').textContent = workbookContacts.length;
       bulkCard.style.display = 'block';
       document.getElementById('schedule-card').style.display = 'block';
+      document.getElementById('stress-card').style.display = 'block';
       if (currentCustomerId) loadSchedule(currentCustomerId);
     } else {
       bulkCard.style.display = 'none';
       document.getElementById('schedule-card').style.display = 'none';
+      document.getElementById('stress-card').style.display = 'none';
     }
 
     // Pre-fill contacts from workbook if available

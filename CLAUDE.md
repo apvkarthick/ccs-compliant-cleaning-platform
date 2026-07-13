@@ -6,6 +6,10 @@ After every session where something substantial is built or learned, append a da
 
 Include: what was built, key decisions, URLs, open items. Do this automatically at the end of each turn.
 
+## Local Folders
+- **Code:** `E:\claude\nxai-kleins-social` — social/automation scripts for this project
+- **Assets:** `C:\Users\apvka\Downloads\nxai-compliant-supplies` — client assets (workbooks, PDFs, images)
+
 ## Stack
 - **Backend:** FastAPI (`api/`) — Python 3, no ORM, direct Supabase REST API calls
 - **Frontend:** React 19 + Vite (`frontend/src/main.jsx`) — single file SPA, no React Router

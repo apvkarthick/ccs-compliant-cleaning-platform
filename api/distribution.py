@@ -87,6 +87,105 @@ def process_distribution(
     return distribution
 
 
+def _render_branded_html(
+    contact_name: str,
+    company: str,
+    products_in_email: list[dict[str, Any]],
+    documents: list[dict[str, Any]],
+    tracking_pixel_url: str = "",
+) -> str:
+    """Branded HTML email template — table-based for email client compatibility."""
+    product_cards: list[str] = []
+    for product in products_in_email:
+        product_docs = [d for d in documents if d["product_code"] == product.get("code", "")]
+        if not product_docs:
+            continue
+        buttons: list[str] = []
+        for doc in product_docs:
+            is_sds = doc["label"] == "SDS"
+            bg = "#2C6B33" if is_sds else "#ffffff"
+            fg = "#ffffff" if is_sds else "#2C6B33"
+            border = "" if is_sds else "border:1.5px solid #2C6B33;"
+            icon = "SDS" if is_sds else doc["label"].replace(" Assessment", "")
+            url = html.escape(doc["delivery_url"], quote=True)
+            buttons.append(
+                f'<a href="{url}" style="display:inline-block;background:{bg};color:{fg};{border}'
+                f'text-decoration:none;padding:9px 16px;border-radius:5px;font-size:13px;'
+                f'font-weight:bold;margin:0 8px 8px 0;font-family:Arial,Helvetica,sans-serif;">'
+                f'{icon}</a>'
+            )
+        code = html.escape(product.get("code", ""))
+        name = html.escape(product.get("name", ""))
+        title = f"{code} — {name}" if code and name else (code or name)
+        product_cards.append(
+            f'<div style="margin-bottom:14px;border:1px solid #e2eaef;border-radius:6px;overflow:hidden;">'
+            f'<div style="background:#f0fdf4;padding:10px 16px;border-bottom:1px solid #e2eaef;">'
+            f'<strong style="color:#17202a;font-size:14px;font-family:Arial,Helvetica,sans-serif;">{title}</strong>'
+            f'</div>'
+            f'<div style="padding:12px 16px;">{"".join(buttons)}</div>'
+            f'</div>'
+        )
+
+    products_html = "".join(product_cards) if product_cards else (
+        '<p style="color:#607080;font-size:14px;">No documents available for this contact.</p>'
+    )
+    pixel = (
+        f'<img src="{html.escape(tracking_pixel_url, quote=True)}" '
+        f'width="1" height="1" style="display:none;width:1px;height:1px;" alt="" />'
+        if tracking_pixel_url else ""
+    )
+    safe_name = html.escape(contact_name or "there")
+    safe_company = html.escape(company or "your site")
+
+    return (
+        '<!DOCTYPE html><html><head>'
+        '<meta charset="UTF-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
+        '</head>'
+        '<body style="margin:0;padding:0;background:#f0f4f7;font-family:Arial,Helvetica,sans-serif;">'
+        '<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f4f7;">'
+        '<tr><td align="center" style="padding:24px 12px;">'
+        '<table width="600" cellpadding="0" cellspacing="0" '
+        'style="max-width:600px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden;'
+        'box-shadow:0 2px 8px rgba(0,0,0,0.08);">'
+        # Header
+        '<tr><td style="background:#2C6B33;padding:26px 32px;">'
+        '<div style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.5px;'
+        'font-family:Arial,Helvetica,sans-serif;">COMPLIANT CLEANING SUPPLIES</div>'
+        '<div style="color:#a8d5b5;font-size:13px;margin-top:4px;font-family:Arial,Helvetica,sans-serif;">'
+        'Safety Document Pack</div>'
+        '</td></tr>'
+        # Body
+        '<tr><td style="padding:28px 32px;">'
+        f'<p style="margin:0 0 14px;color:#17202a;font-size:15px;line-height:1.6;">Hi <strong>{safe_name}</strong>,</p>'
+        f'<p style="margin:0 0 22px;color:#17202a;font-size:15px;line-height:1.6;">'
+        f'Your Safety Data Sheets and Risk Assessments for <strong>{safe_company}</strong> are ready. '
+        f'Click each document link below to acknowledge receipt and access the file.</p>'
+        f'{products_html}'
+        '<p style="margin:20px 0 0;color:#607080;font-size:13px;line-height:1.6;">'
+        'Questions? Contact us at '
+        '<a href="mailto:info@compliantcs.com.au" style="color:#2C6B33;font-weight:bold;">info@compliantcs.com.au</a>'
+        ' or call <strong>1300 314 491</strong>.</p>'
+        '</td></tr>'
+        # Footer
+        '<tr><td style="background:#f5f8fa;padding:18px 32px;border-top:1px solid #e2eaef;">'
+        '<table width="100%"><tr>'
+        '<td style="color:#607080;font-size:12px;line-height:1.8;font-family:Arial,Helvetica,sans-serif;">'
+        '<strong style="color:#2C6B33;">Compliant Cleaning Supplies</strong><br>'
+        '1300 314 491 &nbsp;&middot;&nbsp; '
+        '<a href="https://compliantcs.com.au" style="color:#2C6B33;text-decoration:none;">compliantcs.com.au</a>'
+        '</td>'
+        '<td align="right" style="font-size:11px;color:#aab8c4;font-family:Arial,Helvetica,sans-serif;">'
+        'SDS Compliance Pack</td>'
+        '</tr></table>'
+        '</td></tr>'
+        '</table>'
+        '</td></tr></table>'
+        f'{pixel}'
+        '</body></html>'
+    )
+
+
 def _compose_message(
     preview: dict[str, Any],
     contact: dict[str, Any],
@@ -104,55 +203,35 @@ def _compose_message(
     ]
     product_names = ", ".join(p.get("name", "") for p in products_in_email if p.get("name"))
     subject_product = product_names if len(product_names) <= 72 else f"{len(products_in_email)} selected products"
-    subject = f"CCS SDS pack: {subject_product}"
-    html_lines = [
-        f"<p>Hi {html.escape(contact['name'] or 'there')},</p>",
-        f"<p>Please find the SDS, chemical-register, and risk-assessment links for {html.escape(customer.get('company', 'your site'))}.</p>",
-        "<ul>",
-    ]
-
-    for product in products_in_email:
-        product_docs = [doc for doc in documents if doc["product_code"] == product.get("code", "")]
-        html_lines.append("<li>")
-        html_lines.append(f"<strong>{html.escape(product.get('code', ''))} - {html.escape(product.get('name', ''))}</strong>")
-        html_lines.append("<ul>")
-        for document in product_docs:
-            html_lines.append(
-                f'<li>{html.escape(document["label"])}: '
-                f'<a href="{html.escape(document["delivery_url"], quote=True)}">'
-                f'{html.escape(document["filename"] or "Open document")}</a></li>'
-            )
-        html_lines.append("</ul>")
-        html_lines.append("</li>")
-
-    html_lines.extend(
-        [
-            "</ul>",
-            "<p>Regards,<br>Compliant Cleaning Supplies</p>",
-        ]
-    )
+    subject = f"Your SDS Compliance Pack — {subject_product}"
 
     _base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
     _secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
     _contact_id = contact.get("id") or contact["email"]
+    pixel_url = ""
     if _base and _secret and contact["email"]:
-        pixel = email_open_pixel_url(
+        pixel_url = email_open_pixel_url(
             public_base_url=_base,
             email=contact["email"],
             contact_id=_contact_id,
             secret=_secret,
             batch_id=batch_id,
         )
-        html_lines.append(
-            f'<img src="{html.escape(pixel, quote=True)}" width="1" height="1" style="display:none;width:1px;height:1px;" alt="" />'
-        )
+
+    email_html = _render_branded_html(
+        contact_name=contact["name"],
+        company=customer.get("company", ""),
+        products_in_email=products_in_email,
+        documents=documents,
+        tracking_pixel_url=pixel_url,
+    )
 
     return {
         "to": contact["email"],
         "name": contact["name"],
         "contact_id": contact.get("id", ""),
         "subject": subject,
-        "html": "".join(html_lines),
+        "html": email_html,
         "documents": documents,
     }
 
