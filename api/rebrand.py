@@ -5,14 +5,13 @@ import io
 import re
 import zipfile
 from datetime import date
-from pathlib import Path
 
 from docx import Document
 from docx.oxml.ns import qn
 
 
 CCS = {
-    "supplier_name": "Compliant Cleaning Supplies & Systems",
+    "supplier_name": "Compliant Cleaning Supplies & Systems PTY LTD",
     "address": "86 Crockford Street, NORTHGATE QLD 4013",
     "po_box": "PO Box 258, Hamilton Central QLD 4007",
     "telephone": "1300 314 491",
@@ -24,14 +23,15 @@ _CCS_EMAIL_URL = "mailto:sales@compliantcs.com.au"
 _CCS_WEB_URL = "https://www.compliantcs.com.au/"
 _CCS_ABN = "27 144 521 200"
 
-LOGO_PATH = Path(__file__).parent / "assets" / "smartclean_logo.jpg"
-
 # Maps paragraph label prefixes to CCS field keys (mode: "full" or "tab_value")
 _SUPPLIER_FIELDS: list[tuple[str, str, str]] = [
     ("Supplier Name", "supplier_name", "full"),
     ("Address", "address", "tab_value"),
     ("Telephone", "telephone", "tab_value"),
     ("Emergency", "emergency", "tab_value"),
+    ("Email", "email", "tab_value"),
+    ("Web Site", "website", "tab_value"),
+    ("Website", "website", "tab_value"),
 ]
 
 _CCS_DOMAIN = "compliantcs.com.au"
@@ -59,6 +59,10 @@ def rebrand_sds(docx_bytes: bytes, sds_date: str | None = None, brand: str = "")
         changes = _apply_supplier_block(doc, today, old_supplier)
         _replace_hyperlink_display_text(doc, old_supplier)
         changes["old_supplier"] = old_supplier
+
+    # Catch any remaining non-CCS emails/URLs in any text run
+    sweep = _sweep_email_url(doc)
+    changes.setdefault("changes", []).extend(sweep)
 
     changes["brand"] = effective_brand
     changes["sds_date"] = today
@@ -155,6 +159,40 @@ def _detect_brand(doc: Document) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Post-processing: sweep all text runs for any remaining non-CCS contact info
+# ---------------------------------------------------------------------------
+
+def _sweep_email_url(doc: Document) -> list[str]:
+    """Replace non-CCS email addresses and website URLs found anywhere in the doc."""
+    changes: list[str] = []
+    all_paras: list = list(doc.paragraphs)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                all_paras.extend(cell.paragraphs)
+    for para in all_paras:
+        for run in para.runs:
+            text = run.text
+            if not text:
+                continue
+            new_text = re.sub(
+                r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}',
+                lambda m: CCS["email"] if "compliantcs.com.au" not in m.group(0).lower() else m.group(0),
+                text,
+            )
+            new_text = re.sub(
+                r'(?:https?://|www\.)[a-zA-Z0-9.\-/]+',
+                lambda m: CCS["website"] if "compliantcs.com.au" not in m.group(0).lower() else m.group(0),
+                new_text,
+                flags=re.IGNORECASE,
+            )
+            if new_text != text:
+                run.text = new_text
+                changes.append(f"Sweep: '{text[:40].strip()}'")
+    return changes
+
+
+# ---------------------------------------------------------------------------
 # Sampson Chemical Products handler
 # ---------------------------------------------------------------------------
 
@@ -217,7 +255,7 @@ def _rebrand_smart_clean(doc: Document, today: str) -> dict:
         "Date of Issue": today,
         "Issue Date": today,
         "Revision Date": today,
-        "Prepared By": "Compliant Cleaning Supplies & Systems",
+        "Prepared By": CCS["supplier_name"],
     }
     for table in doc.tables:
         for row in table.rows:
@@ -326,38 +364,13 @@ def _replace_hyperlink_display_text(doc: Document, old_supplier: str) -> None:
 # ---------------------------------------------------------------------------
 
 def _patch_zip(docx_bytes: bytes) -> bytes:
-    """
-    Replace the header logo image and update all .rels hyperlink targets.
-    Works directly on the raw DOCX (zip) bytes.
-    """
-    logo_bytes = LOGO_PATH.read_bytes() if LOGO_PATH.exists() else None
+    """Update hyperlink URL targets in all .rels files. Logo is preserved as-is."""
     buf = io.BytesIO()
-
     with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as zin, \
          zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
-
-        # Build a set of header image paths from header relationship files
-        header_image_paths: set[str] = set()
-        for item in zin.infolist():
-            if re.search(r"word/_rels/header\d+\.xml\.rels", item.filename, re.IGNORECASE):
-                rels_xml = zin.read(item.filename).decode("utf-8")
-                for m in re.finditer(r'Target="([^"]+)"', rels_xml):
-                    target = m.group(1)
-                    if re.search(r"\.(png|jpg|jpeg|gif|bmp|tiff|emf|wmf)$", target, re.IGNORECASE):
-                        # Normalise to word/media/... path
-                        resolved = "word/" + target.lstrip("../")
-                        header_image_paths.add(resolved.lower())
-
         for item in zin.infolist():
             data = zin.read(item.filename)
-            fname_lower = item.filename.lower()
-
-            # Replace header logo image bytes
-            if logo_bytes and fname_lower in header_image_paths:
-                data = logo_bytes
-
-            # Patch hyperlink URLs in any .rels file — replace any non-CCS link
-            if fname_lower.endswith(".rels"):
+            if item.filename.lower().endswith(".rels"):
                 text = data.decode("utf-8")
                 text = re.sub(
                     r'(Target=")(mailto:(?![^"]*compliantcs\.com\.au)[^"]+)',
@@ -370,9 +383,7 @@ def _patch_zip(docx_bytes: bytes) -> bytes:
                     text, flags=re.IGNORECASE,
                 )
                 data = text.encode("utf-8")
-
             zout.writestr(item, data)
-
     return buf.getvalue()
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 
-from .rebrand import CCS, LOGO_PATH, _supplier_search_terms
+from .rebrand import CCS, _supplier_search_terms
 
 _OLD_DOMAINS = ["cleanplus.com.au"]
 
@@ -52,11 +52,6 @@ def rebrand_pdf(pdf_bytes: bytes, sds_date: str | None = None) -> tuple[bytes, d
         changes.extend(page_changes)
 
     _replace_link_annotations(doc, changes)
-
-    if LOGO_PATH.exists():
-        logo_changes = _replace_header_images(doc, LOGO_PATH.read_bytes())
-        if logo_changes:
-            changes.append(f"Logo replaced on {logo_changes} page(s)")
 
     out = io.BytesIO()
     doc.save(out, garbage=4, deflate=True)
