@@ -136,13 +136,29 @@ def _apply_supplier_block(doc: Document, sds_date: str, old_supplier: str) -> di
     for section in doc.sections:
         hdr = section.header
         for para in hdr.paragraphs:
-            text = para.text.strip()
-            if re.match(r"Revision\s+[Dd]ate", text, re.IGNORECASE):
-                _replace_after_tab(para, sds_date)
+            if _replace_revision_date_inline(para, sds_date):
                 replaced.append(f"Header Revision date → {sds_date}")
         _replace_revision_date_in_tables(hdr.tables, sds_date, replaced, prefix="Header ")
 
     return {"changes": replaced}
+
+
+def _replace_revision_date_inline(para, sds_date: str) -> bool:
+    """Replace date in 'Revision date: DD/MM/YYYY...' paragraph using regex on full text.
+    Handles headers like 'Revision date: 29/01/2026\tRevision: 3\tPearlee' where the
+    date sits before the first tab and _replace_after_tab would leave it untouched."""
+    full_text = para.text
+    if not re.search(r"Revision\s+[Dd]ate", full_text, re.IGNORECASE):
+        return False
+    new_text = re.sub(
+        r"(Revision\s+[Dd]ate\s*[:\s]+)(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})",
+        lambda m: m.group(1) + sds_date,
+        full_text, count=1, flags=re.IGNORECASE,
+    )
+    if new_text == full_text:
+        return False
+    _set_full_run(para, new_text)
+    return True
 
 
 def _replace_revision_date_in_tables(tables, sds_date: str, replaced: list[str], prefix: str) -> None:
