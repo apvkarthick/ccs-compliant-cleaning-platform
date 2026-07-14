@@ -5,9 +5,15 @@ import io
 import re
 import zipfile
 from datetime import date
+from pathlib import Path
 
 from docx import Document
 from docx.oxml.ns import qn
+
+# Per-brand header logo: spill_crew uses CCS badge; others keep original logo
+_BRAND_LOGOS: dict[str, Path] = {
+    "spill_crew": Path(__file__).parent / "assets" / "ccs_logo.png",
+}
 
 
 CCS = {
@@ -68,7 +74,8 @@ def rebrand_sds(docx_bytes: bytes, sds_date: str | None = None, brand: str = "")
     changes["sds_date"] = today
 
     out_bytes = _save_to_bytes(doc)
-    out_bytes = _patch_zip(out_bytes)
+    logo_path = _BRAND_LOGOS.get(effective_brand)
+    out_bytes = _patch_zip(out_bytes, logo_path)
     return out_bytes, changes
 
 
@@ -363,14 +370,36 @@ def _replace_hyperlink_display_text(doc: Document, old_supplier: str) -> None:
 # ZIP-level patching: logo image + relationship URLs
 # ---------------------------------------------------------------------------
 
-def _patch_zip(docx_bytes: bytes) -> bytes:
-    """Update hyperlink URL targets in all .rels files. Logo is preserved as-is."""
+def _patch_zip(docx_bytes: bytes, logo_path: Path | None = None) -> bytes:
+    """
+    Update hyperlink URL targets in .rels files.
+    If logo_path is given, also replace the header logo image.
+    """
+    logo_bytes = logo_path.read_bytes() if logo_path and logo_path.exists() else None
     buf = io.BytesIO()
+
     with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as zin, \
          zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
+
+        header_image_paths: set[str] = set()
+        if logo_bytes:
+            for item in zin.infolist():
+                if re.search(r"word/_rels/header\d+\.xml\.rels", item.filename, re.IGNORECASE):
+                    rels_xml = zin.read(item.filename).decode("utf-8")
+                    for m in re.finditer(r'Target="([^"]+)"', rels_xml):
+                        target = m.group(1)
+                        if re.search(r"\.(png|jpg|jpeg|gif|bmp|tiff|emf|wmf)$", target, re.IGNORECASE):
+                            resolved = "word/" + target.lstrip("../")
+                            header_image_paths.add(resolved.lower())
+
         for item in zin.infolist():
             data = zin.read(item.filename)
-            if item.filename.lower().endswith(".rels"):
+            fname_lower = item.filename.lower()
+
+            if logo_bytes and fname_lower in header_image_paths:
+                data = logo_bytes
+
+            if fname_lower.endswith(".rels"):
                 text = data.decode("utf-8")
                 text = re.sub(
                     r'(Target=")(mailto:(?![^"]*compliantcs\.com\.au)[^"]+)',
@@ -383,7 +412,9 @@ def _patch_zip(docx_bytes: bytes) -> bytes:
                     text, flags=re.IGNORECASE,
                 )
                 data = text.encode("utf-8")
+
             zout.writestr(item, data)
+
     return buf.getvalue()
 
 

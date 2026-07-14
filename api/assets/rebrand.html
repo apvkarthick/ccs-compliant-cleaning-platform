@@ -232,11 +232,14 @@
 </div>
 
 <script>
-const API_PDF  = '/api/rebrand/pdf';
-
 function docxApiUrl() {
   const brand = document.getElementById('brandSelect').value;
   return `/api/rebrand/sds?brand=${encodeURIComponent(brand)}`;
+}
+
+function pdfApiUrl() {
+  const brand = document.getElementById('brandSelect').value;
+  return `/api/rebrand/pdf?brand=${encodeURIComponent(brand)}`;
 }
 
 let files = [];
@@ -327,7 +330,7 @@ async function runRebrand() {
     try {
       const fd = new FormData();
       fd.append('file', files[i]);
-      const api = jobs[i].type === 'pdf' ? API_PDF : docxApiUrl();
+      const api = jobs[i].type === 'pdf' ? pdfApiUrl() : docxApiUrl();
       const res = await fetch(api, { method: 'POST', body: fd });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));

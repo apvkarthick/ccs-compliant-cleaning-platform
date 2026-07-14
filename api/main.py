@@ -441,6 +441,7 @@ async def rebrand_sds_endpoint(
 async def rebrand_pdf_endpoint(
     file: UploadFile = File(...),
     sds_date: str = Query(default="", description="SDS date override DD/MM/YYYY"),
+    brand: str = Query(default="spill_crew", description="Brand: spill_crew | sampson | smart_clean"),
 ) -> Response:
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Upload a .pdf SDS file")
@@ -448,7 +449,7 @@ async def rebrand_pdf_endpoint(
     if not pdf_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    rebranded, summary = rebrand_pdf(pdf_bytes, sds_date or None)
+    rebranded, summary = rebrand_pdf(pdf_bytes, sds_date or None, brand=brand)
     stem = Path(file.filename).stem
     return Response(
         content=rebranded,

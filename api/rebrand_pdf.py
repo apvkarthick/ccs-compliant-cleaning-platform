@@ -8,7 +8,7 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 
-from .rebrand import CCS, _supplier_search_terms
+from .rebrand import CCS, _BRAND_LOGOS, _supplier_search_terms
 
 _OLD_DOMAINS = ["cleanplus.com.au"]
 
@@ -35,7 +35,7 @@ def _detect_sds_date(doc: fitz.Document) -> str:
     return m.group(1) if m else ""
 
 
-def rebrand_pdf(pdf_bytes: bytes, sds_date: str | None = None) -> tuple[bytes, dict]:
+def rebrand_pdf(pdf_bytes: bytes, sds_date: str | None = None, brand: str = "spill_crew") -> tuple[bytes, dict]:
     today = sds_date or date.today().strftime("%d/%m/%Y")
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
 
@@ -52,6 +52,12 @@ def rebrand_pdf(pdf_bytes: bytes, sds_date: str | None = None) -> tuple[bytes, d
         changes.extend(page_changes)
 
     _replace_link_annotations(doc, changes)
+
+    logo_path = _BRAND_LOGOS.get(brand)
+    if logo_path and logo_path.exists():
+        logo_changes = _replace_header_images(doc, logo_path.read_bytes())
+        if logo_changes:
+            changes.append(f"Logo replaced on {logo_changes} page(s)")
 
     out = io.BytesIO()
     doc.save(out, garbage=4, deflate=True)
