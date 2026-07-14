@@ -130,15 +130,39 @@ def _apply_supplier_block(doc: Document, sds_date: str, old_supplier: str) -> di
                     _replace_text_in_runs(para, term, CCS["supplier_name"])
                     replaced.append(f"Body text: replaced '{term}'")
 
-    # Also update Revision date found in DOCX page headers
+    # Also scan body tables and DOCX page headers (paragraphs + tables)
+    # — Revision date is often in a table cell, not a plain paragraph
+    _replace_revision_date_in_tables(doc.tables, sds_date, replaced, prefix="")
     for section in doc.sections:
-        for para in section.header.paragraphs:
+        hdr = section.header
+        for para in hdr.paragraphs:
             text = para.text.strip()
             if re.match(r"Revision\s+[Dd]ate", text, re.IGNORECASE):
                 _replace_after_tab(para, sds_date)
                 replaced.append(f"Header Revision date → {sds_date}")
+        _replace_revision_date_in_tables(hdr.tables, sds_date, replaced, prefix="Header ")
 
     return {"changes": replaced}
+
+
+def _replace_revision_date_in_tables(tables, sds_date: str, replaced: list[str], prefix: str) -> None:
+    """Replace Revision date values in table cells (two-column label/value rows)."""
+    for table in tables:
+        for row in table.rows:
+            cells = row.cells
+            if not cells:
+                continue
+            label = cells[0].text.strip()
+            if re.match(r"Revision\s+[Dd]ate", label, re.IGNORECASE) and len(cells) > 1:
+                _replace_cell_lines(cells[1], [sds_date])
+                replaced.append(f"{prefix}Table Revision date → {sds_date}")
+            elif len(cells) == 1:
+                # Single-cell row — try paragraph-level replacement
+                for para in cells[0].paragraphs:
+                    text = para.text.strip()
+                    if re.match(r"Revision\s+[Dd]ate", text, re.IGNORECASE):
+                        _replace_after_tab(para, sds_date)
+                        replaced.append(f"{prefix}Table Revision date (inline) → {sds_date}")
 
 
 def _supplier_search_terms(full_name: str) -> list[str]:
@@ -221,16 +245,6 @@ def _sweep_email_url(doc: Document) -> list[str]:
 # Sampson Chemical Products handler
 # ---------------------------------------------------------------------------
 
-def _replace_cell_lines(cell, lines: list[str]) -> None:
-    """Replace paragraph content in a table cell line by line, blanking extras."""
-    paras = cell.paragraphs
-    for i, text in enumerate(lines):
-        if i < len(paras):
-            _set_full_run(paras[i], text)
-    for i in range(len(lines), len(paras)):
-        _set_full_run(paras[i], "")
-
-
 def _rebrand_sampson(doc: Document, today: str) -> dict:
     """Rebrand a Sampson Chemical Products GHS SDS DOCX."""
     changes: list[str] = []
@@ -302,6 +316,16 @@ def _rebrand_smart_clean(doc: Document, today: str) -> dict:
 # ---------------------------------------------------------------------------
 # Run manipulation helpers
 # ---------------------------------------------------------------------------
+
+def _replace_cell_lines(cell, lines: list[str]) -> None:
+    """Replace paragraph content in a table cell line by line, blanking extras."""
+    paras = cell.paragraphs
+    for i, text in enumerate(lines):
+        if i < len(paras):
+            _set_full_run(paras[i], text)
+    for i in range(len(lines), len(paras)):
+        _set_full_run(paras[i], "")
+
 
 def _set_full_run(para, new_text: str) -> None:
     """Replace entire paragraph text via runs (single-run paragraphs)."""
