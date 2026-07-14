@@ -162,6 +162,8 @@ def _detect_brand(doc: Document) -> str:
         return "sampson"
     if "Chemical Product and Company Identification" in all_text or re.search(r"\bMail Address\b", all_text):
         return "smart_clean"
+    if re.search(r"cleanplus", all_text, re.IGNORECASE):
+        return "cleanplus"
     return "spill_crew"
 
 
