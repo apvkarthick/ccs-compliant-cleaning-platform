@@ -10,9 +10,10 @@ from pathlib import Path
 from docx import Document
 from docx.oxml.ns import qn
 
-# Only CCS own products (spill_crew) get SmartClean logo; all other brands keep original
+# CCS own (spill_crew) and SmartClean brand get SmartClean logo; others keep original
 _BRAND_LOGOS: dict[str, Path] = {
     "spill_crew": Path(__file__).parent / "assets" / "smartclean_logo.jpg",
+    "smart_clean": Path(__file__).parent / "assets" / "smartclean_logo.jpg",
 }
 
 
@@ -58,7 +59,7 @@ def rebrand_sds(docx_bytes: bytes, sds_date: str | None = None, brand: str = "")
 
     if effective_brand == "sampson":
         changes = _rebrand_sampson(doc, today)
-    elif effective_brand == "smart_clean":
+    elif effective_brand in ("smart_clean", "solopak"):
         changes = _rebrand_smart_clean(doc, today)
     else:
         old_supplier = _detect_supplier_name(doc)
@@ -160,6 +161,10 @@ def _detect_brand(doc: Document) -> str:
     all_text = "\n".join(texts)
     if re.search(r"sampson", all_text, re.IGNORECASE):
         return "sampson"
+    if re.search(r"solopak", all_text, re.IGNORECASE):
+        return "solopak"
+    if re.search(r"smart.?clean", all_text, re.IGNORECASE):
+        return "smart_clean"
     if "Chemical Product and Company Identification" in all_text or re.search(r"\bMail Address\b", all_text):
         return "smart_clean"
     if re.search(r"cleanplus", all_text, re.IGNORECASE):
