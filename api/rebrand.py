@@ -35,9 +35,9 @@ _SUPPLIER_FIELDS: list[tuple[str, str, str]] = [
     ("Address", "address", "tab_value"),
     ("Telephone", "telephone", "tab_value"),
     ("Emergency", "emergency", "tab_value"),
-    ("Email", "email", "tab_value"),
-    ("Web Site", "website", "tab_value"),
-    ("Website", "website", "tab_value"),
+    # Email and Web Site are NOT here — they are hyperlinks in CleanPlus format.
+    # _replace_hyperlink_display_text() handles hyperlink display text;
+    # _sweep_email_url() handles plain-text runs. Adding them here causes doubling.
 ]
 
 _CCS_DOMAIN = "compliantcs.com.au"
