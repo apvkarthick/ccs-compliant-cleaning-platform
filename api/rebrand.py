@@ -24,7 +24,7 @@ _CCS_EMAIL_URL = "mailto:sales@compliantcs.com.au"
 _CCS_WEB_URL = "https://www.compliantcs.com.au/"
 _CCS_ABN = "27 144 521 200"
 
-LOGO_PATH = Path(__file__).parent / "assets" / "ccs_logo.png"
+LOGO_PATH = Path(__file__).parent / "assets" / "smartclean_logo.jpg"
 
 # Maps paragraph label prefixes to CCS field keys (mode: "full" or "tab_value")
 _SUPPLIER_FIELDS: list[tuple[str, str, str]] = [
