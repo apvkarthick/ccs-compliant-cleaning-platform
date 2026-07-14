@@ -10,9 +10,9 @@ from pathlib import Path
 from docx import Document
 from docx.oxml.ns import qn
 
-# Per-brand header logo: spill_crew uses CCS badge; others keep original logo
+# Per-brand header logo: smart_clean uses SmartClean logo; others keep original logo
 _BRAND_LOGOS: dict[str, Path] = {
-    "spill_crew": Path(__file__).parent / "assets" / "ccs_logo.png",
+    "smart_clean": Path(__file__).parent / "assets" / "smartclean_logo.jpg",
 }
 
 
