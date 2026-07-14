@@ -10,8 +10,9 @@ from pathlib import Path
 from docx import Document
 from docx.oxml.ns import qn
 
-# Per-brand header logo: smart_clean uses SmartClean logo; others keep original logo
+# Per-brand header logo: CCS own products and SmartClean/Solopak both use SmartClean logo
 _BRAND_LOGOS: dict[str, Path] = {
+    "spill_crew": Path(__file__).parent / "assets" / "smartclean_logo.jpg",
     "smart_clean": Path(__file__).parent / "assets" / "smartclean_logo.jpg",
 }
 
