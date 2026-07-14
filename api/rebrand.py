@@ -113,12 +113,15 @@ def _apply_supplier_block(doc: Document, sds_date: str, old_supplier: str) -> di
                 replaced.append(f"{label} → {new_val}")
                 break
 
-        # SDS Date (may be split across runs: 'SDS', ' ', 'Date', '\t', ...)
+        # SDS Date / Revision date (body)
         if re.match(r"SDS\s*Date", text, re.IGNORECASE):
             version = _extract_version(text)
             new_date_text = f"{sds_date}, {version}" if version else sds_date
             _replace_after_tab(para, new_date_text)
             replaced.append(f"SDS Date → {new_date_text}")
+        elif re.match(r"Revision\s+[Dd]ate", text, re.IGNORECASE):
+            _replace_after_tab(para, sds_date)
+            replaced.append(f"Revision date → {sds_date}")
 
         # Any body paragraph still containing old supplier name (full or partial)
         if old_supplier and not any(text.startswith(lbl) for lbl, _, _ in _SUPPLIER_FIELDS):
@@ -126,6 +129,14 @@ def _apply_supplier_block(doc: Document, sds_date: str, old_supplier: str) -> di
                 if term.upper() in text.upper():
                     _replace_text_in_runs(para, term, CCS["supplier_name"])
                     replaced.append(f"Body text: replaced '{term}'")
+
+    # Also update Revision date found in DOCX page headers
+    for section in doc.sections:
+        for para in section.header.paragraphs:
+            text = para.text.strip()
+            if re.match(r"Revision\s+[Dd]ate", text, re.IGNORECASE):
+                _replace_after_tab(para, sds_date)
+                replaced.append(f"Header Revision date → {sds_date}")
 
     return {"changes": replaced}
 
