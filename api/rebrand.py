@@ -10,10 +10,17 @@ from pathlib import Path
 from docx import Document
 from docx.oxml.ns import qn
 
-# CCS own (spill_crew) and SmartClean brand get SmartClean logo; others keep original
+# Rebrand logo assets:
+# - most brands use the shared rebrand logo
+# - Solopak uses its dedicated replacement logo
+_SHARED_REBRAND_LOGO = Path(__file__).parent / "assets" / "other-replacement.jpg"
+_SOLOPAK_REBRAND_LOGO = Path(__file__).parent / "assets" / "solopak-replacement.jpg"
 _BRAND_LOGOS: dict[str, Path] = {
-    "spill_crew": Path(__file__).parent / "assets" / "smartclean_logo.jpg",
-    "smart_clean": Path(__file__).parent / "assets" / "smartclean_logo.jpg",
+    "spill_crew": _SHARED_REBRAND_LOGO,
+    "smart_clean": _SHARED_REBRAND_LOGO,
+    "cleanplus": _SHARED_REBRAND_LOGO,
+    "sampson": _SHARED_REBRAND_LOGO,
+    "solopak": _SOLOPAK_REBRAND_LOGO,
 }
 
 

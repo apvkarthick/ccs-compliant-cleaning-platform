@@ -1,5 +1,6 @@
 import hashlib
 import io
+from pathlib import Path
 
 import fitz
 
@@ -51,6 +52,10 @@ def _top_image_digest(doc: fitz.Document, page_index: int) -> str:
     return hashlib.sha256(img_bytes).hexdigest()
 
 
+def _asset_digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def test_rebrand_pdf_replaces_supplier_name_in_page2_body_text() -> None:
     src = _make_pdf_with_supplier_body_and_two_logos()
     out_bytes, _summary = rebrand_pdf(src, "08/07/2026")
@@ -74,3 +79,25 @@ def test_rebrand_pdf_replaces_header_logo_on_all_pages() -> None:
     out.close()
 
     assert digest_p1 == digest_p2
+
+
+def test_rebrand_pdf_uses_shared_logo_for_cleanplus() -> None:
+    src = _make_pdf_with_supplier_body_and_two_logos()
+    out_bytes, _summary = rebrand_pdf(src, "08/07/2026", brand="cleanplus")
+    out = fitz.open(stream=out_bytes, filetype="pdf")
+
+    digest_p1 = _top_image_digest(out, 0)
+    out.close()
+
+    assert digest_p1 == _asset_digest(Path(r"E:\claude\ccs-compliant-cleaning-platform\api\assets\other-replacement.jpg"))
+
+
+def test_rebrand_pdf_uses_solopak_logo_for_solopak() -> None:
+    src = _make_pdf_with_supplier_body_and_two_logos()
+    out_bytes, _summary = rebrand_pdf(src, "08/07/2026", brand="solopak")
+    out = fitz.open(stream=out_bytes, filetype="pdf")
+
+    digest_p1 = _top_image_digest(out, 0)
+    out.close()
+
+    assert digest_p1 == _asset_digest(Path(r"E:\claude\ccs-compliant-cleaning-platform\api\assets\solopak-replacement.jpg"))
