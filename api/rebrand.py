@@ -289,6 +289,12 @@ def _rebrand_sampson(doc: Document, today: str) -> dict:
             _replace_text_in_runs(para, "Sampson Chemical Products", CCS["supplier_name"])
             _replace_text_in_runs(para, "sampson_office@bigpond.com", CCS["email"])
             changes.append("Body text: replaced Sampson reference")
+    for section in doc.sections:
+        hdr = section.header
+        for para in hdr.paragraphs:
+            if _replace_revision_date_inline(para, today):
+                changes.append(f"Header Revision date → {today}")
+        _replace_revision_date_in_tables(hdr.tables, today, changes, prefix="Header ")
     return {"changes": changes, "old_supplier": "Sampson Chemical Products"}
 
 
