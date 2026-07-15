@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
-import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Link2, LogOut, Mail, Send, Upload } from 'lucide-react';
+import { AlertCircle, BookOpen, CheckCircle2, Download, FileSpreadsheet, Link2, LogOut, Mail, Send, Upload } from 'lucide-react';
 import './styles.css';
 
 const supabase = createClient(
@@ -126,11 +126,12 @@ function App({ session }) {
   const [activeTab, setActiveTab] = useState(() => {
     if (window.location.pathname === '/email-opens') return 'email-opens';
     if (window.location.pathname === '/pdf-opens') return 'pdf-opens';
+    if (window.location.pathname === '/library') return 'library';
     return 'distribution';
   });
 
   function switchTab(tab) {
-    const paths = { 'email-opens': '/email-opens', 'pdf-opens': '/pdf-opens', 'distribution': '/app' };
+    const paths = { 'email-opens': '/email-opens', 'pdf-opens': '/pdf-opens', 'distribution': '/app', 'library': '/library' };
     history.pushState(null, '', paths[tab] || '/app');
     setActiveTab(tab);
   }
@@ -144,6 +145,7 @@ function App({ session }) {
       <div className="tab-bar">
         <button className={`tab ${activeTab === 'distribution' ? 'active' : ''}`} onClick={() => switchTab('distribution')}>Distribution</button>
         <button className={`tab ${activeTab === 'email-opens' ? 'active' : ''}`} onClick={() => switchTab('email-opens')}>Email Opens</button>
+        <button className={`tab ${activeTab === 'library' ? 'active' : ''}`} onClick={() => switchTab('library')}><BookOpen size={13} style={{marginRight:4,verticalAlign:'middle'}}/>Doc Library</button>
         <a className="tab" href="/rebrand">Rebrand SDS</a>
         <button className="tab tab-signout" onClick={handleSignOut} title="Sign out">
           <LogOut size={14} />
@@ -152,6 +154,7 @@ function App({ session }) {
       {activeTab === 'distribution' && <DistributionDesk />}
       {activeTab === 'email-opens' && <EmailOpensDashboard />}
       {activeTab === 'pdf-opens' && <PdfOpensDashboard />}
+      {activeTab === 'library' && <DocumentLibrary />}
     </main>
   );
 }
@@ -644,6 +647,219 @@ function parseContacts(value) {
     if (parts.length >= 2) return { name: parts[0].trim(), email: parts[1].trim() };
     return { name: '', email: line };
   }).filter(c => c.email.includes('@'));
+}
+
+// ---------------------------------------------------------------------------
+// Document Library
+// ---------------------------------------------------------------------------
+
+function DocumentLibrary() {
+  const [register, setRegister] = useState(null);
+  const [pdfs, setPdfs] = useState([]);
+  const [customerId, setCustomerId] = useState('');
+  const [ingesting, setIngesting] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+  const [status, setStatus] = useState(null);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [versions, setVersions] = useState(null);
+  const [versionsCode, setVersionsCode] = useState('');
+  const [activeSection, setActiveSection] = useState('ingest');
+
+  async function handleIngest(e) {
+    e.preventDefault();
+    if (!register) return;
+    setIngesting(true);
+    setError('');
+    setResult(null);
+    const fd = new FormData();
+    fd.append('register_file', register);
+    pdfs.forEach(f => fd.append('pdf_files', f));
+    if (customerId) fd.append('customer_id', customerId);
+    try {
+      const res = await fetch(`${API_BASE}/library/ingest?customer_id=${encodeURIComponent(customerId)}`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: fd,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setResult(await res.json());
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIngesting(false);
+    }
+  }
+
+  async function loadStatus() {
+    setStatusLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/library/status`, { headers: getAuthHeaders() });
+      setStatus(await res.json());
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setStatusLoading(false);
+    }
+  }
+
+  async function loadVersions(code) {
+    setVersionsCode(code);
+    const res = await fetch(`${API_BASE}/library/versions/${encodeURIComponent(code)}`, { headers: getAuthHeaders() });
+    setVersions(await res.json());
+  }
+
+  async function handleRollback(code, docType) {
+    if (!confirm(`Roll back ${docType.toUpperCase()} for ${code} to previous version?`)) return;
+    const res = await fetch(`${API_BASE}/library/rollback`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_code: code, document_type: docType }),
+    });
+    if (res.ok) { alert('Rolled back. Reload status to confirm.'); }
+    else { alert(await res.text()); }
+  }
+
+  return (
+    <div className="desk">
+      <div className="tab-bar" style={{ marginBottom: 16 }}>
+        <button className={`tab ${activeSection === 'ingest' ? 'active' : ''}`} onClick={() => setActiveSection('ingest')}>Ingest</button>
+        <button className={`tab ${activeSection === 'status' ? 'active' : ''}`} onClick={() => { setActiveSection('status'); loadStatus(); }}>Status</button>
+        {versions && <button className={`tab ${activeSection === 'versions' ? 'active' : ''}`} onClick={() => setActiveSection('versions')}>Versions: {versionsCode}</button>}
+      </div>
+
+      {activeSection === 'ingest' && (
+        <form onSubmit={handleIngest} className="card" style={{ padding: 24, marginBottom: 16 }}>
+          <h2 style={{ marginTop: 0, fontSize: 18 }}>Upload & Ingest</h2>
+          <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
+            Upload the Chemical Register Excel + all SDS/Risk Assessment PDFs. Files stored in DO Spaces under <code>ccs/{'{date}/'}</code>.
+          </p>
+          <div className="field-row" style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Customer ID (optional — auto-derived from register if blank)</label>
+            <input className="inp" value={customerId} onChange={e => setCustomerId(e.target.value)} placeholder="compliant-cleaning" style={{ width: 280 }} />
+          </div>
+          <div className="field-row" style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Chemical Register (.xlsx / .xlsm) *</label>
+            <input type="file" accept=".xlsx,.xlsm" onChange={e => setRegister(e.target.files[0])} required />
+          </div>
+          <div className="field-row" style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>SDS + Risk Assessment PDFs (select all, up to 440)</label>
+            <input type="file" accept=".pdf" multiple onChange={e => setPdfs(Array.from(e.target.files))} />
+            {pdfs.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>{pdfs.length} file{pdfs.length !== 1 ? 's' : ''} selected</span>}
+          </div>
+          <button className="btn-primary" type="submit" disabled={ingesting || !register}>
+            <Upload size={14} style={{ marginRight: 6 }} />{ingesting ? 'Uploading & matching…' : 'Ingest'}
+          </button>
+          {error && <div className="error-msg" style={{ marginTop: 12 }}>{error}</div>}
+          {result && (
+            <div style={{ marginTop: 20 }}>
+              <div style={{ display: 'flex', gap: 16, marginBottom: 12, flexWrap: 'wrap' }}>
+                <Pill label="Uploaded" value={result.uploaded_count} />
+                <Pill label="Matched" value={result.matched_count} ok />
+                <Pill label="Unmatched" value={result.unmatched_products?.length} warn={result.unmatched_products?.length > 0} />
+                <Pill label="Orphaned PDFs" value={result.orphaned_filenames?.length} warn={result.orphaned_filenames?.length > 0} />
+              </div>
+              {result.unmatched_products?.length > 0 && (
+                <details style={{ marginBottom: 8 }}>
+                  <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--warn)' }}>Unmatched products ({result.unmatched_products.length})</summary>
+                  <table className="mini-table" style={{ marginTop: 8 }}><tbody>
+                    {result.unmatched_products.map(p => <tr key={p.code}><td>{p.code}</td><td>{p.name}</td></tr>)}
+                  </tbody></table>
+                </details>
+              )}
+              {result.orphaned_filenames?.length > 0 && (
+                <details>
+                  <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--warn)' }}>Orphaned PDFs ({result.orphaned_filenames.length})</summary>
+                  <ul style={{ fontSize: 12, marginTop: 8 }}>{result.orphaned_filenames.map(f => <li key={f}>{f}</li>)}</ul>
+                </details>
+              )}
+              {result.upload_errors?.length > 0 && (
+                <details>
+                  <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--warn)' }}>Upload errors ({result.upload_errors.length})</summary>
+                  <ul style={{ fontSize: 12, marginTop: 8 }}>{result.upload_errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+                </details>
+              )}
+            </div>
+          )}
+        </form>
+      )}
+
+      {activeSection === 'status' && (
+        <div className="card" style={{ padding: 24 }}>
+          <h2 style={{ marginTop: 0, fontSize: 18 }}>Library Status</h2>
+          {statusLoading && <p style={{ color: 'var(--muted)' }}>Loading…</p>}
+          {status && (
+            <>
+              <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
+                <Pill label="Files in Spaces" value={status.spaces_file_count} />
+                <Pill label="Products mapped" value={status.library_product_count} />
+                <Pill label="SDS matched" value={status.matched_sds_count} ok />
+                <Pill label="Risk matched" value={status.matched_risk_count} ok />
+                <Pill label="Unmatched" value={status.unmatched_products?.length} warn={status.unmatched_products?.length > 0} />
+              </div>
+              {status.library?.length > 0 && (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Code</th><th>Name</th><th>SDS</th><th>Risk</th><th>Method</th><th>v</th><th></th></tr></thead>
+                    <tbody>
+                      {status.library.map(r => (
+                        <tr key={r.product_code}>
+                          <td><code style={{ fontSize: 11 }}>{r.product_code}</code></td>
+                          <td style={{ fontSize: 13 }}>{r.product_name}</td>
+                          <td>{r.sds_url ? <a href={r.sds_url} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>PDF</a> : <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>}</td>
+                          <td>{r.risk_url ? <a href={r.risk_url} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>PDF</a> : <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>}</td>
+                          <td><span style={{ fontSize: 11, color: 'var(--muted)' }}>{r.match_method}</span></td>
+                          <td style={{ fontSize: 11 }}>{r.sds_version}</td>
+                          <td>
+                            <button className="btn-ghost" style={{ fontSize: 11 }} onClick={() => { loadVersions(r.product_code); setActiveSection('versions'); }}>History</button>
+                            {r.sds_url_previous && <button className="btn-ghost" style={{ fontSize: 11, marginLeft: 4 }} onClick={() => handleRollback(r.product_code, 'sds')}>↩ SDS</button>}
+                            {r.risk_url_previous && <button className="btn-ghost" style={{ fontSize: 11, marginLeft: 4 }} onClick={() => handleRollback(r.product_code, 'risk')}>↩ Risk</button>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {activeSection === 'versions' && versions && (
+        <div className="card" style={{ padding: 24 }}>
+          <h2 style={{ marginTop: 0, fontSize: 18 }}>Version History — {versionsCode}</h2>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Type</th><th>v</th><th>Batch</th><th>Filename</th><th>URL</th><th>Uploaded</th></tr></thead>
+              <tbody>
+                {versions.map(v => (
+                  <tr key={v.id}>
+                    <td><span style={{ fontSize: 11, fontWeight: 600 }}>{v.document_type.toUpperCase()}</span></td>
+                    <td style={{ fontSize: 12 }}>{v.version}</td>
+                    <td style={{ fontSize: 11, color: 'var(--muted)' }}>{v.ingest_batch}</td>
+                    <td style={{ fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.filename}</td>
+                    <td><a href={v.url} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>Open</a></td>
+                    <td style={{ fontSize: 11, color: 'var(--muted)' }}>{new Date(v.uploaded_at).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Pill({ label, value, ok, warn }) {
+  const color = ok ? 'var(--ok)' : warn ? 'var(--warn)' : 'var(--muted)';
+  return (
+    <div style={{ background: 'var(--soft)', border: '1px solid var(--line)', borderRadius: 6, padding: '8px 14px', minWidth: 90 }}>
+      <div style={{ fontSize: 22, fontWeight: 700, color }}>{value ?? 0}</div>
+      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{label}</div>
+    </div>
+  );
 }
 
 createRoot(document.getElementById('root')).render(<Root />);

@@ -28,6 +28,13 @@ from .rebrand import rebrand_sds
 from .rebrand_pdf import rebrand_pdf
 from .celery_app import celery_app
 from .tasks import bulk_distribute_task, ping_task
+from .document_library import (
+    delete_spaces_files,
+    get_library_status,
+    get_versions,
+    ingest_library,
+    rollback_version,
+)
 from .workbooks import (
     disable_schedule,
     get_schedule,
@@ -477,3 +484,68 @@ def get_source_document(filename: str) -> FileResponse:
     if SOURCE_DIR.resolve() not in path.parents or not path.is_file():
         raise HTTPException(status_code=404, detail="Document not found")
     return FileResponse(path)
+
+
+# ---------------------------------------------------------------------------
+# Document Library endpoints (DO Spaces — separate from workbook URL flow)
+# ---------------------------------------------------------------------------
+
+class RollbackRequest(BaseModel):
+    product_code: str
+    document_type: str  # 'sds' | 'risk'
+
+
+class DeleteFilesRequest(BaseModel):
+    keys: list[str]
+
+
+@app.post("/library/ingest")
+async def library_ingest(
+    register_file: UploadFile = File(...),
+    pdf_files: list[UploadFile] = File(default=[]),
+    customer_id: str = Query(default=""),
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    register_bytes = await register_file.read()
+    if not register_bytes:
+        raise HTTPException(status_code=400, detail="Chemical register file is empty")
+    pdf_tuples: list[tuple[str, bytes]] = []
+    for f in pdf_files:
+        content = await f.read()
+        if content:
+            pdf_tuples.append((f.filename or "unnamed.pdf", content))
+    public_base = os.getenv("CCS_PUBLIC_BASE_URL", "")
+    result = ingest_library(register_bytes, pdf_tuples, customer_id, public_base)
+    return result
+
+
+@app.get("/library/status")
+def library_status(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    return get_library_status()
+
+
+@app.get("/library/versions/{product_code}")
+def library_versions(product_code: str, _auth: dict = Depends(require_auth)) -> list[dict]:
+    return get_versions(product_code)
+
+
+@app.post("/library/rollback")
+def library_rollback(
+    body: RollbackRequest,
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    result = rollback_version(body.product_code, body.document_type)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@app.delete("/library/files")
+def library_delete_files(
+    body: DeleteFilesRequest,
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    result = delete_spaces_files(body.keys)
+    if result.get("errors"):
+        raise HTTPException(status_code=400, detail=result["errors"])
+    return result

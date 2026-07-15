@@ -11,6 +11,8 @@
   --amber: #9a6500;
   --red: #b42318;
   --green: #167245;
+  --ok: #167245;
+  --warn: #9a6500;
   --shadow: 0 14px 36px rgba(23, 32, 42, 0.09);
 }
 
@@ -474,4 +476,43 @@ tbody tr:last-child td {
 .tab-signout:hover {
   color: #475569;
   background: #f1f5f9;
+}
+
+/* Document Library helpers */
+.desk {
+  padding: 0;
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.btn-ghost:hover {
+  background: var(--soft);
+}
+
+.mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.mini-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.error-msg {
+  color: var(--red);
+  font-size: 13px;
+  padding: 8px 12px;
+  background: #fff5f5;
+  border: 1px solid #fed7d7;
+  border-radius: 6px;
 }
