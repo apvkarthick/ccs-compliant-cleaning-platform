@@ -471,6 +471,7 @@ def _patch_zip(docx_bytes: bytes, logo_path: Path | None = None) -> bytes:
          zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
 
         header_image_paths: set[str] = set()
+        body_image_paths: set[str] = set()
         if logo_bytes:
             for item in zin.infolist():
                 if re.search(r"word/_rels/header\d+\.xml\.rels", item.filename, re.IGNORECASE):
@@ -481,11 +482,27 @@ def _patch_zip(docx_bytes: bytes, logo_path: Path | None = None) -> bytes:
                             resolved = "word/" + target.lstrip("../")
                             header_image_paths.add(resolved.lower())
 
+            if not header_image_paths and "word/document.xml" in zin.namelist() and "word/_rels/document.xml.rels" in zin.namelist():
+                document_xml = zin.read("word/document.xml").decode("utf-8")
+                match = re.search(r'r:embed="(rId\d+)"', document_xml)
+                if match:
+                    rid = match.group(1)
+                    rels_xml = zin.read("word/_rels/document.xml.rels").decode("utf-8")
+                    rel_match = re.search(
+                        rf'<Relationship[^>]+Id="{re.escape(rid)}"[^>]+Target="([^"]+)"',
+                        rels_xml,
+                        re.IGNORECASE,
+                    )
+                    if rel_match:
+                        target = rel_match.group(1)
+                        if re.search(r"\.(png|jpg|jpeg|gif|bmp|tiff|emf|wmf)$", target, re.IGNORECASE):
+                            body_image_paths.add(("word/" + target.lstrip("../")).lower())
+
         for item in zin.infolist():
             data = zin.read(item.filename)
             fname_lower = item.filename.lower()
 
-            if logo_bytes and fname_lower in header_image_paths:
+            if logo_bytes and (fname_lower in header_image_paths or fname_lower in body_image_paths):
                 data = logo_bytes
 
             if fname_lower.endswith(".rels"):
