@@ -77,6 +77,7 @@ def rebrand_sds(docx_bytes: bytes, sds_date: str | None = None, brand: str = "")
     out_bytes = _save_to_bytes(doc)
     logo_path = _BRAND_LOGOS.get(effective_brand)
     out_bytes = _patch_zip(out_bytes, logo_path)
+    out_bytes = _patch_header_dates_zip(out_bytes, today)
     return out_bytes, changes
 
 
@@ -289,12 +290,6 @@ def _rebrand_sampson(doc: Document, today: str) -> dict:
             _replace_text_in_runs(para, "Sampson Chemical Products", CCS["supplier_name"])
             _replace_text_in_runs(para, "sampson_office@bigpond.com", CCS["email"])
             changes.append("Body text: replaced Sampson reference")
-    for section in doc.sections:
-        hdr = section.header
-        for para in hdr.paragraphs:
-            if _replace_revision_date_inline(para, today):
-                changes.append(f"Header Revision date → {today}")
-        _replace_revision_date_in_tables(hdr.tables, today, changes, prefix="Header ")
     return {"changes": changes, "old_supplier": "Sampson Chemical Products"}
 
 
@@ -431,8 +426,31 @@ def _replace_hyperlink_display_text(doc: Document, old_supplier: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# ZIP-level patching: logo image + relationship URLs
+# ZIP-level patching: header date, logo image, relationship URLs
 # ---------------------------------------------------------------------------
+
+def _patch_header_dates_zip(docx_bytes: bytes, sds_date: str) -> bytes:
+    """Replace Revision date values in all DOCX header XML files at ZIP level.
+
+    Handles all header types (default, first-page, even-page) without relying
+    on python-docx's section.header API which misses first_page_header etc.
+    """
+    buf = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as zin, \
+         zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if re.search(r"word/header\d+\.xml$", item.filename, re.IGNORECASE):
+                text = data.decode("utf-8")
+                new_text = re.sub(
+                    r"(Revision\s+[Dd]ate\s*[:\s]+)(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})",
+                    lambda m: m.group(1) + sds_date,
+                    text, flags=re.IGNORECASE,
+                )
+                data = new_text.encode("utf-8")
+            zout.writestr(item, data)
+    return buf.getvalue()
+
 
 def _patch_zip(docx_bytes: bytes, logo_path: Path | None = None) -> bytes:
     """
