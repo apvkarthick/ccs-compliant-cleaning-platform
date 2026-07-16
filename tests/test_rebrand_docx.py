@@ -45,6 +45,18 @@ def _make_docx_with_body_logo() -> bytes:
     return out.getvalue()
 
 
+def _make_docx_without_logo() -> bytes:
+    doc = Document()
+    doc.add_paragraph("Supplier Name SOLOPAK CHEMICALS PTY LTD")
+    doc.add_paragraph("Address 12 OLD STREET")
+    doc.add_paragraph("Telephone 1800 000 000")
+    doc.add_paragraph("Revision Date: 01/01/2026")
+
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+
 def _asset_digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -80,4 +92,14 @@ def test_rebrand_docx_replaces_body_logo_when_no_header_logo_exists() -> None:
 
     assert _embedded_media_digest(out_bytes) == _asset_digest(
         Path(r"E:\claude\ccs-compliant-cleaning-platform\api\assets\other-replacement.jpg")
+    )
+
+
+def test_rebrand_docx_inserts_solopak_logo_when_source_has_no_logo() -> None:
+    src = _make_docx_without_logo()
+    out_bytes, summary = rebrand_sds(src, "08/07/2026", brand="solopak")
+
+    assert "Inserted Solopak replacement logo" in summary["changes"]
+    assert _embedded_media_digest(out_bytes) == _asset_digest(
+        Path(r"E:\claude\ccs-compliant-cleaning-platform\api\assets\solopak-replacement.jpg")
     )

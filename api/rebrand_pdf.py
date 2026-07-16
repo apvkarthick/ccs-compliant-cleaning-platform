@@ -55,7 +55,11 @@ def rebrand_pdf(pdf_bytes: bytes, sds_date: str | None = None, brand: str = "spi
 
     logo_path = _BRAND_LOGOS.get(brand)
     if logo_path and logo_path.exists():
-        logo_changes = _replace_header_images(doc, logo_path.read_bytes())
+        logo_changes = _replace_header_images(
+            doc,
+            logo_path.read_bytes(),
+            insert_if_missing=(brand == "solopak"),
+        )
         if logo_changes:
             changes.append(f"Logo replaced on {logo_changes} page(s)")
 
@@ -280,12 +284,15 @@ def _replace_link_annotations(doc: fitz.Document, changes: list[str]) -> None:
 # Logo replacement
 # ---------------------------------------------------------------------------
 
-def _replace_header_images(doc: fitz.Document, logo_bytes: bytes) -> int:
+def _replace_header_images(doc: fitz.Document, logo_bytes: bytes, insert_if_missing: bool = False) -> int:
     """Replace one header logo per page, preferring top-right candidates."""
     replaced = 0
     for page in doc:
-        xref = _select_header_logo_xref(page)
+        xref = _select_header_logo_xref(page, allow_fallback=not insert_if_missing)
         if xref is None:
+            if insert_if_missing:
+                _insert_header_logo(page, logo_bytes)
+                replaced += 1
             continue
         try:
             page.replace_image(xref, stream=logo_bytes)
@@ -295,7 +302,7 @@ def _replace_header_images(doc: fitz.Document, logo_bytes: bytes) -> int:
     return replaced
 
 
-def _select_header_logo_xref(page: fitz.Page) -> int | None:
+def _select_header_logo_xref(page: fitz.Page, allow_fallback: bool = True) -> int | None:
     page_height = page.rect.height
     page_width = page.rect.width
     ranked: dict[int, tuple[int, float, float]] = {}
@@ -331,7 +338,15 @@ def _select_header_logo_xref(page: fitz.Page) -> int | None:
         for rect in rects:
             y_center = (rect.y0 + rect.y1) / 2
             fallback.append((y_center, xref))
-    if not fallback:
+    if not allow_fallback or not fallback:
         return None
     fallback.sort(key=lambda item: item[0])
     return fallback[0][1]
+
+
+def _insert_header_logo(page: fitz.Page, logo_bytes: bytes) -> None:
+    rect = fitz.Rect(page.rect.width - 180, 18, page.rect.width - 18, 74)
+    try:
+        page.insert_image(rect, stream=logo_bytes, keep_proportion=True)
+    except Exception:
+        pass

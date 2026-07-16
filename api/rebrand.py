@@ -7,8 +7,11 @@ import zipfile
 from datetime import date
 from pathlib import Path
 
+import fitz
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
+from docx.shared import Inches
 
 # Rebrand logo assets:
 # - most brands use the shared rebrand logo
@@ -78,6 +81,10 @@ def rebrand_sds(docx_bytes: bytes, sds_date: str | None = None, brand: str = "")
     sweep = _sweep_email_url(doc)
     changes.setdefault("changes", []).extend(sweep)
 
+    if effective_brand == "solopak" and not _docx_has_media_image(docx_bytes):
+        if _insert_brand_logo(doc, _SOLOPAK_REBRAND_LOGO):
+            changes.setdefault("changes", []).append("Inserted Solopak replacement logo")
+
     changes["brand"] = effective_brand
     changes["sds_date"] = today
 
@@ -99,6 +106,27 @@ def _detect_supplier_name(doc: Document) -> str:
             after = text[len("Supplier Name"):].strip()
             return after
     return ""
+
+
+def _docx_has_media_image(docx_bytes: bytes) -> bool:
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as zin:
+        return any(name.startswith("word/media/") for name in zin.namelist())
+
+
+def _insert_brand_logo(doc: Document, logo_path: Path) -> bool:
+    if not logo_path.exists() or not doc.sections:
+        return False
+
+    header = doc.sections[0].header
+    if header.is_linked_to_previous:
+        header.is_linked_to_previous = False
+
+    para = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+    para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    run = para.add_run()
+    pix = fitz.Pixmap(str(logo_path))
+    run.add_picture(io.BytesIO(pix.tobytes("png")), width=Inches(2.2))
+    return True
 
 
 # ---------------------------------------------------------------------------

@@ -38,6 +38,19 @@ def _make_pdf_with_supplier_body_and_two_logos() -> bytes:
     return out.getvalue()
 
 
+def _make_pdf_without_logos() -> bytes:
+    doc = fitz.open()
+    p1 = doc.new_page()
+    p1.insert_text((60, 60), "Supplier Name SOLOPAK CHEMICALS PTY LTD", fontsize=11)
+    p1.insert_text((60, 80), "Address 12 OLD STREET", fontsize=11)
+    p1.insert_text((60, 100), "Telephone 1800 000 000", fontsize=11)
+    p1.insert_text((60, 120), "SDS Date 01/01/2026", fontsize=11)
+    out = io.BytesIO()
+    doc.save(out)
+    doc.close()
+    return out.getvalue()
+
+
 def _top_image_digest(doc: fitz.Document, page_index: int) -> str:
     page = doc[page_index]
     candidates = []
@@ -94,6 +107,17 @@ def test_rebrand_pdf_uses_shared_logo_for_cleanplus() -> None:
 
 def test_rebrand_pdf_uses_solopak_logo_for_solopak() -> None:
     src = _make_pdf_with_supplier_body_and_two_logos()
+    out_bytes, _summary = rebrand_pdf(src, "08/07/2026", brand="solopak")
+    out = fitz.open(stream=out_bytes, filetype="pdf")
+
+    digest_p1 = _top_image_digest(out, 0)
+    out.close()
+
+    assert digest_p1 == _asset_digest(Path(r"E:\claude\ccs-compliant-cleaning-platform\api\assets\solopak-replacement.jpg"))
+
+
+def test_rebrand_pdf_inserts_solopak_logo_when_source_has_no_logo() -> None:
+    src = _make_pdf_without_logos()
     out_bytes, _summary = rebrand_pdf(src, "08/07/2026", brand="solopak")
     out = fitz.open(stream=out_bytes, filetype="pdf")
 
