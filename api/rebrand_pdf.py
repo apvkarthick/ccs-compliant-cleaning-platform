@@ -15,7 +15,7 @@ _OLD_DOMAINS = ["cleanplus.com.au"]
 # Labels to scan for in both inline and two-column table layouts
 _SUPPLIER_LABELS = ["Supplier Name", "Company Name", "Supplier", "Manufacturer Name"]
 _ADDRESS_LABELS = ["Address"]
-_PHONE_LABELS = ["Telephone", "Phone", "Tel"]
+_PHONE_LABELS = ["Emergency Telephone", "Telephone", "Phone", "Tel"]
 _CCS_BODY_SUPPLIER_NAME = "Compliant Cleaning Supplies"
 _PAGE1_SUPPLIER_Y_RATIO = 0.50
 _OTHER_PAGE_SUPPLIER_Y_RATIO = 0.22
@@ -29,7 +29,7 @@ def _detect_sds_date(doc: fitz.Document) -> str:
         return ""
     text = doc[0].get_text("text")
     m = re.search(
-        r'SDS\s*Date[:\t\s\n]+(\d{1,2}\s+[A-Za-z]+\s+\d{4}|\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})',
+        r'(?:SDS\s*Date|Issue\s*Date|Date\s*of\s*Issue|Revision\s*Date)[:\t\s\n]+(\d{1,2}\s+[A-Za-z]+\s+\d{4}|\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})',
         text, re.IGNORECASE,
     )
     return m.group(1) if m else ""
@@ -39,14 +39,14 @@ def rebrand_pdf(pdf_bytes: bytes, sds_date: str | None = None, brand: str = "spi
     today = sds_date or date.today().strftime("%d/%m/%Y")
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
 
-    old_supplier, old_address, old_phone = _detect_supplier_fields(doc)
+    old_supplier, old_address, old_phone, old_emergency_phone = _detect_supplier_fields(doc)
     old_sds_date = _detect_sds_date(doc)
     search_terms = _supplier_search_terms(old_supplier) if old_supplier else []
     changes: list[str] = []
 
     for page_idx, page in enumerate(doc):
         page_changes = _replace_text_on_page(
-            page, search_terms, old_address, old_phone, old_sds_date, today,
+            page, search_terms, old_address, old_phone, old_emergency_phone, old_sds_date, today,
             page_index=page_idx,
         )
         changes.extend(page_changes)
@@ -74,16 +74,16 @@ def rebrand_pdf(pdf_bytes: bytes, sds_date: str | None = None, brand: str = "spi
 # Detection
 # ---------------------------------------------------------------------------
 
-def _detect_supplier_fields(doc: fitz.Document) -> tuple[str, str, str]:
-    """Return (supplier_name, address, phone) detected from page 1."""
+def _detect_supplier_fields(doc: fitz.Document) -> tuple[str, str, str, str]:
+    """Return (supplier_name, address, phone, emergency_phone) detected from page 1."""
     if not doc.page_count:
-        return "", "", ""
+        return "", "", "", ""
 
     page = doc[0]
     lines = page.get_text("text").splitlines()
 
     # Pass 1 — scan all lines; detect inline supplier and next-line phone/address
-    supplier = address = phone = ""
+    supplier = address = phone = emergency_phone = ""
     for i, line in enumerate(lines):
         stripped = line.strip()
 
@@ -95,28 +95,43 @@ def _detect_supplier_fields(doc: fitz.Document) -> tuple[str, str, str]:
                         supplier = after
                         break
 
-        if not phone:
+        if not phone or not emergency_phone:
             for label in _PHONE_LABELS:
-                if re.match(re.escape(label) + r'\s*$', stripped, re.IGNORECASE):
-                    nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
-                    if nxt:
-                        phone = nxt
+                if re.match(re.escape(label), stripped, re.IGNORECASE):
+                    after = stripped[len(label):].strip().lstrip(":").strip()
+                    if after:
+                        if label.lower().startswith("emergency"):
+                            emergency_phone = after
+                        else:
+                            phone = after
+                    else:
+                        nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
+                        if nxt:
+                            if label.lower().startswith("emergency"):
+                                emergency_phone = nxt
+                            else:
+                                phone = nxt
                     break
 
         if not address:
             for label in _ADDRESS_LABELS:
-                if re.match(re.escape(label) + r'\s*$', stripped, re.IGNORECASE):
-                    nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
-                    if nxt:
-                        address = nxt
+                if re.match(re.escape(label) + r'\s*:?\s*$', stripped, re.IGNORECASE):
+                    after = stripped[len(label):].strip().lstrip(":").strip()
+                    if after:
+                        address = after
+                    else:
+                        nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
+                        if nxt:
+                            address = nxt
                     break
 
     if supplier:
-        return supplier, address, phone
+        return supplier, address, phone, emergency_phone
 
     # Pass 2 — spatial: two-column table where labels are in a left block
     # and values are in a right block at the same vertical band
-    return _detect_fields_spatial(page)
+    supplier, address, phone = _detect_fields_spatial(page)
+    return supplier, address, phone, emergency_phone
 
 
 def _detect_fields_spatial(page: fitz.Page) -> tuple[str, str, str]:
@@ -181,6 +196,7 @@ def _replace_text_on_page(
     supplier_terms: list[str],
     old_address: str,
     old_phone: str,
+    old_emergency_phone: str,
     old_date: str = "",
     new_date: str = "",
     page_index: int = 0,
@@ -205,6 +221,14 @@ def _replace_text_on_page(
     full_replacements: list[tuple[str, str]] = []
     if old_date and new_date:
         full_replacements.append((old_date, new_date))
+        for label in ("Issue Date", "Date of Issue", "SDS Date", "Revision Date"):
+            full_replacements.append((f"{label}: {old_date}", f"{label}: {new_date}"))
+    if old_emergency_phone:
+        full_replacements.append((old_emergency_phone, f"Poisons Information Centre (National) {CCS['emergency']}"))
+        full_replacements.append((
+            f"Emergency Telephone: {old_emergency_phone}",
+            f"Emergency Telephone: Poisons Information Centre (National) {CCS['emergency']}",
+        ))
     page_text = page.get_text("text")
     for url in re.findall(r'https?://[^\s<>"\']+|www\.[^\s<>"\']+', page_text, re.IGNORECASE):
         if "compliantcs.com.au" not in url.lower():

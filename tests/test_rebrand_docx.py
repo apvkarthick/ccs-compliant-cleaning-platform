@@ -57,6 +57,31 @@ def _make_docx_without_logo() -> bytes:
     return out.getvalue()
 
 
+def _make_docx_with_first_page_header_table() -> bytes:
+    doc = Document()
+    section = doc.sections[0]
+    section.different_first_page_header_footer = True
+
+    first_header = section.first_page_header
+    table = first_header.add_table(rows=3, cols=2, width=doc.sections[0].page_width)
+    table.cell(0, 0).text = "Safety Data Sheet"
+    table.cell(0, 1).text = "Page 1"
+    table.cell(1, 0).text = "Product"
+    table.cell(1, 1).text = "Solopak Test Product"
+    table.cell(2, 0).text = ""
+    table.cell(2, 1).text = "Issue Date: 1st of July 2026"
+
+    body = doc.add_table(rows=2, cols=2)
+    body.cell(0, 0).text = "Emergency Telephone:"
+    body.cell(0, 1).text = "Poisons Information Centre (National) 000000"
+    body.cell(1, 0).text = "Date of Issue"
+    body.cell(1, 1).text = "1st of July 2026"
+
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+
 def _asset_digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -103,3 +128,14 @@ def test_rebrand_docx_inserts_solopak_logo_when_source_has_no_logo() -> None:
     assert _embedded_media_digest(out_bytes) == _asset_digest(
         Path(r"E:\claude\ccs-compliant-cleaning-platform\api\assets\solopak-replacement.jpg")
     )
+
+
+def test_rebrand_docx_updates_first_page_header_issue_date_and_emergency_phone() -> None:
+    src = _make_docx_with_first_page_header_table()
+    out_bytes, summary = rebrand_sds(src, "08/07/2026", brand="solopak")
+    out = Document(io.BytesIO(out_bytes))
+
+    assert any("First page header table updated" in change for change in summary["changes"])
+    assert out.sections[0].first_page_header.tables[0].cell(2, 1).text == "Issue Date: 08/07/2026"
+    assert out.tables[0].cell(0, 1).text == "Poisons Information Centre (National) 131126"
+    assert out.tables[0].cell(1, 1).text == "08/07/2026"

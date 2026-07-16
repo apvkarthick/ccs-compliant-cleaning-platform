@@ -117,16 +117,52 @@ def _insert_brand_logo(doc: Document, logo_path: Path) -> bool:
     if not logo_path.exists() or not doc.sections:
         return False
 
-    header = doc.sections[0].header
-    if header.is_linked_to_previous:
-        header.is_linked_to_previous = False
+    inserted = False
+    section = doc.sections[0]
+    for header in (section.first_page_header, section.header):
+        if header.is_linked_to_previous:
+            header.is_linked_to_previous = False
+        para = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+        if not para.text and not para.runs:
+            para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            run = para.add_run()
+            pix = fitz.Pixmap(str(logo_path))
+            run.add_picture(io.BytesIO(pix.tobytes("png")), width=Inches(2.2))
+            inserted = True
+    return inserted
 
-    para = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
-    para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    run = para.add_run()
-    pix = fitz.Pixmap(str(logo_path))
-    run.add_picture(io.BytesIO(pix.tobytes("png")), width=Inches(2.2))
-    return True
+
+def _replace_text_using_map(text: str, replacements: dict[str, str]) -> tuple[str, bool]:
+    updated = text
+    changed = False
+    for label, new_val in replacements.items():
+        pattern = rf"({re.escape(label)}\s*[:\-]?\s*)(.*)"
+        new_updated, count = re.subn(
+            pattern,
+            lambda m: m.group(1) + new_val,
+            updated,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        if count:
+            updated = new_updated
+            changed = True
+    return updated, changed
+
+
+def _apply_replacements_to_header_part(header, replacements: dict[str, str], changes: list[str], prefix: str) -> None:
+    for para in header.paragraphs:
+        new_text, changed = _replace_text_using_map(para.text, replacements)
+        if changed:
+            _set_full_run(para, new_text)
+            changes.append(f"{prefix}header text updated")
+    for table in header.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                new_text, changed = _replace_text_using_map(cell.text, replacements)
+                if changed:
+                    cell.text = new_text
+                    changes.append(f"{prefix}header table updated")
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +398,10 @@ def _rebrand_smart_clean(doc: Document, today: str) -> dict:
             if new_val:
                 _replace_cell_lines(value_cell, [new_val])
                 changes.append(f"{raw_label} → {new_val}")
+    for section in doc.sections:
+        _apply_replacements_to_header_part(section.first_page_header, replacements, changes, prefix="First page ")
+        _apply_replacements_to_header_part(section.header, replacements, changes, prefix="Header ")
+        _apply_replacements_to_header_part(section.even_page_header, replacements, changes, prefix="Even page ")
     return {"changes": changes, "old_supplier": old_supplier or "Smart Clean / Solopak"}
 
 
