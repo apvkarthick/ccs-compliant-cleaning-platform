@@ -127,11 +127,12 @@ function App({ session }) {
     if (window.location.pathname === '/email-opens') return 'email-opens';
     if (window.location.pathname === '/pdf-opens') return 'pdf-opens';
     if (window.location.pathname === '/library') return 'library';
+    if (window.location.pathname === '/sites') return 'sites';
     return 'distribution';
   });
 
   function switchTab(tab) {
-    const paths = { 'email-opens': '/email-opens', 'pdf-opens': '/pdf-opens', 'distribution': '/app', 'library': '/library' };
+    const paths = { 'email-opens': '/email-opens', 'pdf-opens': '/pdf-opens', 'distribution': '/app', 'library': '/library', 'sites': '/sites' };
     history.pushState(null, '', paths[tab] || '/app');
     setActiveTab(tab);
   }
@@ -144,6 +145,7 @@ function App({ session }) {
     <main className="shell">
       <div className="tab-bar">
         <button className={`tab ${activeTab === 'distribution' ? 'active' : ''}`} onClick={() => switchTab('distribution')}>Distribution</button>
+        <button className={`tab ${activeTab === 'sites' ? 'active' : ''}`} onClick={() => switchTab('sites')}>Sites</button>
         <button className={`tab ${activeTab === 'email-opens' ? 'active' : ''}`} onClick={() => switchTab('email-opens')}>Email Opens</button>
         <button className={`tab ${activeTab === 'library' ? 'active' : ''}`} onClick={() => switchTab('library')}><BookOpen size={13} style={{marginRight:4,verticalAlign:'middle'}}/>Doc Library</button>
         <a className="tab" href="/rebrand">Rebrand SDS</a>
@@ -152,6 +154,7 @@ function App({ session }) {
         </button>
       </div>
       {activeTab === 'distribution' && <DistributionDesk />}
+      {activeTab === 'sites' && <SiteDistribution />}
       {activeTab === 'email-opens' && <EmailOpensDashboard />}
       {activeTab === 'pdf-opens' && <PdfOpensDashboard />}
       {activeTab === 'library' && <DocumentLibrary />}
@@ -849,6 +852,268 @@ function DocumentLibrary() {
         </div>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Site Distribution
+// ---------------------------------------------------------------------------
+
+function SiteDistribution() {
+  const [stats, setStats] = useState(null);
+  const [sites, setSites] = useState([]);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [taskId, setTaskId] = useState('');
+  const [taskStatus, setTaskStatus] = useState(null);
+  const [dryRun, setDryRun] = useState(true);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  // File inputs
+  const [mappingFile, setMappingFile] = useState(null);
+  const [sdsFile, setSdsFile] = useState(null);
+  const [riskFile, setRiskFile] = useState(null);
+  const [groupingFile, setGroupingFile] = useState(null);
+
+  const PAGE_SIZE = 50;
+
+  async function loadStats() {
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/stats`, { headers: getAuthHeaders() });
+      if (r.ok) setStats(await r.json());
+    } catch { /* ignore */ }
+  }
+
+  async function loadSites() {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page, page_size: PAGE_SIZE });
+      if (search) params.set('search', search);
+      const r = await fetch(`${API_BASE}/site-distribution/sites?${params}`, { headers: getAuthHeaders() });
+      if (r.ok) setSites((await r.json()).sites || []);
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { loadStats(); }, []);
+  useEffect(() => { loadSites(); }, [page, search]);
+
+  // Poll task progress
+  useEffect(() => {
+    if (!taskId) return;
+    const interval = setInterval(async () => {
+      try {
+        const r = await fetch(`${API_BASE}/distribution/status/${taskId}`, { headers: getAuthHeaders() });
+        if (!r.ok) return;
+        const data = await r.json();
+        setTaskStatus(data);
+        if (data.state === 'SUCCESS' || data.state === 'FAILURE') {
+          clearInterval(interval);
+          setSending(false);
+          loadStats();
+        }
+      } catch { /* ignore */ }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [taskId]);
+
+  async function handleImport(e) {
+    e.preventDefault();
+    if (!mappingFile || !sdsFile || !riskFile) { setError('Select mapping, SDS, and risk files.'); return; }
+    setImporting(true); setError(''); setNotice('');
+    const form = new FormData();
+    form.append('mapping', mappingFile);
+    form.append('sds', sdsFile);
+    form.append('risk', riskFile);
+    if (groupingFile) form.append('grouping', groupingFile);
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/import`, { method: 'POST', headers: getAuthHeaders(), body: form });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Import failed');
+      setNotice(`Imported: ${data.sites} sites, ${data.links} SDS/Risk links, ${data.groups} product groups.`);
+      loadStats(); loadSites();
+    } catch (err) { setError(err.message); }
+    finally { setImporting(false); }
+  }
+
+  async function toggleExclude(site) {
+    const accno = site.accno;
+    const url = `${API_BASE}/site-distribution/exclude/${encodeURIComponent(accno)}`;
+    try {
+      if (site.excluded) {
+        await fetch(url, { method: 'DELETE', headers: getAuthHeaders() });
+      } else {
+        await fetch(`${url}?name=${encodeURIComponent(site.name)}`, { method: 'POST', headers: getAuthHeaders() });
+      }
+      setSites(prev => prev.map(s => s.accno === accno ? { ...s, excluded: !s.excluded } : s));
+      loadStats();
+    } catch (err) { setError(err.message); }
+  }
+
+  async function handleSend() {
+    setSending(true); setError(''); setTaskStatus(null);
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/send?dry_run=${dryRun}`, { method: 'POST', headers: getAuthHeaders() });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Send failed');
+      setTaskId(data.task_id);
+      setTaskStatus({ state: 'PENDING', meta: {} });
+    } catch (err) { setError(err.message); setSending(false); }
+  }
+
+  const progressMeta = taskStatus?.meta || taskStatus?.result || {};
+  const progressPct = progressMeta.total ? Math.round((progressMeta.done || 0) / progressMeta.total * 100) : 0;
+
+  return (
+    <section className="workbench">
+      <div className="topbar">
+        <div>
+          <p className="eyebrow">Compliant Cleaning Supplies</p>
+          <h1>Site Distribution</h1>
+        </div>
+        {stats && (
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Pill label="Total sites" value={stats.total_sites} ok={stats.total_sites > 0} />
+            <Pill label="Active" value={stats.active_sites} ok={stats.active_sites > 0} />
+            <Pill label="Excluded" value={stats.excluded_sites} warn={stats.excluded_sites > 0} />
+            <Pill label="SDS links" value={stats.sds_links} ok={stats.sds_links > 0} />
+          </div>
+        )}
+      </div>
+
+      <div className="layout">
+        <aside className="side-panel">
+          {/* Import */}
+          <form onSubmit={handleImport} className="upload-box">
+            <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Import mapping files</label>
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label style={{ fontSize: 12, color: '#445' }}>Mapping (required)</label>
+              <input type="file" accept=".xlsx" onChange={e => setMappingFile(e.target.files?.[0] || null)} />
+              <label style={{ fontSize: 12, color: '#445' }}>SDS links (required)</label>
+              <input type="file" accept=".xlsx" onChange={e => setSdsFile(e.target.files?.[0] || null)} />
+              <label style={{ fontSize: 12, color: '#445' }}>Risk links (required)</label>
+              <input type="file" accept=".xlsx" onChange={e => setRiskFile(e.target.files?.[0] || null)} />
+              <label style={{ fontSize: 12, color: '#445' }}>Product grouping (optional)</label>
+              <input type="file" accept=".xlsx" onChange={e => setGroupingFile(e.target.files?.[0] || null)} />
+            </div>
+            <button type="submit" className="primary" disabled={importing} style={{ marginTop: 12 }}>
+              <Upload size={16} style={{ marginRight: 6 }} />{importing ? 'Importing…' : 'Import'}
+            </button>
+          </form>
+
+          {/* Send */}
+          <div className="contact-box" style={{ marginTop: 16 }}>
+            <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Send distribution</label>
+            <p style={{ fontSize: 12, color: '#607080', marginTop: 6 }}>
+              Sends SDS + Risk Assessment emails to all active (non-excluded) sites.
+            </p>
+            <div className="toggle-row" style={{ marginBottom: 10 }}>
+              <input id="sd-dry-run" type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} />
+              <label htmlFor="sd-dry-run">Dry run (no emails sent)</label>
+            </div>
+            <button className="primary" onClick={handleSend} disabled={sending || !stats?.active_sites}>
+              <Send size={16} style={{ marginRight: 6 }} />{sending ? 'Running…' : `Send to ${stats?.active_sites ?? '…'} sites`}
+            </button>
+            {taskStatus && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 12, color: '#445', marginBottom: 4 }}>
+                  Status: <strong>{taskStatus.state}</strong>
+                  {progressMeta.total ? ` · ${progressMeta.done || 0}/${progressMeta.total}` : ''}
+                </div>
+                {progressMeta.total > 0 && (
+                  <div style={{ background: '#e2eaef', borderRadius: 4, height: 6 }}>
+                    <div style={{ background: '#2C6B33', borderRadius: 4, height: 6, width: `${progressPct}%`, transition: 'width 0.3s' }} />
+                  </div>
+                )}
+                {(progressMeta.sent !== undefined) && (
+                  <div style={{ fontSize: 11, color: '#607080', marginTop: 4 }}>
+                    Sent: {progressMeta.sent} · Failed: {progressMeta.failed} · Skipped: {progressMeta.skipped}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </aside>
+
+        <div className="main-panel">
+          {notice && <div className="notice ok" style={{ marginBottom: 12 }}><CheckCircle2 size={15} /><span>{notice}</span></div>}
+          {error && <div className="notice error" style={{ marginBottom: 12 }}><AlertCircle size={15} /><span>{error}</span></div>}
+
+          {/* Search + table */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <input
+              type="search"
+              placeholder="Search sites…"
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
+              style={{ flex: 1, padding: '7px 12px', border: '1px solid #d8e1e8', borderRadius: 6, fontSize: '0.875rem' }}
+            />
+            <span style={{ fontSize: 12, color: '#607080', whiteSpace: 'nowrap' }}>Page {page}</span>
+            <button className="btn-ghost" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>‹</button>
+            <button className="btn-ghost" onClick={() => setPage(p => p + 1)} disabled={sites.length < PAGE_SIZE}>›</button>
+          </div>
+
+          {loading ? (
+            <p style={{ color: '#607080', fontSize: 14 }}>Loading…</p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Site</th>
+                    <th>Head Office</th>
+                    <th>Emails</th>
+                    <th style={{ textAlign: 'right' }}>Products</th>
+                    <th style={{ textAlign: 'center' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sites.map(site => (
+                    <tr key={site.accno} style={{ opacity: site.excluded ? 0.45 : 1 }}>
+                      <td>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{site.name}</div>
+                        <div style={{ fontSize: 11, color: '#607080' }}>#{site.accno}</div>
+                      </td>
+                      <td style={{ fontSize: 12 }}>{site.ho_name}</td>
+                      <td style={{ fontSize: 11, color: '#445', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {(site.emails || []).join('; ')}
+                      </td>
+                      <td style={{ textAlign: 'right', fontSize: 12 }}>
+                        {(site.stockcodes || []).length}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          className="btn-ghost"
+                          style={{
+                            fontSize: 11,
+                            color: site.excluded ? '#d35400' : '#2C6B33',
+                            border: `1px solid ${site.excluded ? '#d35400' : '#2C6B33'}`,
+                            borderRadius: 4,
+                            padding: '2px 8px',
+                          }}
+                          onClick={() => toggleExclude(site)}
+                        >
+                          {site.excluded ? 'Excluded' : 'Active'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {sites.length === 0 && (
+                    <tr><td colSpan={5} style={{ textAlign: 'center', color: '#607080', padding: 24 }}>
+                      {stats?.total_sites === 0 ? 'No sites imported yet — upload mapping files.' : 'No results.'}
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 

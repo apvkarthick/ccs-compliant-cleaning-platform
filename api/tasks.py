@@ -49,6 +49,72 @@ def ping_task() -> dict[str, str]:
     }
 
 
+@celery_app.task(bind=True, name="ccs.site_distribute", max_retries=2, time_limit=7200)
+def site_distribution_task(self, dry_run: bool = True, batch_id: str = "") -> dict:
+    """Send SDS/Risk compliance emails to all non-excluded sites from ccs_site_mapping."""
+    import os
+    import time
+
+    from .site_distribution import (
+        compose_site_email,
+        load_lookup_maps,
+        resolve_docs_for_site,
+        _sb_get,
+    )
+    from .distribution import _find_or_create_ghl_contact_id, _send_messages_via_ghl
+
+    public_base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
+    tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
+
+    excl_set = {r["accno"] for r in _sb_get("ccs_site_exclusions", "select=accno")}
+    all_sites = _sb_get("ccs_site_mapping", "select=*&order=name.asc")
+    sites = [s for s in all_sites if s.get("accno") not in excl_set]
+
+    sds_map, risk_map, group_fallback = load_lookup_maps()
+
+    summary: dict = {"sent": 0, "failed": 0, "skipped": 0, "dry_run": dry_run, "total": len(sites), "done": 0}
+    self.update_state(state="PROGRESS", meta=dict(summary))
+
+    for i, site in enumerate(sites):
+        accno = site.get("accno", "")
+        try:
+            stockcodes = site.get("stockcodes") or []
+            docs = resolve_docs_for_site(stockcodes, sds_map, risk_map, group_fallback)
+            emails = [e for e in (site.get("emails") or []) if e]
+
+            if not docs or not emails:
+                summary["skipped"] += 1
+            else:
+                for email_addr in emails:
+                    msg = compose_site_email(
+                        site, docs, email_addr,
+                        batch_id=batch_id,
+                        public_base_url=public_base,
+                        tracking_secret=tracking_secret,
+                    )
+                    if dry_run:
+                        summary["sent"] += 1
+                        continue
+                    contact_id = _find_or_create_ghl_contact_id({"email": email_addr, "name": site.get("name", "")})
+                    if contact_id:
+                        msg["contact_id"] = contact_id
+                    ghl = _send_messages_via_ghl([msg])
+                    if ghl.get("status") == "sent":
+                        summary["sent"] += 1
+                    else:
+                        summary["failed"] += 1
+                    time.sleep(0.3)
+        except Exception as exc:
+            summary["failed"] += 1
+            summary.setdefault("exceptions", []).append({"accno": accno, "error": str(exc)})
+
+        summary["done"] = i + 1
+        if (i + 1) % 25 == 0 or i == len(sites) - 1:
+            self.update_state(state="PROGRESS", meta=dict(summary))
+
+    return dict(summary)
+
+
 @celery_app.task(bind=True, name="ccs.bulk_distribute", max_retries=2, time_limit=3600)
 def bulk_distribute_task(self, preview: dict, contacts: list, dry_run: bool = True, batch_id: str = "") -> dict:
     import os

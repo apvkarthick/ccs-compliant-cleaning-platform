@@ -24,10 +24,17 @@ from .distribution import (
     validate_tracking_signature,
 )
 from .excel_parser import list_source_documents, parse_client_workbook
+from .site_distribution import (
+    exclude_site,
+    get_stats,
+    import_mapping,
+    include_site,
+    list_sites,
+)
 from .rebrand import rebrand_sds
 from .rebrand_pdf import rebrand_pdf
 from .celery_app import celery_app
-from .tasks import bulk_distribute_task, ping_task
+from .tasks import bulk_distribute_task, ping_task, site_distribution_task
 from .document_library import (
     delete_spaces_files,
     get_library_status,
@@ -323,6 +330,67 @@ def test_send_distribution(
         dry_run=request.dry_run,
         batch_id=batch_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# Site distribution endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/site-distribution/stats")
+def site_distribution_stats(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    return get_stats()
+
+
+@app.get("/site-distribution/sites")
+def site_distribution_list(
+    search: str = Query(default=""),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, le=200),
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    return list_sites(search=search, page=page, page_size=page_size)
+
+
+@app.post("/site-distribution/import")
+async def import_site_mapping(
+    mapping: UploadFile = File(..., description="email-product-mapping.xlsx"),
+    sds: UploadFile = File(..., description="sds-pdf-link.xlsx"),
+    risk: UploadFile = File(..., description="risk-pdf-link.xlsx"),
+    grouping: UploadFile | None = File(default=None, description="product-grouping.xlsx (optional)"),
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    mapping_bytes = await mapping.read()
+    sds_bytes = await sds.read()
+    risk_bytes = await risk.read()
+    grouping_bytes = await grouping.read() if grouping else None
+    return import_mapping(mapping_bytes, sds_bytes, risk_bytes, grouping_bytes)
+
+
+@app.post("/site-distribution/exclude/{accno}")
+def exclude_site_endpoint(
+    accno: str,
+    name: str = Query(default=""),
+    _auth: dict = Depends(require_auth),
+) -> dict[str, str]:
+    return exclude_site(accno, name)
+
+
+@app.delete("/site-distribution/exclude/{accno}")
+def include_site_endpoint(
+    accno: str,
+    _auth: dict = Depends(require_auth),
+) -> dict[str, str]:
+    return include_site(accno)
+
+
+@app.post("/site-distribution/send")
+def send_site_distribution(
+    dry_run: bool = Query(default=True),
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    batch_id = str(uuid.uuid4()) if not dry_run else f"dry_{uuid.uuid4().hex[:8]}"
+    task = site_distribution_task.delay(dry_run=dry_run, batch_id=batch_id)
+    return {"task_id": task.id, "status": "queued", "batch_id": batch_id, "dry_run": dry_run}
 
 
 @app.get("/ccs-msds-track", response_class=HTMLResponse)
