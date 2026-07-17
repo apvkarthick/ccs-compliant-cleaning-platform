@@ -446,21 +446,29 @@ def send_site_distribution(
 
 @app.get("/site-distribution/report.csv")
 def site_distribution_report(_auth: dict = Depends(require_auth)):
-    """CSV preview: every site, what documents they'd receive, and why any are skipped."""
+    """CSV preview: one row per product per site — Chemical Register data + SDS/Risk URLs."""
     import csv, io as _io
     excl_set = {r["accno"] for r in _sb_get("ccs_site_exclusions", "select=accno")}
     held_set = {r["accno"] for r in _sb_get("ccs_site_holds", "select=accno")}
     all_sites = _sb_get("ccs_site_mapping", "select=*&order=name.asc")
     sds_map, risk_map, group_fallback, risk_required_set = load_lookup_maps()
 
+    # Load all product metadata in one query
+    all_links = _sb_get(
+        "ccs_sds_links",
+        "select=stock_code,product_name,hazard_classification,primary_use,"
+        "signal_word,un_number,risk_assessment_required,sds_expiry",
+    )
+    meta_map: dict = {r["stock_code"]: r for r in all_links}
+
     buf = _io.StringIO()
     w = csv.writer(buf)
     w.writerow([
         "ACCNO", "Site Name", "Head Office", "Emails",
-        "Total Products", "Matched Products", "Skipped Products",
-        "SDS Count", "Risk Count",
         "Would Send?", "Skip Reason",
-        "Matched Codes", "Skipped Codes",
+        "Product Code", "Product Name", "Hazard Classification",
+        "Primary Use", "Signal Word", "UN No.", "Risk Assessment Required", "SDS Expiry",
+        "SDS URL", "Risk URL", "Doc Status",
     ])
 
     for site in all_sites:
@@ -468,42 +476,47 @@ def site_distribution_report(_auth: dict = Depends(require_auth)):
         emails = site.get("emails") or []
         stockcodes = site.get("stockcodes") or []
         docs = resolve_docs_for_site(stockcodes, sds_map, risk_map, group_fallback, risk_required_set)
-        matched_codes = [d["code"] for d in docs]
-        skipped_codes = [c for c in stockcodes if c not in matched_codes]
-        sds_count = sum(1 for d in docs if d.get("sds_url"))
-        risk_count = sum(1 for d in docs if d.get("risk_url"))
+        docs_map = {d["code"]: d for d in docs}
 
         if accno in excl_set:
-            skip_reason = "excluded"
-            would_send = "NO"
+            skip_reason, would_send = "excluded", "NO"
         elif accno in held_set:
-            skip_reason = "on hold"
-            would_send = "NO"
+            skip_reason, would_send = "on hold", "NO"
         elif not emails:
-            skip_reason = "no email address"
-            would_send = "NO"
+            skip_reason, would_send = "no email address", "NO"
         elif not docs:
-            skip_reason = "no matching SDS/Risk documents"
-            would_send = "NO"
+            skip_reason, would_send = "no matching SDS/Risk documents", "NO"
         else:
-            skip_reason = ""
-            would_send = "YES"
+            skip_reason, would_send = "", "YES"
 
-        w.writerow([
-            accno,
-            site.get("name", ""),
-            site.get("ho_name", ""),
-            "; ".join(emails),
-            len(stockcodes),
-            len(matched_codes),
-            len(skipped_codes),
-            sds_count,
-            risk_count,
-            would_send,
-            skip_reason,
-            ", ".join(matched_codes),
-            ", ".join(skipped_codes),
-        ])
+        emails_str = "; ".join(emails)
+        site_name = site.get("name", "")
+        ho_name = site.get("ho_name", "")
+
+        if not stockcodes:
+            w.writerow([accno, site_name, ho_name, emails_str, would_send, skip_reason or "no products",
+                        "", "", "", "", "", "", "", "", "", "", ""])
+            continue
+
+        for code in stockcodes:
+            # Metadata: direct hit or group fallback (related → primary)
+            m = meta_map.get(code) or meta_map.get(group_fallback.get(code, ""), {})
+            doc = docs_map.get(code)
+            doc_status = "matched" if doc else "skipped — no SDS/Risk link"
+            w.writerow([
+                accno, site_name, ho_name, emails_str, would_send, skip_reason,
+                code,
+                m.get("product_name") or "",
+                m.get("hazard_classification") or "",
+                m.get("primary_use") or "",
+                m.get("signal_word") or "",
+                m.get("un_number") or "",
+                "YES" if m.get("risk_assessment_required") else "NO",
+                m.get("sds_expiry") or "",
+                doc.get("sds_url") if doc else "",
+                doc.get("risk_url") if doc else "",
+                doc_status,
+            ])
 
     from fastapi.responses import Response
     return Response(
