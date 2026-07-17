@@ -154,17 +154,57 @@ def parse_chemical_register(data: bytes) -> list[dict[str, Any]]:
 
 
 def fetch_product_metadata(stock_codes: list[str]) -> dict[str, dict]:
-    """Return product metadata keyed by stock_code for the given set of codes."""
+    """Return product metadata keyed by stock_code.
+
+    For codes with no direct metadata, falls back to any other code in the same
+    stock-group row (col A, B, C, D... in the size-mapping sheet) that does have
+    metadata.  The customer's own code is preserved as the dict key so the
+    Chemical Register always shows the customer's actual stock code.
+    """
     if not stock_codes:
         return {}
-    codes_csv = ",".join(stock_codes)
-    rows = _sb_get(
-        "ccs_sds_links",
-        f"select=stock_code,product_name,hazard_classification,primary_use,"
-        f"signal_word,un_number,risk_assessment_required,sds_expiry"
-        f"&stock_code=in.({codes_csv})",
+
+    _FIELDS = (
+        "stock_code,product_name,hazard_classification,primary_use,"
+        "signal_word,un_number,risk_assessment_required,sds_expiry"
     )
-    return {r["stock_code"]: r for r in rows}
+
+    # Direct lookup
+    codes_csv = ",".join(stock_codes)
+    rows = _sb_get("ccs_sds_links", f"select={_FIELDS}&stock_code=in.({codes_csv})")
+    result: dict[str, dict] = {r["stock_code"]: r for r in rows if r.get("product_name")}
+
+    missing = [c for c in stock_codes if c not in result]
+    if not missing:
+        return result
+
+    # Build group membership map: code → all codes in the same group row
+    groups = _sb_get("ccs_stock_groups", "select=primary_code,related_codes")
+    group_members: dict[str, list[str]] = {}
+    for g in groups:
+        members = [g["primary_code"]] + (g.get("related_codes") or [])
+        for code in members:
+            group_members[code] = members
+
+    # Collect all alternative codes to fetch in one query
+    alt_needed: set[str] = set()
+    for code in missing:
+        for alt in group_members.get(code, []):
+            if alt != code:
+                alt_needed.add(alt)
+
+    if alt_needed:
+        alt_csv = ",".join(alt_needed)
+        alt_rows = _sb_get("ccs_sds_links", f"select={_FIELDS}&stock_code=in.({alt_csv})")
+        alt_meta: dict[str, dict] = {r["stock_code"]: r for r in alt_rows if r.get("product_name")}
+
+        for code in missing:
+            for alt in group_members.get(code, []):
+                if alt in alt_meta:
+                    result[code] = alt_meta[alt]  # use alt's metadata, but key stays as customer code
+                    break
+
+    return result
 
 
 def generate_chemical_register_excel(
