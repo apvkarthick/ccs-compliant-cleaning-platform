@@ -397,14 +397,17 @@ def import_mapping(
     register_count = 0
     if register_bytes:
         reg_records = parse_chemical_register(register_bytes)
-        # Upsert risk_assessment_required + sds_expiry per stock_code
-        # Rows without sds_url/risk_url still need the flag stored
+        # PostgREST PGRST102: all rows in a batch upsert must have identical key sets.
+        # Normalize every row to the same register fields — None becomes SQL NULL,
+        # which is fine since we only include register-specific columns (not sds_url/risk_url).
+        _REGISTER_FIELDS = (
+            "stock_code", "risk_assessment_required", "sds_expiry",
+            "product_name", "hazard_classification", "primary_use",
+            "signal_word", "un_number",
+        )
         _sb_post_batch(
             "ccs_sds_links",
-            [
-                {k: v for k, v in r.items() if v is not None}
-                for r in reg_records
-            ],
+            [{k: r.get(k) for k in _REGISTER_FIELDS} for r in reg_records],
         )
         register_count = len(reg_records)
 
