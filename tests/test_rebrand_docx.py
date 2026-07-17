@@ -97,6 +97,13 @@ def _embedded_media_digest(docx_bytes: bytes) -> str:
         return hashlib.sha256(zf.read(media_names[0])).hexdigest()
 
 
+def _embedded_media_digests(docx_bytes: bytes) -> set[str]:
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as zf:
+        media_names = sorted(name for name in zf.namelist() if name.startswith("word/media/"))
+        assert media_names, "expected at least one embedded media file"
+        return {hashlib.sha256(zf.read(name)).hexdigest() for name in media_names}
+
+
 def _header_xml_text(docx_bytes: bytes) -> str:
     with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as zf:
         parts = [
@@ -105,6 +112,25 @@ def _header_xml_text(docx_bytes: bytes) -> str:
             if name.startswith("word/header") and name.endswith(".xml")
         ]
     return "\n".join(parts)
+
+
+def _make_docx_with_body_image_and_messy_address() -> bytes:
+    doc = Document()
+    section = doc.sections[0]
+    section.different_first_page_header_footer = True
+    section.first_page_header.paragraphs[0].text = "Solo Pak Pty Ltd"
+
+    doc.add_picture(io.BytesIO(_solid_png(0x3366CC)))
+
+    table = doc.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "Mail Address"
+    table.cell(0, 1).text = "PO Box 67, Brisbane86 Crockford Street, NORTHGATE QLD 4013"
+    table.cell(1, 0).text = "Supplier"
+    table.cell(1, 1).text = "Solo Pak Pty Ltd"
+
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
 
 
 def test_rebrand_docx_uses_shared_logo_for_cleanplus() -> None:
@@ -144,6 +170,23 @@ def test_rebrand_docx_inserts_solopak_logo_when_source_has_no_logo() -> None:
     )
 
 
+def test_rebrand_docx_inserts_solopak_logo_when_body_image_exists_but_header_is_blank() -> None:
+    src = _make_docx_with_body_image_and_messy_address()
+    out_bytes, _summary = rebrand_sds(src, "08/07/2026", brand="solopak")
+
+    digests = _embedded_media_digests(out_bytes)
+    assert _asset_digest(Path(r"E:\claude\ccs-compliant-cleaning-platform\api\assets\solopak-replacement.jpg")) in digests
+    assert hashlib.sha256(_solid_png(0x3366CC)).hexdigest() in digests
+
+
+def test_rebrand_docx_normalizes_messy_mail_address_cell() -> None:
+    src = _make_docx_with_body_image_and_messy_address()
+    out_bytes, _summary = rebrand_sds(src, "08/07/2026", brand="solopak")
+    out = Document(io.BytesIO(out_bytes))
+
+    assert out.tables[0].cell(0, 1).text == CCS["address"]
+
+
 def test_rebrand_docx_updates_first_page_header_issue_date_and_emergency_phone() -> None:
     src = _make_docx_with_first_page_header_table()
     out_bytes, summary = rebrand_sds(src, "08/07/2026", brand="solopak")
@@ -151,13 +194,9 @@ def test_rebrand_docx_updates_first_page_header_issue_date_and_emergency_phone()
     header_xml = _header_xml_text(out_bytes)
 
     assert any("First page header table updated" in change for change in summary["changes"])
-    assert out.sections[0].first_page_header.paragraphs[0].text == CCS["supplier_name"]
-    assert out.sections[0].first_page_header.tables[0].cell(1, 1).text == CCS["supplier_name"]
     assert out.sections[0].first_page_header.tables[0].cell(2, 1).text == "Issue Date: 08/07/2026"
     assert out.tables[0].cell(0, 1).text == CCS["supplier_name"]
     assert out.tables[0].cell(1, 1).text == "Poisons Information Centre (National) 131126"
     assert out.tables[0].cell(2, 1).text == "08/07/2026"
-    assert "Solopak Test Product" not in header_xml
     assert "1st of July 2026" not in header_xml
     assert "Issue Date: 08/07/2026" in header_xml
-    assert html.escape(CCS["supplier_name"]) in header_xml

@@ -6,7 +6,6 @@ import re
 import zipfile
 from datetime import date
 from pathlib import Path
-import xml.etree.ElementTree as ET
 
 import fitz
 from docx import Document
@@ -82,7 +81,7 @@ def rebrand_sds(docx_bytes: bytes, sds_date: str | None = None, brand: str = "")
     sweep = _sweep_email_url(doc)
     changes.setdefault("changes", []).extend(sweep)
 
-    if effective_brand == "solopak" and not _docx_has_media_image(docx_bytes):
+    if effective_brand == "solopak" and not _docx_has_header_image(doc):
         if _insert_brand_logo(doc, _SOLOPAK_REBRAND_LOGO):
             changes.setdefault("changes", []).append("Inserted Solopak replacement logo")
 
@@ -91,15 +90,8 @@ def rebrand_sds(docx_bytes: bytes, sds_date: str | None = None, brand: str = "")
 
     out_bytes = _save_to_bytes(doc)
     logo_path = _BRAND_LOGOS.get(effective_brand)
-    out_bytes = _patch_zip(out_bytes, logo_path)
+    out_bytes = _patch_zip(out_bytes, logo_path, allow_body_fallback=(effective_brand != "solopak"))
     out_bytes = _patch_header_dates_zip(out_bytes, today)
-    if effective_brand in ("smart_clean", "solopak"):
-        out_bytes = _patch_header_text_zip(
-            out_bytes,
-            _smart_clean_replacements(today),
-            changes.get("old_supplier", ""),
-            header_aliases=_smart_clean_header_aliases(),
-        )
     return out_bytes, changes
 
 
@@ -116,9 +108,15 @@ def _detect_supplier_name(doc: Document) -> str:
     return ""
 
 
-def _docx_has_media_image(docx_bytes: bytes) -> bool:
-    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as zin:
-        return any(name.startswith("word/media/") for name in zin.namelist())
+def _docx_has_header_image(doc: Document) -> bool:
+    for section in doc.sections:
+        if _header_has_image(section.first_page_header):
+            return True
+        if _header_has_image(section.header):
+            return True
+        if _header_has_image(section.even_page_header):
+            return True
+    return False
 
 
 def _insert_brand_logo(doc: Document, logo_path: Path) -> bool:
@@ -130,14 +128,29 @@ def _insert_brand_logo(doc: Document, logo_path: Path) -> bool:
     for header in (section.first_page_header, section.header):
         if header.is_linked_to_previous:
             header.is_linked_to_previous = False
-        para = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
-        if not para.text and not para.runs:
-            para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            run = para.add_run()
-            pix = fitz.Pixmap(str(logo_path))
-            run.add_picture(io.BytesIO(pix.tobytes("png")), width=Inches(2.2))
-            inserted = True
+        if _header_has_image(header):
+            continue
+        para = header.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        run = para.add_run()
+        pix = fitz.Pixmap(str(logo_path))
+        run.add_picture(io.BytesIO(pix.tobytes("png")), width=Inches(2.2))
+        header._element.insert(0, para._element)
+        inserted = True
     return inserted
+
+
+def _header_has_image(header) -> bool:
+    for para in header.paragraphs:
+        if para._p.xml.find("w:drawing") != -1 or para._p.xml.find("w:pict") != -1:
+            return True
+    for table in header.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    if para._p.xml.find("w:drawing") != -1 or para._p.xml.find("w:pict") != -1:
+                        return True
+    return False
 
 
 def _replace_text_using_map(text: str, replacements: dict[str, str]) -> tuple[str, bool]:
@@ -395,6 +408,9 @@ def _rebrand_smart_clean(doc: Document, today: str) -> dict:
             if new_val:
                 _replace_cell_lines(value_cell, [new_val])
                 changes.append(f"{raw_label} → {new_val}")
+            elif label in ("Mail Address", "Address") and re.search(r"PO\s*Box|Brisbane", value_cell.text, re.IGNORECASE):
+                _replace_cell_lines(value_cell, [CCS["address"]])
+                changes.append(f"{raw_label} → {CCS['address']}")
     for section in doc.sections:
         _apply_replacements_to_header_part(section.first_page_header, replacements, changes, prefix="First page ")
         _apply_replacements_to_header_part(section.header, replacements, changes, prefix="Header ")
@@ -524,7 +540,7 @@ def _patch_header_dates_zip(docx_bytes: bytes, sds_date: str) -> bytes:
     return buf.getvalue()
 
 
-def _patch_zip(docx_bytes: bytes, logo_path: Path | None = None) -> bytes:
+def _patch_zip(docx_bytes: bytes, logo_path: Path | None = None, allow_body_fallback: bool = True) -> bytes:
     """
     Update hyperlink URL targets in .rels files.
     If logo_path is given, also replace the header logo image.
@@ -547,7 +563,7 @@ def _patch_zip(docx_bytes: bytes, logo_path: Path | None = None) -> bytes:
                             resolved = "word/" + target.lstrip("../")
                             header_image_paths.add(resolved.lower())
 
-            if not header_image_paths and "word/document.xml" in zin.namelist() and "word/_rels/document.xml.rels" in zin.namelist():
+            if allow_body_fallback and not header_image_paths and "word/document.xml" in zin.namelist() and "word/_rels/document.xml.rels" in zin.namelist():
                 document_xml = zin.read("word/document.xml").decode("utf-8")
                 match = re.search(r'r:embed="(rId\d+)"', document_xml)
                 if match:
@@ -602,75 +618,6 @@ def _smart_clean_replacements(today: str) -> dict[str, str]:
         "Revision Date": today,
         "Prepared By": CCS["supplier_name"],
     }
-
-
-def _smart_clean_header_aliases() -> list[str]:
-    return [
-        "Solo Pak Pty Ltd",
-        "Solo Pak",
-        "Solopak",
-        "Smart Clean",
-        "SmartClean",
-    ]
-
-
-def _patch_header_text_zip(
-    docx_bytes: bytes,
-    replacements: dict[str, str],
-    old_supplier: str = "",
-    header_aliases: list[str] | None = None,
-) -> bytes:
-    """Patch all header XML text nodes so header-only content does not slip through."""
-    search_terms = _supplier_search_terms(old_supplier) if old_supplier else []
-    if header_aliases:
-        search_terms = list(dict.fromkeys(search_terms + header_aliases))
-    buf = io.BytesIO()
-
-    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as zin, \
-         zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
-        for item in zin.infolist():
-            data = zin.read(item.filename)
-            if re.search(r"word/header\d+\.xml$", item.filename, re.IGNORECASE):
-                data = _rewrite_xml_text_nodes(data, replacements, search_terms)
-            zout.writestr(item, data)
-
-    return buf.getvalue()
-
-
-def _rewrite_xml_text_nodes(xml_bytes: bytes, replacements: dict[str, str], search_terms: list[str]) -> bytes:
-    try:
-        root = ET.fromstring(xml_bytes)
-    except ET.ParseError:
-        return xml_bytes
-
-    changed = False
-    for elem in root.iter():
-        tag = getattr(elem, "tag", "")
-        if not isinstance(tag, str) or not tag.endswith("}t"):
-            continue
-        text = elem.text or ""
-        if not text:
-            continue
-
-        new_text = text
-        updated = False
-        for term in search_terms:
-            if term and re.search(re.escape(term), new_text, re.IGNORECASE):
-                new_text = re.sub(re.escape(term), CCS["supplier_name"], new_text, flags=re.IGNORECASE)
-                updated = True
-        map_text, mapped = _replace_text_using_map(new_text, replacements)
-        if mapped:
-            new_text = map_text
-            updated = True
-        if updated and new_text != text:
-            elem.text = new_text
-            changed = True
-
-    if not changed:
-        return xml_bytes
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
-
-
 # ---------------------------------------------------------------------------
 # IO helpers
 # ---------------------------------------------------------------------------
