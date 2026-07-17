@@ -1050,7 +1050,7 @@ function SiteDistribution() {
           <form onSubmit={handleImport} className="upload-box">
             <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Import mapping files</label>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <label style={{ fontSize: 12, color: '#445' }}>Mapping (required)</label>
+              <label style={{ fontSize: 12, color: '#445' }}>Customer–Product Code Mapping (required)</label>
               <input type="file" accept=".xlsx" onChange={e => setMappingFile(e.target.files?.[0] || null)} />
               <label style={{ fontSize: 12, color: '#445' }}>SDS links (required)</label>
               <input type="file" accept=".xlsx" onChange={e => setSdsFile(e.target.files?.[0] || null)} />
