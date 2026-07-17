@@ -1,12 +1,13 @@
 import hashlib
 import io
+import html
 import zipfile
 from pathlib import Path
 
 import fitz
 from docx import Document
 
-from api.rebrand import rebrand_sds
+from api.rebrand import CCS, rebrand_sds
 
 
 def _solid_png(color: int) -> bytes:
@@ -71,11 +72,13 @@ def _make_docx_with_first_page_header_table() -> bytes:
     table.cell(2, 0).text = ""
     table.cell(2, 1).text = "Issue Date: 1st of July 2026"
 
-    body = doc.add_table(rows=2, cols=2)
-    body.cell(0, 0).text = "Emergency Telephone:"
-    body.cell(0, 1).text = "Poisons Information Centre (National) 000000"
-    body.cell(1, 0).text = "Date of Issue"
-    body.cell(1, 1).text = "1st of July 2026"
+    body = doc.add_table(rows=3, cols=2)
+    body.cell(0, 0).text = "Supplier"
+    body.cell(0, 1).text = "Solopak Test Product"
+    body.cell(1, 0).text = "Emergency Telephone:"
+    body.cell(1, 1).text = "Poisons Information Centre (National) 000000"
+    body.cell(2, 0).text = "Date of Issue"
+    body.cell(2, 1).text = "1st of July 2026"
 
     out = io.BytesIO()
     doc.save(out)
@@ -91,6 +94,16 @@ def _embedded_media_digest(docx_bytes: bytes) -> str:
         media_names = sorted(name for name in zf.namelist() if name.startswith("word/media/"))
         assert media_names, "expected at least one embedded media file"
         return hashlib.sha256(zf.read(media_names[0])).hexdigest()
+
+
+def _header_xml_text(docx_bytes: bytes) -> str:
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as zf:
+        parts = [
+            zf.read(name).decode("utf-8", errors="ignore")
+            for name in zf.namelist()
+            if name.startswith("word/header") and name.endswith(".xml")
+        ]
+    return "\n".join(parts)
 
 
 def test_rebrand_docx_uses_shared_logo_for_cleanplus() -> None:
@@ -134,8 +147,15 @@ def test_rebrand_docx_updates_first_page_header_issue_date_and_emergency_phone()
     src = _make_docx_with_first_page_header_table()
     out_bytes, summary = rebrand_sds(src, "08/07/2026", brand="solopak")
     out = Document(io.BytesIO(out_bytes))
+    header_xml = _header_xml_text(out_bytes)
 
     assert any("First page header table updated" in change for change in summary["changes"])
+    assert out.sections[0].first_page_header.tables[0].cell(1, 1).text == CCS["supplier_name"]
     assert out.sections[0].first_page_header.tables[0].cell(2, 1).text == "Issue Date: 08/07/2026"
-    assert out.tables[0].cell(0, 1).text == "Poisons Information Centre (National) 131126"
-    assert out.tables[0].cell(1, 1).text == "08/07/2026"
+    assert out.tables[0].cell(0, 1).text == CCS["supplier_name"]
+    assert out.tables[0].cell(1, 1).text == "Poisons Information Centre (National) 131126"
+    assert out.tables[0].cell(2, 1).text == "08/07/2026"
+    assert "Solopak Test Product" not in header_xml
+    assert "1st of July 2026" not in header_xml
+    assert "Issue Date: 08/07/2026" in header_xml
+    assert html.escape(CCS["supplier_name"]) in header_xml

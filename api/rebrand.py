@@ -6,6 +6,7 @@ import re
 import zipfile
 from datetime import date
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 import fitz
 from docx import Document
@@ -92,6 +93,12 @@ def rebrand_sds(docx_bytes: bytes, sds_date: str | None = None, brand: str = "")
     logo_path = _BRAND_LOGOS.get(effective_brand)
     out_bytes = _patch_zip(out_bytes, logo_path)
     out_bytes = _patch_header_dates_zip(out_bytes, today)
+    if effective_brand in ("smart_clean", "solopak"):
+        out_bytes = _patch_header_text_zip(
+            out_bytes,
+            _smart_clean_replacements(today),
+            changes.get("old_supplier", ""),
+        )
     return out_bytes, changes
 
 
@@ -372,18 +379,7 @@ def _rebrand_smart_clean(doc: Document, today: str) -> dict:
     """Rebrand a Smart Clean / Solopak Australian MSDS DOCX."""
     changes: list[str] = []
     old_supplier = ""
-    replacements: dict[str, str] = {
-        "Supplier": CCS["supplier_name"],
-        "ABN": _CCS_ABN,
-        "Mail Address": CCS["address"],
-        "Email": CCS["email"],
-        "Telephone": CCS["telephone"],
-        "Emergency Telephone": f"Poisons Information Centre (National) {CCS['emergency']}",
-        "Date of Issue": today,
-        "Issue Date": today,
-        "Revision Date": today,
-        "Prepared By": CCS["supplier_name"],
-    }
+    replacements = _smart_clean_replacements(today)
     for table in doc.tables:
         for row in table.rows:
             if len(row.cells) < 2:
@@ -590,6 +586,71 @@ def _patch_zip(docx_bytes: bytes, logo_path: Path | None = None) -> bytes:
             zout.writestr(item, data)
 
     return buf.getvalue()
+
+
+def _smart_clean_replacements(today: str) -> dict[str, str]:
+    return {
+        "Supplier": CCS["supplier_name"],
+        "ABN": _CCS_ABN,
+        "Mail Address": CCS["address"],
+        "Email": CCS["email"],
+        "Telephone": CCS["telephone"],
+        "Emergency Telephone": f"Poisons Information Centre (National) {CCS['emergency']}",
+        "Date of Issue": today,
+        "Issue Date": today,
+        "Revision Date": today,
+        "Prepared By": CCS["supplier_name"],
+    }
+
+
+def _patch_header_text_zip(docx_bytes: bytes, replacements: dict[str, str], old_supplier: str = "") -> bytes:
+    """Patch all header XML text nodes so header-only content does not slip through."""
+    search_terms = _supplier_search_terms(old_supplier) if old_supplier else []
+    buf = io.BytesIO()
+
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as zin, \
+         zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if re.search(r"word/header\d+\.xml$", item.filename, re.IGNORECASE):
+                data = _rewrite_xml_text_nodes(data, replacements, search_terms)
+            zout.writestr(item, data)
+
+    return buf.getvalue()
+
+
+def _rewrite_xml_text_nodes(xml_bytes: bytes, replacements: dict[str, str], search_terms: list[str]) -> bytes:
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return xml_bytes
+
+    changed = False
+    for elem in root.iter():
+        tag = getattr(elem, "tag", "")
+        if not isinstance(tag, str) or not tag.endswith("}t"):
+            continue
+        text = elem.text or ""
+        if not text:
+            continue
+
+        new_text = text
+        updated = False
+        for term in search_terms:
+            if term and re.search(re.escape(term), new_text, re.IGNORECASE):
+                new_text = re.sub(re.escape(term), CCS["supplier_name"], new_text, flags=re.IGNORECASE)
+                updated = True
+        map_text, mapped = _replace_text_using_map(new_text, replacements)
+        if mapped:
+            new_text = map_text
+            updated = True
+        if updated and new_text != text:
+            elem.text = new_text
+            changed = True
+
+    if not changed:
+        return xml_bytes
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
 # ---------------------------------------------------------------------------
