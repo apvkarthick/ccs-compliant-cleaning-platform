@@ -51,6 +51,16 @@ def _make_pdf_without_logos() -> bytes:
     return out.getvalue()
 
 
+def _make_pdf_image_only() -> bytes:
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_image(fitz.Rect(72, 72, 523.3, 318.5), stream=_solid_png(0x00FF00))
+    out = io.BytesIO()
+    doc.save(out)
+    doc.close()
+    return out.getvalue()
+
+
 def _top_image_digest(doc: fitz.Document, page_index: int) -> str:
     page = doc[page_index]
     candidates = []
@@ -128,3 +138,16 @@ def test_rebrand_pdf_inserts_solopak_logo_when_source_has_no_logo() -> None:
     assert digest_p1 == _asset_digest(Path(r"E:\claude\ccs-compliant-cleaning-platform\api\assets\solopak-replacement.jpg"))
     assert "Issue Date: 08/07/2026" in page_text
     assert "Emergency Telephone: Poisons Information Centre (National) 131126" in page_text
+
+
+def test_rebrand_pdf_warns_on_image_only_pdf() -> None:
+    src = _make_pdf_image_only()
+    out_bytes, summary = rebrand_pdf(src, "08/07/2026", brand="solopak")
+    out = fitz.open(stream=out_bytes, filetype="pdf")
+
+    page_text = out[0].get_text("text")
+    out.close()
+
+    assert page_text.strip() == ""
+    assert summary["warnings"]
+    assert "Image-only PDF detected" in summary["warnings"][0]

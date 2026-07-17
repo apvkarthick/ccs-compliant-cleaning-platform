@@ -317,7 +317,7 @@ function fmtSize(bytes) {
 
 function setFiles(picked) {
   files = picked;
-  jobs  = files.map(f => ({ name: f.name, size: f.size, type: fileType(f.name), status: 'pending', url: null, error: null, changes: 0, oldSupplier: '' }));
+      jobs  = files.map(f => ({ name: f.name, size: f.size, type: fileType(f.name), status: 'pending', url: null, error: null, changes: 0, oldSupplier: '', warning: '' }));
   rebrandBtn.disabled = files.length === 0;
   rebrandBtn.textContent = files.length
     ? `Rebrand ${files.length} file${files.length !== 1 ? 's' : ''}`
@@ -379,6 +379,7 @@ async function runRebrand() {
       jobs[i].url = URL.createObjectURL(blob);
       jobs[i].changes = parseInt(res.headers.get('X-CCS-Changes') || '0');
       jobs[i].oldSupplier = res.headers.get('X-CCS-Old-Supplier') || '';
+      jobs[i].warning = res.headers.get('X-CCS-Warnings') || '';
     } catch (err) {
       jobs[i].status = 'error';
       jobs[i].error = err.message;
@@ -419,6 +420,7 @@ function renderJobs() {
         ${job.status === 'done' ? `
           <span style="font-size:0.82rem;color:#15803d;font-weight:600">${job.changes} replacement${job.changes !== 1 ? 's' : ''}</span>
           ${job.oldSupplier ? `<div class="replaced-info"><span>Replaced:</span> ${esc(job.oldSupplier)}</div>` : ''}
+          ${job.warning ? `<div class="notice warning" style="margin-top:8px;padding:10px 12px;font-size:0.78rem">${esc(job.warning)}</div>` : ''}
         ` : ''}
         ${job.status === 'error' ? `<span style="font-size:0.8rem;color:#be123c">${esc(job.error)}</span>` : ''}
         ${job.status === 'pending' || job.status === 'processing' ? '<span style="color:#94a3b8;font-size:0.8rem">—</span>' : ''}

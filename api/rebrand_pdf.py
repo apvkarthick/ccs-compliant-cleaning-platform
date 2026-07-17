@@ -43,6 +43,12 @@ def rebrand_pdf(pdf_bytes: bytes, sds_date: str | None = None, brand: str = "spi
     old_sds_date = _detect_sds_date(doc)
     search_terms = _supplier_search_terms(old_supplier) if old_supplier else []
     changes: list[str] = []
+    warnings: list[str] = []
+    if not _document_has_live_text(doc):
+        warnings.append(
+            "Image-only PDF detected; visible text replacements were skipped. "
+            "Logo replacement may still be applied."
+        )
 
     for page_idx, page in enumerate(doc):
         page_changes = _replace_text_on_page(
@@ -67,7 +73,7 @@ def rebrand_pdf(pdf_bytes: bytes, sds_date: str | None = None, brand: str = "spi
     doc.save(out, garbage=4, deflate=True)
     doc.close()
 
-    return out.getvalue(), {"changes": changes, "old_supplier": old_supplier}
+    return out.getvalue(), {"changes": changes, "old_supplier": old_supplier, "warnings": warnings}
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +138,13 @@ def _detect_supplier_fields(doc: fitz.Document) -> tuple[str, str, str, str]:
     # and values are in a right block at the same vertical band
     supplier, address, phone = _detect_fields_spatial(page)
     return supplier, address, phone, emergency_phone
+
+
+def _document_has_live_text(doc: fitz.Document) -> bool:
+    for page in doc:
+        if page.get_text("text").strip():
+            return True
+    return False
 
 
 def _detect_fields_spatial(page: fitz.Page) -> tuple[str, str, str]:

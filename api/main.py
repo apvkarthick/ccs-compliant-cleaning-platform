@@ -27,9 +27,12 @@ from .excel_parser import list_source_documents, parse_client_workbook
 from .site_distribution import (
     exclude_site,
     get_stats,
+    hold_site,
     import_mapping,
     include_site,
     list_sites,
+    send_manual,
+    unhold_site,
 )
 from .rebrand import rebrand_sds
 from .rebrand_pdf import rebrand_pdf
@@ -383,6 +386,47 @@ def include_site_endpoint(
     return include_site(accno)
 
 
+@app.post("/site-distribution/hold/{accno}")
+def hold_site_endpoint(
+    accno: str,
+    name: str = Query(default=""),
+    _auth: dict = Depends(require_auth),
+) -> dict[str, str]:
+    return hold_site(accno, name)
+
+
+@app.delete("/site-distribution/hold/{accno}")
+def unhold_site_endpoint(
+    accno: str,
+    _auth: dict = Depends(require_auth),
+) -> dict[str, str]:
+    return unhold_site(accno)
+
+
+class ManualSendRequest(BaseModel):
+    accno: str
+    stockcodes: list[str] = Field(default_factory=list)
+    email: str
+    dry_run: bool = False
+
+
+@app.post("/site-distribution/send-manual")
+def manual_send_endpoint(
+    body: ManualSendRequest,
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    public_base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
+    tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
+    try:
+        return send_manual(
+            body.accno, body.stockcodes, body.email, body.dry_run,
+            public_base_url=public_base,
+            tracking_secret=tracking_secret,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 @app.post("/site-distribution/send")
 def send_site_distribution(
     dry_run: bool = Query(default=True),
@@ -526,6 +570,7 @@ async def rebrand_pdf_endpoint(
 
     rebranded, summary = rebrand_pdf(pdf_bytes, sds_date or None, brand=brand)
     stem = Path(file.filename).stem
+    warnings = " | ".join(summary.get("warnings", []))
     return Response(
         content=rebranded,
         media_type="application/pdf",
@@ -533,7 +578,8 @@ async def rebrand_pdf_endpoint(
             "Content-Disposition": f'attachment; filename="{stem}_ccs_branded.pdf"',
             "X-CCS-Changes": str(len(summary.get("changes", []))),
             "X-CCS-Old-Supplier": summary.get("old_supplier", ""),
-            "Access-Control-Expose-Headers": "X-CCS-Changes, X-CCS-Old-Supplier",
+            "X-CCS-Warnings": warnings,
+            "Access-Control-Expose-Headers": "X-CCS-Changes, X-CCS-Old-Supplier, X-CCS-Warnings",
         },
     )
 
