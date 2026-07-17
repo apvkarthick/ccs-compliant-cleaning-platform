@@ -89,7 +89,7 @@ def parse_sds_links(sds_data: bytes, risk_data: bytes) -> list[dict[str, Any]]:
 
 
 def parse_chemical_register(data: bytes) -> list[dict[str, Any]]:
-    """Parse Chemical Register xlsx → [{stock_code, risk_assessment_required, sds_expiry}]."""
+    """Parse Chemical Register xlsx → full product records including metadata columns."""
     df = pd.read_excel(io.BytesIO(data), header=None, dtype=str)
     header_row = None
     for i, row in df.iterrows():
@@ -98,30 +98,166 @@ def parse_chemical_register(data: bytes) -> list[dict[str, Any]]:
             break
     if header_row is None:
         raise ValueError("Chemical Register: 'PRODUCT CODE' header row not found")
-    df.columns = [str(v).strip() for v in df.iloc[header_row]]
+    df.columns = [str(v).strip().upper() for v in df.iloc[header_row]]
     df = df.iloc[header_row + 1:].reset_index(drop=True)
+
+    def _col(*candidates: str) -> str | None:
+        for c in candidates:
+            if c in df.columns:
+                return c
+        return None
+
+    name_col = _col("PRODUCT NAME", "CHEMICAL NAME", "PRODUCT / CHEMICAL NAME", "PRODUCT/CHEMICAL NAME")
+    hazard_col = _col("HAZARD CLASSIFICATION", "HAZARD CLASS", "GHS CLASSIFICATION", "CLASSIFICATION")
+    use_col = _col("PRIMARY USE", "APPLICATION", "USE", "PRIMARY USE / APPLICATION", "PRIMARY USE/APPLICATION")
+    signal_col = _col("SIGNAL WORD", "SIGNAL")
+    un_col = _col("UN NO", "UN NUMBER", "UN #", "UN#", "UN NO.")
+    risk_col = _col("RISK ASSESSMENT", "RISK ASSESS", "RISK ASSESSMENT REQUIRED")
+    expiry_col = _col("SDS REVIEW DATE", "SDS EXPIRY", "SDS REVIEW", "REVIEW DATE", "EXPIRY DATE")
+
     records: list[dict[str, Any]] = []
     for _, row in df.iterrows():
         code = str(row.get("PRODUCT CODE", "")).strip()
         if not code or code == "nan":
             continue
-        risk_required = str(row.get("RISK ASSESSMENT", "")).strip().upper() == "YES"
-        raw = str(row.get("SDS REVIEW DATE", "")).strip()
+
+        risk_required = str(row.get(risk_col, "") if risk_col else "").strip().upper() == "YES"
+
+        raw_expiry = str(row.get(expiry_col, "") if expiry_col else "").strip()
         sds_expiry = None
-        if raw and raw != "nan":
-            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+        if raw_expiry and raw_expiry != "nan":
+            for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y"):
                 try:
                     from datetime import datetime as _dt
-                    sds_expiry = _dt.strptime(raw.split(" ")[0], fmt).date().isoformat()
+                    sds_expiry = _dt.strptime(raw_expiry.split(" ")[0], fmt).date().isoformat()
                     break
                 except ValueError:
                     continue
+
+        def _val(col: str | None) -> str | None:
+            if not col:
+                return None
+            v = str(row.get(col, "")).strip()
+            return v if v and v != "nan" else None
+
         records.append({
             "stock_code": code,
             "risk_assessment_required": risk_required,
             "sds_expiry": sds_expiry,
+            "product_name": _val(name_col),
+            "hazard_classification": _val(hazard_col),
+            "primary_use": _val(use_col),
+            "signal_word": _val(signal_col),
+            "un_number": _val(un_col),
         })
     return records
+
+
+def fetch_product_metadata(stock_codes: list[str]) -> dict[str, dict]:
+    """Return product metadata keyed by stock_code for the given set of codes."""
+    if not stock_codes:
+        return {}
+    codes_csv = ",".join(stock_codes)
+    rows = _sb_get(
+        "ccs_sds_links",
+        f"select=stock_code,product_name,hazard_classification,primary_use,"
+        f"signal_word,un_number,risk_assessment_required,sds_expiry"
+        f"&stock_code=in.({codes_csv})",
+    )
+    return {r["stock_code"]: r for r in rows}
+
+
+def generate_chemical_register_excel(
+    site_name: str,
+    accno: str,
+    stock_codes: list[str],
+    today: str,
+) -> bytes:
+    """Generate a per-site Chemical Register Excel filtered to the site's product codes."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    metadata = fetch_product_metadata(stock_codes)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Chemical Register"
+
+    GREEN = "2C6B33"
+    WHITE = "FFFFFF"
+
+    ws.merge_cells("A1:H1")
+    ws["A1"] = "CHEMICAL REGISTER"
+    ws["A1"].font = Font(bold=True, size=14, color=WHITE)
+    ws["A1"].fill = PatternFill("solid", fgColor=GREEN)
+    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 24
+
+    ws["A2"] = "Customer:"
+    ws["A2"].font = Font(bold=True)
+    ws["B2"] = site_name
+    ws["E2"] = "Date:"
+    ws["E2"].font = Font(bold=True)
+    ws["F2"] = today
+
+    ws.append([""])  # spacer
+
+    headers = [
+        "Product Code", "Product Name", "Hazard Classification",
+        "Primary Use", "Signal Word", "UN No.",
+        "Risk Assessment", "SDS Expiry",
+    ]
+    ws.append(headers)
+    hdr_row = ws.max_row
+    for col_idx in range(1, len(headers) + 1):
+        cell = ws.cell(row=hdr_row, column=col_idx)
+        cell.font = Font(bold=True, color=WHITE)
+        cell.fill = PatternFill("solid", fgColor=GREEN)
+        cell.alignment = Alignment(horizontal="center")
+
+    for code in stock_codes:
+        m = metadata.get(code, {})
+        ws.append([
+            code,
+            m.get("product_name") or "",
+            m.get("hazard_classification") or "",
+            m.get("primary_use") or "",
+            m.get("signal_word") or "",
+            m.get("un_number") or "",
+            "YES" if m.get("risk_assessment_required") else "NO",
+            m.get("sds_expiry") or "",
+        ])
+
+    for col_letter, width in zip("ABCDEFGH", [15, 30, 28, 28, 15, 12, 18, 15]):
+        ws.column_dimensions[col_letter].width = width
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def upload_register_to_spaces(xlsx_bytes: bytes, accno: str, date_str: str) -> str:
+    """Upload per-site Chemical Register Excel to DO Spaces and return its public URL."""
+    import boto3
+
+    region = os.getenv("DO_SPACES_REGION", "syd1")
+    bucket = os.getenv("DO_SPACES_BUCKET", "simplyrun-media")
+    s3 = boto3.client(
+        "s3",
+        region_name=region,
+        endpoint_url=os.getenv("DO_SPACES_ENDPOINT", f"https://{region}.digitaloceanspaces.com"),
+        aws_access_key_id=os.getenv("DO_SPACES_KEY", ""),
+        aws_secret_access_key=os.getenv("DO_SPACES_SECRET", ""),
+    )
+    key = f"ccs/registers/{date_str}/{accno}_chemical_register_{date_str}.xlsx"
+    s3.put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=xlsx_bytes,
+        ACL="public-read",
+        ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    return f"https://{bucket}.{region}.digitaloceanspaces.com/{key}"
 
 
 def parse_stock_groups(data: bytes) -> list[dict[str, Any]]:
@@ -408,7 +544,8 @@ def compose_site_email(
 ) -> dict[str, Any]:
     site_name = site.get("name", "")
     ho_name = site.get("ho_name", "") or site_name
-    contact_id = site.get("accno", "") or email_addr
+    accno = site.get("accno", "")
+    contact_id = accno or email_addr
 
     products_in_email = [{"code": d["code"], "name": d["code"]} for d in docs]
     documents: list[dict[str, str]] = []
@@ -418,7 +555,7 @@ def compose_site_email(
             raw_url = d.get(url_key, "")
             if not raw_url:
                 continue
-            doc_id = f"site_{site.get('accno', '')}_{d['code']}_{label.replace(' ', '_').lower()}"
+            doc_id = f"site_{accno}_{d['code']}_{label.replace(' ', '_').lower()}"
             delivery_url = raw_url
             if public_base_url and tracking_secret:
                 delivery_url = tracking_url(
@@ -460,15 +597,30 @@ def compose_site_email(
         logo_url=logo_url,
     )
 
-    return {
+    # Generate per-site Chemical Register Excel and upload to DO Spaces
+    register_url = ""
+    stock_codes = site.get("stockcodes") or [d["code"] for d in docs]
+    if stock_codes:
+        try:
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            xlsx = generate_chemical_register_excel(site_name, accno, stock_codes, today)
+            register_url = upload_register_to_spaces(xlsx, accno, today)
+        except Exception:
+            pass  # non-fatal: email sends without attachment if generation fails
+
+    msg: dict[str, Any] = {
         "to": email_addr,
         "name": site_name,
         "contact_id": contact_id,
-        "accno": site.get("accno", ""),
+        "accno": accno,
         "subject": f"Your SDS Compliance Pack — {site_name}",
         "html": html_body,
         "documents": documents,
     }
+    if register_url:
+        msg["attachments"] = [register_url]
+        msg["register_url"] = register_url
+    return msg
 
 
 # ---------------------------------------------------------------------------

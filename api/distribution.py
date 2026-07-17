@@ -600,6 +600,8 @@ def _send_messages_via_ghl(messages: list[dict[str, Any]]) -> dict[str, Any]:
             "subject": message["subject"],
             "html": message["html"],
         }
+        if message.get("attachments"):
+            payload["attachments"] = message["attachments"]
         if location_id:
             payload["locationId"] = location_id
         if from_email:
