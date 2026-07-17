@@ -27,11 +27,14 @@ from .excel_parser import list_source_documents, parse_client_workbook
 from .site_distribution import (
     exclude_site,
     get_stats,
+    hold_site,
     import_mapping,
     include_site,
     list_sites,
     load_lookup_maps,
     resolve_docs_for_site,
+    send_manual,
+    unhold_site,
     _sb_get,
 )
 from .rebrand import rebrand_sds
@@ -384,6 +387,47 @@ def include_site_endpoint(
     _auth: dict = Depends(require_auth),
 ) -> dict[str, str]:
     return include_site(accno)
+
+
+@app.post("/site-distribution/hold/{accno}")
+def hold_site_endpoint(
+    accno: str,
+    name: str = Query(default=""),
+    _auth: dict = Depends(require_auth),
+) -> dict[str, str]:
+    return hold_site(accno, name)
+
+
+@app.delete("/site-distribution/hold/{accno}")
+def unhold_site_endpoint(
+    accno: str,
+    _auth: dict = Depends(require_auth),
+) -> dict[str, str]:
+    return unhold_site(accno)
+
+
+class ManualSendRequest(BaseModel):
+    accno: str
+    stockcodes: list[str] = Field(default_factory=list)
+    email: str
+    dry_run: bool = False
+
+
+@app.post("/site-distribution/send-manual")
+def send_manual_endpoint(
+    body: ManualSendRequest,
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    public_base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
+    tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
+    return send_manual(
+        body.accno,
+        body.stockcodes,
+        body.email,
+        body.dry_run,
+        public_base_url=public_base,
+        tracking_secret=tracking_secret,
+    )
 
 
 @app.post("/site-distribution/send")
