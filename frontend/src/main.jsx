@@ -877,6 +877,7 @@ function SiteDistribution() {
   const [sdsFile, setSdsFile] = useState(null);
   const [riskFile, setRiskFile] = useState(null);
   const [groupingFile, setGroupingFile] = useState(null);
+  const [registerFile, setRegisterFile] = useState(null);
 
   // Test contact override — staff enter a test email; used as default in manual send modal
   const [testEmail, setTestEmail] = useState('');
@@ -940,11 +941,13 @@ function SiteDistribution() {
     form.append('sds', sdsFile);
     form.append('risk', riskFile);
     if (groupingFile) form.append('grouping', groupingFile);
+    if (registerFile) form.append('register', registerFile);
     try {
       const r = await fetch(`${API_BASE}/site-distribution/import`, { method: 'POST', headers: getAuthHeaders(), body: form });
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || 'Import failed');
-      setNotice(`Imported: ${data.sites} sites, ${data.links} SDS/Risk links, ${data.groups} product groups.`);
+      const regNote = data.register ? `, ${data.register} register products` : '';
+      setNotice(`Imported: ${data.sites} sites, ${data.links} SDS/Risk links, ${data.groups} product groups${regNote}.`);
       loadStats(); loadSites();
     } catch (err) { setError(err.message); }
     finally { setImporting(false); }
@@ -1058,6 +1061,8 @@ function SiteDistribution() {
               <input type="file" accept=".xlsx" onChange={e => setRiskFile(e.target.files?.[0] || null)} />
               <label style={{ fontSize: 12, color: '#445' }}>Product grouping (optional)</label>
               <input type="file" accept=".xlsx" onChange={e => setGroupingFile(e.target.files?.[0] || null)} />
+              <label style={{ fontSize: 12, color: '#445' }}>Chemical Register — Title Sheet (optional, sets SDS expiry + risk assessment flag)</label>
+              <input type="file" accept=".xlsx" onChange={e => setRegisterFile(e.target.files?.[0] || null)} />
             </div>
             <button type="submit" className="primary" disabled={importing} style={{ marginTop: 12 }}>
               <Upload size={16} style={{ marginRight: 6 }} />{importing ? 'Importing…' : 'Import'}

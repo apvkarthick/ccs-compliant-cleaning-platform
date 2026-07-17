@@ -88,6 +88,42 @@ def parse_sds_links(sds_data: bytes, risk_data: bytes) -> list[dict[str, Any]]:
     ]
 
 
+def parse_chemical_register(data: bytes) -> list[dict[str, Any]]:
+    """Parse Chemical Register xlsx → [{stock_code, risk_assessment_required, sds_expiry}]."""
+    df = pd.read_excel(io.BytesIO(data), header=None, dtype=str)
+    header_row = None
+    for i, row in df.iterrows():
+        if any(str(v).strip().upper() == "PRODUCT CODE" for v in row):
+            header_row = i
+            break
+    if header_row is None:
+        raise ValueError("Chemical Register: 'PRODUCT CODE' header row not found")
+    df.columns = [str(v).strip() for v in df.iloc[header_row]]
+    df = df.iloc[header_row + 1:].reset_index(drop=True)
+    records: list[dict[str, Any]] = []
+    for _, row in df.iterrows():
+        code = str(row.get("PRODUCT CODE", "")).strip()
+        if not code or code == "nan":
+            continue
+        risk_required = str(row.get("RISK ASSESSMENT", "")).strip().upper() == "YES"
+        raw = str(row.get("SDS REVIEW DATE", "")).strip()
+        sds_expiry = None
+        if raw and raw != "nan":
+            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+                try:
+                    from datetime import datetime as _dt
+                    sds_expiry = _dt.strptime(raw.split(" ")[0], fmt).date().isoformat()
+                    break
+                except ValueError:
+                    continue
+        records.append({
+            "stock_code": code,
+            "risk_assessment_required": risk_required,
+            "sds_expiry": sds_expiry,
+        })
+    return records
+
+
 def parse_stock_groups(data: bytes) -> list[dict[str, Any]]:
     """Parse product-grouping.xlsx → [{primary_code, related_codes[]}]."""
     df = pd.read_excel(io.BytesIO(data), header=0, dtype=str)
@@ -163,6 +199,7 @@ def import_mapping(
     sds_bytes: bytes,
     risk_bytes: bytes,
     grouping_bytes: bytes | None = None,
+    register_bytes: bytes | None = None,
 ) -> dict[str, int]:
     now = _now()
 
@@ -181,7 +218,21 @@ def import_mapping(
         _sb_post_batch("ccs_stock_groups", [{**g, "imported_at": now} for g in groups])
         group_count = len(groups)
 
-    return {"sites": len(sites), "links": len(links), "groups": group_count}
+    register_count = 0
+    if register_bytes:
+        reg_records = parse_chemical_register(register_bytes)
+        # Upsert risk_assessment_required + sds_expiry per stock_code
+        # Rows without sds_url/risk_url still need the flag stored
+        _sb_post_batch(
+            "ccs_sds_links",
+            [
+                {k: v for k, v in r.items() if v is not None}
+                for r in reg_records
+            ],
+        )
+        register_count = len(reg_records)
+
+    return {"sites": len(sites), "links": len(links), "groups": group_count, "register": register_count}
 
 
 # ---------------------------------------------------------------------------
@@ -262,8 +313,8 @@ def send_manual(
     if not use_codes:
         raise ValueError(f"No products specified for site {accno!r}")
 
-    sds_map, risk_map, group_fallback = load_lookup_maps()
-    docs = resolve_docs_for_site(use_codes, sds_map, risk_map, group_fallback)
+    sds_map, risk_map, group_fallback, risk_required_set = load_lookup_maps()
+    docs = resolve_docs_for_site(use_codes, sds_map, risk_map, group_fallback, risk_required_set)
     if not docs:
         return {"status": "skipped", "reason": "no SDS/Risk documents found for selected products"}
 
@@ -295,13 +346,15 @@ def send_manual(
 # Document resolution
 # ---------------------------------------------------------------------------
 
-def load_lookup_maps() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+def load_lookup_maps() -> tuple[dict[str, str], dict[str, str], dict[str, str], set[str]]:
     """Load SDS links + stock groups into memory.
-    Returns (sds_map, risk_map, group_fallback) where
-    group_fallback maps a related code → its primary code."""
-    links = _sb_get("ccs_sds_links", "select=stock_code,sds_url,risk_url")
+    Returns (sds_map, risk_map, group_fallback, risk_required_set) where
+    group_fallback maps a related code → its primary code and
+    risk_required_set is codes where risk_assessment_required = True."""
+    links = _sb_get("ccs_sds_links", "select=stock_code,sds_url,risk_url,risk_assessment_required")
     sds_map = {r["stock_code"]: r["sds_url"] for r in links if r.get("sds_url")}
     risk_map = {r["stock_code"]: r["risk_url"] for r in links if r.get("risk_url")}
+    risk_required_set = {r["stock_code"] for r in links if r.get("risk_assessment_required")}
 
     groups = _sb_get("ccs_stock_groups", "select=primary_code,related_codes")
     group_fallback: dict[str, str] = {}
@@ -311,7 +364,7 @@ def load_lookup_maps() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
             if related and related not in sds_map and related not in risk_map:
                 group_fallback[related] = primary
 
-    return sds_map, risk_map, group_fallback
+    return sds_map, risk_map, group_fallback, risk_required_set
 
 
 def resolve_docs_for_site(
@@ -319,16 +372,22 @@ def resolve_docs_for_site(
     sds_map: dict[str, str],
     risk_map: dict[str, str],
     group_fallback: dict[str, str],
+    risk_required_set: set[str] | None = None,
 ) -> list[dict[str, str]]:
     docs: list[dict[str, str]] = []
     for code in stockcodes:
         sds_url = sds_map.get(code, "")
-        risk_url = risk_map.get(code, "")
+        # Only include risk URL if Chemical Register marks this product as requiring it.
+        # None means register not yet imported — fall back to including risk URL if available.
+        risk_url = ""
+        if risk_required_set is None or code in risk_required_set:
+            risk_url = risk_map.get(code, "")
         if not sds_url and not risk_url:
             primary = group_fallback.get(code, "")
             if primary:
                 sds_url = sds_map.get(primary, "")
-                risk_url = risk_map.get(primary, "")
+                if risk_required_set is None or code in risk_required_set:
+                    risk_url = risk_map.get(primary, "")
         if sds_url or risk_url:
             docs.append({"code": code, "sds_url": sds_url, "risk_url": risk_url})
     return docs

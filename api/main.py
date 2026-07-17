@@ -363,13 +363,15 @@ async def import_site_mapping(
     sds: UploadFile = File(..., description="sds-pdf-link.xlsx"),
     risk: UploadFile = File(..., description="risk-pdf-link.xlsx"),
     grouping: UploadFile | None = File(default=None, description="product-grouping.xlsx (optional)"),
+    register: UploadFile | None = File(default=None, description="Chemical Register Title Sheet.xlsx (optional)"),
     _auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
     mapping_bytes = await mapping.read()
     sds_bytes = await sds.read()
     risk_bytes = await risk.read()
     grouping_bytes = await grouping.read() if grouping else None
-    return import_mapping(mapping_bytes, sds_bytes, risk_bytes, grouping_bytes)
+    register_bytes = await register.read() if register else None
+    return import_mapping(mapping_bytes, sds_bytes, risk_bytes, grouping_bytes, register_bytes)
 
 
 @app.post("/site-distribution/exclude/{accno}")
@@ -447,7 +449,7 @@ def site_distribution_report(_auth: dict = Depends(require_auth)):
     excl_set = {r["accno"] for r in _sb_get("ccs_site_exclusions", "select=accno")}
     held_set = {r["accno"] for r in _sb_get("ccs_site_holds", "select=accno")}
     all_sites = _sb_get("ccs_site_mapping", "select=*&order=name.asc")
-    sds_map, risk_map, group_fallback = load_lookup_maps()
+    sds_map, risk_map, group_fallback, risk_required_set = load_lookup_maps()
 
     buf = _io.StringIO()
     w = csv.writer(buf)
@@ -463,7 +465,7 @@ def site_distribution_report(_auth: dict = Depends(require_auth)):
         accno = site.get("accno", "")
         emails = site.get("emails") or []
         stockcodes = site.get("stockcodes") or []
-        docs = resolve_docs_for_site(stockcodes, sds_map, risk_map, group_fallback)
+        docs = resolve_docs_for_site(stockcodes, sds_map, risk_map, group_fallback, risk_required_set)
         matched_codes = [d["code"] for d in docs]
         skipped_codes = [c for c in stockcodes if c not in matched_codes]
         sds_count = sum(1 for d in docs if d.get("sds_url"))
