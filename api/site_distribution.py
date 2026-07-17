@@ -405,11 +405,13 @@ def import_mapping(
             "product_name", "hazard_classification", "primary_use",
             "signal_word", "un_number",
         )
-        _sb_post_batch(
-            "ccs_sds_links",
-            [{k: r.get(k) for k in _REGISTER_FIELDS} for r in reg_records],
-        )
-        register_count = len(reg_records)
+        # Deduplicate by stock_code — Chemical Register may list the same code
+        # more than once (e.g. different size rows). Last occurrence wins.
+        deduped: dict[str, dict] = {}
+        for r in reg_records:
+            deduped[r["stock_code"]] = {k: r.get(k) for k in _REGISTER_FIELDS}
+        _sb_post_batch("ccs_sds_links", list(deduped.values()))
+        register_count = len(deduped)
 
     return {"sites": len(sites), "links": len(links), "groups": group_count, "register": register_count}
 
