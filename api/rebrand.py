@@ -171,9 +171,29 @@ def _replace_text_using_map(text: str, replacements: dict[str, str]) -> tuple[st
     return updated, changed
 
 
-def _apply_replacements_to_header_part(header, replacements: dict[str, str], changes: list[str], prefix: str) -> None:
+def _replace_text_terms(text: str, term_replacements: dict[str, str]) -> tuple[str, bool]:
+    updated = text
+    changed = False
+    for old_text, new_text in sorted(term_replacements.items(), key=lambda item: len(item[0]), reverse=True):
+        new_updated, count = re.subn(re.escape(old_text), new_text, updated, flags=re.IGNORECASE)
+        if count:
+            updated = new_updated
+            changed = True
+    return updated, changed
+
+
+def _apply_replacements_to_header_part(
+    header,
+    replacements: dict[str, str],
+    changes: list[str],
+    prefix: str,
+    term_replacements: dict[str, str] | None = None,
+) -> None:
     for para in header.paragraphs:
         new_text, changed = _replace_text_using_map(para.text, replacements)
+        if term_replacements:
+            new_text, term_changed = _replace_text_terms(new_text, term_replacements)
+            changed = changed or term_changed
         if changed:
             _set_full_run(para, new_text)
             changes.append(f"{prefix}header text updated")
@@ -181,6 +201,9 @@ def _apply_replacements_to_header_part(header, replacements: dict[str, str], cha
         for row in table.rows:
             for cell in row.cells:
                 new_text, changed = _replace_text_using_map(cell.text, replacements)
+                if term_replacements:
+                    new_text, term_changed = _replace_text_terms(new_text, term_replacements)
+                    changed = changed or term_changed
                 if changed:
                     cell.text = new_text
                     changes.append(f"{prefix}header table updated")
@@ -419,10 +442,32 @@ def _rebrand_smart_clean(doc: Document, today: str) -> dict:
             elif label in ("Mail Address", "Address") and re.search(r"PO\s*Box|Brisbane", value_cell.text, re.IGNORECASE):
                 _replace_cell_lines(value_cell, [CCS["address"]])
                 changes.append(f"{raw_label} → {CCS['address']}")
+    header_term_replacements = {
+        alias: CCS["supplier_name"]
+        for alias in (
+            "Solo Pak Pty Ltd",
+            "Solo Pak",
+            "Solopak",
+            "Smart Clean",
+            "SmartClean",
+        )
+    }
+    if old_supplier:
+        for term in _supplier_search_terms(old_supplier):
+            header_term_replacements.setdefault(term, CCS["supplier_name"])
     for section in doc.sections:
-        _apply_replacements_to_header_part(section.first_page_header, replacements, changes, prefix="First page ")
-        _apply_replacements_to_header_part(section.header, replacements, changes, prefix="Header ")
-        _apply_replacements_to_header_part(section.even_page_header, replacements, changes, prefix="Even page ")
+        _apply_replacements_to_header_part(
+            section.first_page_header, replacements, changes, prefix="First page ",
+            term_replacements=header_term_replacements,
+        )
+        _apply_replacements_to_header_part(
+            section.header, replacements, changes, prefix="Header ",
+            term_replacements=header_term_replacements,
+        )
+        _apply_replacements_to_header_part(
+            section.even_page_header, replacements, changes, prefix="Even page ",
+            term_replacements=header_term_replacements,
+        )
     return {"changes": changes, "old_supplier": old_supplier or "Smart Clean / Solopak"}
 
 
