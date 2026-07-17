@@ -187,6 +187,15 @@ def test_rebrand_docx_normalizes_messy_mail_address_cell() -> None:
     assert out.tables[0].cell(0, 1).text == CCS["address"]
 
 
+def test_rebrand_docx_auto_detects_solopak_from_header_text() -> None:
+    src = _make_docx_with_body_image_and_messy_address()
+    out_bytes, summary = rebrand_sds(src, "08/07/2026", brand="")
+
+    assert summary["brand"] == "solopak"
+    assert "Inserted Solopak replacement logo" in summary["changes"]
+    assert _asset_digest(Path(r"E:\claude\ccs-compliant-cleaning-platform\api\assets\solopak-replacement.jpg")) in _embedded_media_digests(out_bytes)
+
+
 def test_rebrand_docx_updates_first_page_header_issue_date_and_emergency_phone() -> None:
     src = _make_docx_with_first_page_header_table()
     out_bytes, summary = rebrand_sds(src, "08/07/2026", brand="solopak")

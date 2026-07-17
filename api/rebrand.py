@@ -302,10 +302,18 @@ def _detect_brand(doc: Document) -> str:
         for row in table.rows:
             for cell in row.cells:
                 texts.append(cell.text)
+    for section in doc.sections:
+        for header in (section.first_page_header, section.header, section.even_page_header):
+            for para in header.paragraphs:
+                texts.append(para.text)
+            for table in header.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        texts.append(cell.text)
     all_text = "\n".join(texts)
     if re.search(r"sampson", all_text, re.IGNORECASE):
         return "sampson"
-    if re.search(r"solopak", all_text, re.IGNORECASE):
+    if re.search(r"solo\s*pak|solopak", all_text, re.IGNORECASE):
         return "solopak"
     if re.search(r"smart.?clean", all_text, re.IGNORECASE):
         return "smart_clean"
