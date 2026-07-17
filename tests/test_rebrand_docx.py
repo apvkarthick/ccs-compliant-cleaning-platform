@@ -64,6 +64,7 @@ def _make_docx_with_first_page_header_table() -> bytes:
     section.different_first_page_header_footer = True
 
     first_header = section.first_page_header
+    first_header.paragraphs[0].text = "Solo Pak Pty Ltd"
     table = first_header.add_table(rows=3, cols=2, width=doc.sections[0].page_width)
     table.cell(0, 0).text = "Safety Data Sheet"
     table.cell(0, 1).text = "Page 1"
@@ -150,6 +151,7 @@ def test_rebrand_docx_updates_first_page_header_issue_date_and_emergency_phone()
     header_xml = _header_xml_text(out_bytes)
 
     assert any("First page header table updated" in change for change in summary["changes"])
+    assert out.sections[0].first_page_header.paragraphs[0].text == CCS["supplier_name"]
     assert out.sections[0].first_page_header.tables[0].cell(1, 1).text == CCS["supplier_name"]
     assert out.sections[0].first_page_header.tables[0].cell(2, 1).text == "Issue Date: 08/07/2026"
     assert out.tables[0].cell(0, 1).text == CCS["supplier_name"]

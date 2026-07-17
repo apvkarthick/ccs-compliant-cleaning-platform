@@ -98,6 +98,7 @@ def rebrand_sds(docx_bytes: bytes, sds_date: str | None = None, brand: str = "")
             out_bytes,
             _smart_clean_replacements(today),
             changes.get("old_supplier", ""),
+            header_aliases=_smart_clean_header_aliases(),
         )
     return out_bytes, changes
 
@@ -603,9 +604,26 @@ def _smart_clean_replacements(today: str) -> dict[str, str]:
     }
 
 
-def _patch_header_text_zip(docx_bytes: bytes, replacements: dict[str, str], old_supplier: str = "") -> bytes:
+def _smart_clean_header_aliases() -> list[str]:
+    return [
+        "Solo Pak Pty Ltd",
+        "Solo Pak",
+        "Solopak",
+        "Smart Clean",
+        "SmartClean",
+    ]
+
+
+def _patch_header_text_zip(
+    docx_bytes: bytes,
+    replacements: dict[str, str],
+    old_supplier: str = "",
+    header_aliases: list[str] | None = None,
+) -> bytes:
     """Patch all header XML text nodes so header-only content does not slip through."""
     search_terms = _supplier_search_terms(old_supplier) if old_supplier else []
+    if header_aliases:
+        search_terms = list(dict.fromkeys(search_terms + header_aliases))
     buf = io.BytesIO()
 
     with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as zin, \
