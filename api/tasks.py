@@ -67,8 +67,10 @@ def site_distribution_task(self, dry_run: bool = True, batch_id: str = "") -> di
     tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
 
     excl_set = {r["accno"] for r in _sb_get("ccs_site_exclusions", "select=accno")}
+    held_set = {r["accno"] for r in _sb_get("ccs_site_holds", "select=accno")}
+    skip_set = excl_set | held_set
     all_sites = _sb_get("ccs_site_mapping", "select=*&order=name.asc")
-    sites = [s for s in all_sites if s.get("accno") not in excl_set]
+    sites = [s for s in all_sites if s.get("accno") not in skip_set]
 
     sds_map, risk_map, group_fallback = load_lookup_maps()
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
-import { AlertCircle, BookOpen, CheckCircle2, Download, FileSpreadsheet, Link2, LogOut, Mail, Send, Upload } from 'lucide-react';
+import { AlertCircle, BookOpen, CheckCircle2, Download, FileSpreadsheet, Link2, LogOut, Mail, Pause, Play, Send, Upload, X } from 'lucide-react';
 import './styles.css';
 
 const supabase = createClient(
@@ -144,7 +144,6 @@ function App({ session }) {
   return (
     <main className="shell">
       <div className="tab-bar">
-        <button className={`tab ${activeTab === 'distribution' ? 'active' : ''}`} onClick={() => switchTab('distribution')}>Distribution</button>
         <button className={`tab ${activeTab === 'sites' ? 'active' : ''}`} onClick={() => switchTab('sites')}>Sites</button>
         <button className={`tab ${activeTab === 'email-opens' ? 'active' : ''}`} onClick={() => switchTab('email-opens')}>Email Opens</button>
         <button className={`tab ${activeTab === 'library' ? 'active' : ''}`} onClick={() => switchTab('library')}><BookOpen size={13} style={{marginRight:4,verticalAlign:'middle'}}/>Doc Library</button>
@@ -879,6 +878,17 @@ function SiteDistribution() {
   const [riskFile, setRiskFile] = useState(null);
   const [groupingFile, setGroupingFile] = useState(null);
 
+  // Test contact override — staff enter a test email; used as default in manual send modal
+  const [testEmail, setTestEmail] = useState('');
+
+  // Manual send modal
+  const [manualSite, setManualSite] = useState(null);
+  const [manualEmail, setManualEmail] = useState('');
+  const [manualCodes, setManualCodes] = useState(new Set());
+  const [manualDryRun, setManualDryRun] = useState(false);
+  const [manualSending, setManualSending] = useState(false);
+  const [manualResult, setManualResult] = useState('');
+
   const PAGE_SIZE = 50;
 
   async function loadStats() {
@@ -954,6 +964,54 @@ function SiteDistribution() {
     } catch (err) { setError(err.message); }
   }
 
+  async function toggleHold(site) {
+    const accno = site.accno;
+    const url = `${API_BASE}/site-distribution/hold/${encodeURIComponent(accno)}`;
+    try {
+      if (site.held) {
+        await fetch(url, { method: 'DELETE', headers: getAuthHeaders() });
+      } else {
+        await fetch(`${url}?name=${encodeURIComponent(site.name)}`, { method: 'POST', headers: getAuthHeaders() });
+      }
+      setSites(prev => prev.map(s => s.accno === accno ? { ...s, held: !s.held } : s));
+      loadStats();
+    } catch (err) { setError(err.message); }
+  }
+
+  function openManualSend(site) {
+    setManualSite(site);
+    setManualEmail(testEmail || (site.emails || [])[0] || '');
+    setManualCodes(new Set(site.stockcodes || []));
+    setManualResult('');
+    setManualSending(false);
+  }
+
+  async function handleManualSend(e) {
+    e.preventDefault();
+    if (!manualSite) return;
+    setManualSending(true);
+    setManualResult('');
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/send-manual`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accno: manualSite.accno,
+          stockcodes: [...manualCodes],
+          email: manualEmail,
+          dry_run: manualDryRun,
+        }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Send failed');
+      setManualResult(`${data.status === 'dry_run' ? 'Dry run OK' : 'Sent'} — ${data.docs} document(s) to ${data.email}`);
+    } catch (err) {
+      setManualResult(`Error: ${err.message}`);
+    } finally {
+      setManualSending(false);
+    }
+  }
+
   async function handleSend() {
     setSending(true); setError(''); setTaskStatus(null);
     try {
@@ -979,6 +1037,7 @@ function SiteDistribution() {
           <div style={{ display: 'flex', gap: 10 }}>
             <Pill label="Total sites" value={stats.total_sites} ok={stats.total_sites > 0} />
             <Pill label="Active" value={stats.active_sites} ok={stats.active_sites > 0} />
+            <Pill label="On Hold" value={stats.held_sites} warn={stats.held_sites > 0} />
             <Pill label="Excluded" value={stats.excluded_sites} warn={stats.excluded_sites > 0} />
             <Pill label="SDS links" value={stats.sds_links} ok={stats.sds_links > 0} />
           </div>
@@ -1005,37 +1064,30 @@ function SiteDistribution() {
             </button>
           </form>
 
-          {/* Send */}
+          {/* Test contact box */}
           <div className="contact-box" style={{ marginTop: 16 }}>
-            <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Send distribution</label>
-            <p style={{ fontSize: 12, color: '#607080', marginTop: 6 }}>
-              Sends SDS + Risk Assessment emails to all active (non-excluded) sites.
+            <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Test contact</label>
+            <p style={{ fontSize: 12, color: '#607080', marginTop: 6, marginBottom: 8 }}>
+              Enter a staff email. Clicking Send on any site row will pre-fill this address in the send modal.
             </p>
-            <div className="toggle-row" style={{ marginBottom: 10 }}>
-              <input id="sd-dry-run" type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} />
-              <label htmlFor="sd-dry-run">Dry run (no emails sent)</label>
-            </div>
-            <button className="primary" onClick={handleSend} disabled={sending || !stats?.active_sites}>
-              <Send size={16} style={{ marginRight: 6 }} />{sending ? 'Running…' : `Send to ${stats?.active_sites ?? '…'} sites`}
+            <input
+              type="email"
+              value={testEmail}
+              onChange={e => setTestEmail(e.target.value)}
+              placeholder="staff@example.com"
+              style={{ width: '100%', padding: '7px 10px', border: '1px solid #d8e1e8', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }}
+            />
+          </div>
+
+          {/* Bulk send — disabled pending mapping verification */}
+          <div className="contact-box" style={{ marginTop: 12, opacity: 0.55, pointerEvents: 'none' }}>
+            <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#b45309' }}>Bulk send — disabled</label>
+            <p style={{ fontSize: 12, color: '#b45309', marginTop: 6 }}>
+              Bulk GHL sending is locked until mapping is verified. Use the Send button per site row for individual test sends.
+            </p>
+            <button className="primary" disabled style={{ marginTop: 8, opacity: 0.4 }}>
+              <Send size={16} style={{ marginRight: 6 }} />Send to all sites
             </button>
-            {taskStatus && (
-              <div style={{ marginTop: 10 }}>
-                <div style={{ fontSize: 12, color: '#445', marginBottom: 4 }}>
-                  Status: <strong>{taskStatus.state}</strong>
-                  {progressMeta.total ? ` · ${progressMeta.done || 0}/${progressMeta.total}` : ''}
-                </div>
-                {progressMeta.total > 0 && (
-                  <div style={{ background: '#e2eaef', borderRadius: 4, height: 6 }}>
-                    <div style={{ background: '#2C6B33', borderRadius: 4, height: 6, width: `${progressPct}%`, transition: 'width 0.3s' }} />
-                  </div>
-                )}
-                {(progressMeta.sent !== undefined) && (
-                  <div style={{ fontSize: 11, color: '#607080', marginTop: 4 }}>
-                    Sent: {progressMeta.sent} · Failed: {progressMeta.failed} · Skipped: {progressMeta.skipped}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </aside>
 
@@ -1068,12 +1120,12 @@ function SiteDistribution() {
                     <th>Head Office</th>
                     <th>Emails</th>
                     <th style={{ textAlign: 'right' }}>Products</th>
-                    <th style={{ textAlign: 'center' }}>Status</th>
+                    <th style={{ textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sites.map(site => (
-                    <tr key={site.accno} style={{ opacity: site.excluded ? 0.45 : 1 }}>
+                    <tr key={site.accno} style={{ opacity: site.excluded ? 0.4 : site.held ? 0.65 : 1 }}>
                       <td>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>{site.name}</div>
                         <div style={{ fontSize: 11, color: '#607080' }}>#{site.accno}</div>
@@ -1086,19 +1138,42 @@ function SiteDistribution() {
                         {(site.stockcodes || []).length}
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        <button
-                          className="btn-ghost"
-                          style={{
-                            fontSize: 11,
-                            color: site.excluded ? '#d35400' : '#2C6B33',
-                            border: `1px solid ${site.excluded ? '#d35400' : '#2C6B33'}`,
-                            borderRadius: 4,
-                            padding: '2px 8px',
-                          }}
-                          onClick={() => toggleExclude(site)}
-                        >
-                          {site.excluded ? 'Excluded' : 'Active'}
-                        </button>
+                        <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                          <button
+                            className="btn-ghost"
+                            title={site.held ? 'Remove hold' : 'Put on hold'}
+                            style={{
+                              fontSize: 10, borderRadius: 4, padding: '2px 6px',
+                              color: site.held ? '#e67e22' : '#99aabb',
+                              border: `1px solid ${site.held ? '#e67e22' : '#c8d4de'}`,
+                            }}
+                            onClick={() => toggleHold(site)}
+                          >
+                            {site.held ? <><Play size={10} style={{ marginRight: 2 }} />Unhold</> : <><Pause size={10} style={{ marginRight: 2 }} />Hold</>}
+                          </button>
+                          <button
+                            className="btn-ghost"
+                            style={{
+                              fontSize: 10, borderRadius: 4, padding: '2px 6px',
+                              color: site.excluded ? '#d35400' : '#2C6B33',
+                              border: `1px solid ${site.excluded ? '#d35400' : '#2C6B33'}`,
+                            }}
+                            onClick={() => toggleExclude(site)}
+                          >
+                            {site.excluded ? 'Excl' : 'Active'}
+                          </button>
+                          <button
+                            className="btn-ghost"
+                            title="Manual send"
+                            style={{
+                              fontSize: 10, borderRadius: 4, padding: '2px 6px',
+                              color: '#5c7cfa', border: '1px solid #5c7cfa',
+                            }}
+                            onClick={() => openManualSend(site)}
+                          >
+                            <Mail size={10} style={{ marginRight: 2 }} />Send
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1113,6 +1188,87 @@ function SiteDistribution() {
           )}
         </div>
       </div>
+
+      {/* Manual send modal */}
+      {manualSite && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }} onClick={() => setManualSite(null)}>
+          <div style={{
+            background: 'white', borderRadius: 10, padding: 28, width: 480, maxWidth: '95vw',
+            maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>{manualSite.name}</div>
+                <div style={{ fontSize: 11, color: '#607080' }}>#{manualSite.accno} · Manual send</div>
+              </div>
+              <button className="btn-ghost" onClick={() => setManualSite(null)} style={{ padding: 4 }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleManualSend}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#445', display: 'block', marginBottom: 4 }}>
+                Recipient email
+              </label>
+              <input
+                type="email"
+                value={manualEmail}
+                onChange={e => setManualEmail(e.target.value)}
+                required
+                style={{ width: '100%', padding: '7px 10px', border: '1px solid #d8e1e8', borderRadius: 6, fontSize: 13, boxSizing: 'border-box', marginBottom: 14 }}
+              />
+
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#445', display: 'block', marginBottom: 6 }}>
+                Products to include ({manualCodes.size} selected)
+              </label>
+              <div style={{ border: '1px solid #e2eaef', borderRadius: 6, maxHeight: 200, overflowY: 'auto', padding: '4px 0', marginBottom: 14 }}>
+                {(manualSite.stockcodes || []).map(code => (
+                  <label key={code} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px', cursor: 'pointer', fontSize: 12 }}>
+                    <input
+                      type="checkbox"
+                      checked={manualCodes.has(code)}
+                      onChange={e => {
+                        setManualCodes(prev => {
+                          const next = new Set(prev);
+                          e.target.checked ? next.add(code) : next.delete(code);
+                          return next;
+                        });
+                      }}
+                    />
+                    {code}
+                  </label>
+                ))}
+                {(manualSite.stockcodes || []).length === 0 && (
+                  <div style={{ padding: '8px 12px', color: '#607080', fontSize: 12 }}>No products on record for this site.</div>
+                )}
+              </div>
+
+              <div className="toggle-row" style={{ marginBottom: 14 }}>
+                <input id="ms-dry-run" type="checkbox" checked={manualDryRun} onChange={e => setManualDryRun(e.target.checked)} />
+                <label htmlFor="ms-dry-run" style={{ fontSize: 12 }}>Dry run (no email sent)</label>
+              </div>
+
+              {manualResult && (
+                <div className={`notice ${manualResult.startsWith('Error') ? 'error' : 'ok'}`} style={{ marginBottom: 12 }}>
+                  {manualResult.startsWith('Error') ? <AlertCircle size={14} /> : <CheckCircle2 size={14} />}
+                  <span>{manualResult}</span>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button type="button" className="btn-ghost" onClick={() => setManualSite(null)}>Cancel</button>
+                <button type="submit" className="primary" disabled={manualSending || manualCodes.size === 0}>
+                  <Mail size={14} style={{ marginRight: 6 }} />
+                  {manualSending ? 'Sending…' : manualDryRun ? 'Test send' : 'Send now'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

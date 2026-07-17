@@ -198,8 +198,10 @@ def list_sites(search: str = "", page: int = 1, page_size: int = 50) -> dict[str
     sites = _sb_get("ccs_site_mapping", params)
 
     excl_set = {r["accno"] for r in _sb_get("ccs_site_exclusions", "select=accno")}
+    held_set = {r["accno"] for r in _sb_get("ccs_site_holds", "select=accno")}
     for site in sites:
         site["excluded"] = site.get("accno") in excl_set
+        site["held"] = site.get("accno") in held_set
 
     return {"sites": sites, "page": page, "page_size": page_size}
 
@@ -208,15 +210,17 @@ def get_stats() -> dict[str, int]:
     try:
         total = len(_sb_get("ccs_site_mapping", "select=accno"))
         excl = len(_sb_get("ccs_site_exclusions", "select=accno"))
+        held = len(_sb_get("ccs_site_holds", "select=accno"))
         links = len(_sb_get("ccs_sds_links", "select=stock_code"))
         return {
             "total_sites": total,
             "excluded_sites": excl,
-            "active_sites": total - excl,
+            "held_sites": held,
+            "active_sites": total - excl - held,
             "sds_links": links,
         }
     except Exception:
-        return {"total_sites": 0, "excluded_sites": 0, "active_sites": 0, "sds_links": 0}
+        return {"total_sites": 0, "excluded_sites": 0, "held_sites": 0, "active_sites": 0, "sds_links": 0}
 
 
 def exclude_site(accno: str, name: str = "") -> dict[str, str]:
@@ -227,6 +231,64 @@ def exclude_site(accno: str, name: str = "") -> dict[str, str]:
 def include_site(accno: str) -> dict[str, str]:
     _sb_delete("ccs_site_exclusions", f"accno=eq.{quote(accno, safe='')}")
     return {"included": accno}
+
+
+def hold_site(accno: str, name: str = "") -> dict[str, str]:
+    _sb_post_batch("ccs_site_holds", [{"accno": accno, "name": name, "held_at": _now()}])
+    return {"held": accno}
+
+
+def unhold_site(accno: str) -> dict[str, str]:
+    _sb_delete("ccs_site_holds", f"accno=eq.{quote(accno, safe='')}")
+    return {"unheld": accno}
+
+
+def send_manual(
+    accno: str,
+    stockcodes: list[str],
+    email: str,
+    dry_run: bool = False,
+    *,
+    public_base_url: str = "",
+    tracking_secret: str = "",
+) -> dict[str, Any]:
+    """Send SDS/Risk email for a specific site with selected products."""
+    sites = _sb_get("ccs_site_mapping", f"select=*&accno=eq.{quote(accno, safe='')}")
+    if not sites:
+        raise ValueError(f"Site {accno!r} not found")
+    site = sites[0]
+
+    use_codes = stockcodes if stockcodes else (site.get("stockcodes") or [])
+    if not use_codes:
+        raise ValueError(f"No products specified for site {accno!r}")
+
+    sds_map, risk_map, group_fallback = load_lookup_maps()
+    docs = resolve_docs_for_site(use_codes, sds_map, risk_map, group_fallback)
+    if not docs:
+        return {"status": "skipped", "reason": "no SDS/Risk documents found for selected products"}
+
+    batch_id = f"manual_{accno}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    msg = compose_site_email(
+        site, docs, email,
+        batch_id=batch_id,
+        public_base_url=public_base_url,
+        tracking_secret=tracking_secret,
+    )
+
+    if dry_run:
+        return {"status": "dry_run", "site": site.get("name"), "email": email, "docs": len(docs)}
+
+    from .distribution import _find_or_create_ghl_contact_id, _send_messages_via_ghl
+    contact_id = _find_or_create_ghl_contact_id({"email": email, "name": site.get("name", "")})
+    if contact_id:
+        msg["contact_id"] = contact_id
+    result = _send_messages_via_ghl([msg])
+    return {
+        "status": result.get("status", "unknown"),
+        "site": site.get("name"),
+        "email": email,
+        "docs": len(docs),
+    }
 
 
 # ---------------------------------------------------------------------------
