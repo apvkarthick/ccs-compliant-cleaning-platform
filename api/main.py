@@ -30,6 +30,9 @@ from .site_distribution import (
     import_mapping,
     include_site,
     list_sites,
+    load_lookup_maps,
+    resolve_docs_for_site,
+    _sb_get,
 )
 from .rebrand import rebrand_sds
 from .rebrand_pdf import rebrand_pdf
@@ -391,6 +394,75 @@ def send_site_distribution(
     batch_id = str(uuid.uuid4()) if not dry_run else f"dry_{uuid.uuid4().hex[:8]}"
     task = site_distribution_task.delay(dry_run=dry_run, batch_id=batch_id)
     return {"task_id": task.id, "status": "queued", "batch_id": batch_id, "dry_run": dry_run}
+
+
+@app.get("/site-distribution/report.csv")
+def site_distribution_report(_auth: dict = Depends(require_auth)):
+    """CSV preview: every site, what documents they'd receive, and why any are skipped."""
+    import csv, io as _io
+    excl_set = {r["accno"] for r in _sb_get("ccs_site_exclusions", "select=accno")}
+    held_set = {r["accno"] for r in _sb_get("ccs_site_holds", "select=accno")}
+    all_sites = _sb_get("ccs_site_mapping", "select=*&order=name.asc")
+    sds_map, risk_map, group_fallback = load_lookup_maps()
+
+    buf = _io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([
+        "ACCNO", "Site Name", "Head Office", "Emails",
+        "Total Products", "Matched Products", "Skipped Products",
+        "SDS Count", "Risk Count",
+        "Would Send?", "Skip Reason",
+        "Matched Codes", "Skipped Codes",
+    ])
+
+    for site in all_sites:
+        accno = site.get("accno", "")
+        emails = site.get("emails") or []
+        stockcodes = site.get("stockcodes") or []
+        docs = resolve_docs_for_site(stockcodes, sds_map, risk_map, group_fallback)
+        matched_codes = [d["code"] for d in docs]
+        skipped_codes = [c for c in stockcodes if c not in matched_codes]
+        sds_count = sum(1 for d in docs if d.get("sds_url"))
+        risk_count = sum(1 for d in docs if d.get("risk_url"))
+
+        if accno in excl_set:
+            skip_reason = "excluded"
+            would_send = "NO"
+        elif accno in held_set:
+            skip_reason = "on hold"
+            would_send = "NO"
+        elif not emails:
+            skip_reason = "no email address"
+            would_send = "NO"
+        elif not docs:
+            skip_reason = "no matching SDS/Risk documents"
+            would_send = "NO"
+        else:
+            skip_reason = ""
+            would_send = "YES"
+
+        w.writerow([
+            accno,
+            site.get("name", ""),
+            site.get("ho_name", ""),
+            "; ".join(emails),
+            len(stockcodes),
+            len(matched_codes),
+            len(skipped_codes),
+            sds_count,
+            risk_count,
+            would_send,
+            skip_reason,
+            ", ".join(matched_codes),
+            ", ".join(skipped_codes),
+        ])
+
+    from fastapi.responses import Response
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=ccs_site_distribution_report.csv"},
+    )
 
 
 @app.get("/ccs-msds-track", response_class=HTMLResponse)

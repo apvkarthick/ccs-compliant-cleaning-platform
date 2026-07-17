@@ -1064,6 +1064,22 @@ function SiteDistribution() {
             </button>
           </form>
 
+          {/* Report download */}
+          <div className="contact-box" style={{ marginTop: 16 }}>
+            <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Test report</label>
+            <p style={{ fontSize: 12, color: '#607080', marginTop: 6, marginBottom: 8 }}>
+              Download CSV — every site, what documents they'd receive, and why any are skipped.
+            </p>
+            <a
+              href={`${API_BASE}/site-distribution/report.csv`}
+              download
+              className="primary"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', padding: '8px 14px', borderRadius: 6, fontSize: 13 }}
+            >
+              <Download size={15} style={{ marginRight: 6 }} />Download report
+            </a>
+          </div>
+
           {/* Test contact box */}
           <div className="contact-box" style={{ marginTop: 16 }}>
             <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Test contact</label>
