@@ -34,7 +34,7 @@ def parse_mapping_excel(data: bytes) -> list[dict[str, Any]]:
         if not accno or accno == "nan":
             continue
         emails = [
-            e.strip() for e in str(row.get("EMAIL", "")).split(";")
+            e.strip() for e in str(row.get("EMAIL") or row.get("CONT_EMAIL") or "").split(";")
             if e.strip() and e.strip() != "nan"
         ]
         stockcodes = [
