@@ -182,6 +182,24 @@ def _replace_text_terms(text: str, term_replacements: dict[str, str]) -> tuple[s
     return updated, changed
 
 
+def _normalize_smart_clean_address_text(text: str) -> tuple[str, bool]:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    has_old_po_box = bool(re.search(r"PO\s*Box\s*67", normalized, re.IGNORECASE))
+    has_old_city = bool(re.search(r"Brisbane", normalized, re.IGNORECASE))
+    has_ccs_street = bool(re.search(r"86\s+Crockford\s+Street", normalized, re.IGNORECASE))
+    if not ((has_old_po_box or has_old_city) and has_ccs_street):
+        return text, False
+
+    labeled_match = re.match(
+        r"^(.*?\b(?:Mail Address|Address)\b\s*[:\-]?\s*)(.*)$",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if labeled_match:
+        return labeled_match.group(1) + CCS["address"], True
+    return CCS["address"], True
+
+
 def _apply_replacements_to_header_part(
     header,
     replacements: dict[str, str],
@@ -194,6 +212,8 @@ def _apply_replacements_to_header_part(
         if term_replacements:
             new_text, term_changed = _replace_text_terms(new_text, term_replacements)
             changed = changed or term_changed
+        new_text, address_changed = _normalize_smart_clean_address_text(new_text)
+        changed = changed or address_changed
         if changed:
             _set_full_run(para, new_text)
             changes.append(f"{prefix}header text updated")
@@ -204,6 +224,8 @@ def _apply_replacements_to_header_part(
                 if term_replacements:
                     new_text, term_changed = _replace_text_terms(new_text, term_replacements)
                     changed = changed or term_changed
+                new_text, address_changed = _normalize_smart_clean_address_text(new_text)
+                changed = changed or address_changed
                 if changed:
                     cell.text = new_text
                     changes.append(f"{prefix}header table updated")
@@ -425,6 +447,11 @@ def _rebrand_smart_clean(doc: Document, today: str) -> dict:
     changes: list[str] = []
     old_supplier = ""
     replacements = _smart_clean_replacements(today)
+    for para in doc.paragraphs:
+        normalized_text, changed = _normalize_smart_clean_address_text(para.text)
+        if changed:
+            _set_full_run(para, normalized_text)
+            changes.append(f"Body text address â†’ {CCS['address']}")
     for table in doc.tables:
         for row in table.rows:
             if len(row.cells) < 2:
@@ -442,6 +469,13 @@ def _rebrand_smart_clean(doc: Document, today: str) -> dict:
             elif label in ("Mail Address", "Address") and re.search(r"PO\s*Box|Brisbane", value_cell.text, re.IGNORECASE):
                 _replace_cell_lines(value_cell, [CCS["address"]])
                 changes.append(f"{raw_label} → {CCS['address']}")
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                normalized_text, changed = _normalize_smart_clean_address_text(cell.text)
+                if changed:
+                    _replace_cell_lines(cell, [normalized_text])
+                    changes.append(f"Normalized address -> {CCS['address']}")
     header_term_replacements = {
         alias: CCS["supplier_name"]
         for alias in (

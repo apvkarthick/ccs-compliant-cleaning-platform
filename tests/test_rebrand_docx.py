@@ -133,6 +133,16 @@ def _make_docx_with_body_image_and_messy_address() -> bytes:
     return out.getvalue()
 
 
+def _make_docx_with_inline_messy_address() -> bytes:
+    doc = Document()
+    doc.add_paragraph("Address PO Box 67, Brisbane86 Crockford Street, NORTHGATE QLD 4013")
+    doc.add_paragraph("Supplier Solo Pak Pty Ltd")
+
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+
 def test_rebrand_docx_uses_shared_logo_for_cleanplus() -> None:
     src = _make_docx_with_header_logo()
     out_bytes, _summary = rebrand_sds(src, "08/07/2026", brand="cleanplus")
@@ -185,6 +195,14 @@ def test_rebrand_docx_normalizes_messy_mail_address_cell() -> None:
     out = Document(io.BytesIO(out_bytes))
 
     assert out.tables[0].cell(0, 1).text == CCS["address"]
+
+
+def test_rebrand_docx_normalizes_inline_messy_address_text() -> None:
+    src = _make_docx_with_inline_messy_address()
+    out_bytes, _summary = rebrand_sds(src, "08/07/2026", brand="solopak")
+    out = Document(io.BytesIO(out_bytes))
+
+    assert out.paragraphs[0].text == f"Address {CCS['address']}"
 
 
 def test_rebrand_docx_auto_detects_solopak_from_header_text() -> None:
