@@ -107,16 +107,36 @@ def parse_sds_links(sds_data: bytes | None = None, risk_data: bytes | None = Non
 
 
 def parse_chemical_register(data: bytes) -> list[dict[str, Any]]:
-    """Parse Chemical Register xlsx → full product records including metadata columns."""
+    """Parse Chemical Register xlsx → full product records including metadata columns.
+
+    Handles two layouts:
+    - Standard: "PRODUCT CODE" is a header cell; product code is in that column.
+    - Title Sheet: product code is in col A (no header label); "NAME OF SUBSTANCE"
+      identifies the header row. Section-divider rows (containing spaces) are skipped.
+    """
     df = pd.read_excel(io.BytesIO(data), header=None, dtype=str)
     header_row = None
     for i, row in df.iterrows():
-        if any(str(v).strip().upper() == "PRODUCT CODE" for v in row):
+        row_upper = [str(v).strip().upper() for v in row]
+        if any(v == "PRODUCT CODE" or "NAME OF SUBSTANCE" in v for v in row_upper if v):
             header_row = i
             break
     if header_row is None:
-        raise ValueError("Chemical Register: 'PRODUCT CODE' header row not found")
-    df.columns = [str(v).strip().upper() for v in df.iloc[header_row]]
+        raise ValueError("Chemical Register: header row not found (expected 'PRODUCT CODE' or 'NAME OF SUBSTANCE')")
+
+    # Normalize headers — uppercase + collapse internal whitespace; rename blank/nan headers
+    # to avoid duplicate column names (pandas Series.get on a duplicate returns a Series, not scalar).
+    raw_cols = [" ".join(str(v).strip().upper().split()) for v in df.iloc[header_row]]
+    seen: dict[str, int] = {}
+    clean_cols: list[str] = []
+    for c in raw_cols:
+        if c in ("NAN", "", "NONE"):
+            n = seen.get("__UNNAMED__", 0)
+            clean_cols.append(f"__UNNAMED_{n}__")
+            seen["__UNNAMED__"] = n + 1
+        else:
+            clean_cols.append(c)
+    df.columns = clean_cols
     df = df.iloc[header_row + 1:].reset_index(drop=True)
 
     def _col(*candidates: str) -> str | None:
@@ -125,22 +145,53 @@ def parse_chemical_register(data: bytes) -> list[dict[str, Any]]:
                 return c
         return None
 
-    name_col = _col("PRODUCT NAME", "CHEMICAL NAME", "PRODUCT / CHEMICAL NAME", "PRODUCT/CHEMICAL NAME")
-    hazard_col = _col("HAZARD CLASSIFICATION", "HAZARD CLASS", "GHS CLASSIFICATION", "CLASSIFICATION")
-    use_col = _col("PRIMARY USE", "APPLICATION", "USE", "PRIMARY USE / APPLICATION", "PRIMARY USE/APPLICATION")
+    def _col_contains(substring: str) -> str | None:
+        sub = substring.upper()
+        return next((c for c in df.columns if sub in c), None)
+
+    # Standard format: "PRODUCT CODE" header; Title Sheet: col A is blank → renamed __UNNAMED_0__
+    code_col = _col("PRODUCT CODE") or (clean_cols[0] if clean_cols else df.columns[0])
+
+    name_col = _col(
+        "PRODUCT NAME", "CHEMICAL NAME", "PRODUCT / CHEMICAL NAME", "PRODUCT/CHEMICAL NAME",
+        "NAME OF SUBSTANCE", "SUBSTANCE NAME",
+    )
+    hazard_col = (
+        _col(
+            "HAZARD CLASSIFICATION", "HAZARD CLASS", "GHS CLASSIFICATION", "CLASSIFICATION",
+            "IS IT CLASSED AS HAZARDOUS OR DANGEROUS? (Y/N & H/D)",
+            "IS IT CLASSED AS HAZARDOUS OR DANGEROUS?",
+        )
+        or _col_contains("HAZARDOUS")
+    )
+    use_col = _col(
+        "PRIMARY USE", "APPLICATION", "USE", "PRIMARY USE / APPLICATION", "PRIMARY USE/APPLICATION",
+        "WHAT IS IT USED FOR",
+    )
     signal_col = _col("SIGNAL WORD", "SIGNAL")
     un_col = _col("UN NO", "UN NUMBER", "UN #", "UN#", "UN NO.")
-    risk_col = _col(
-        "RISK ASSESSMENT", "RISK ASSESS", "RISK ASSESSMENT REQUIRED",
-        "RISK ASSESSMENT Y/N", "RISK ASSESSMENT (Y/N)", "RA REQUIRED",
-        "REQUIRES RISK ASSESSMENT", "RISK ASSESSMENT REQUIRED?", "RA",
+    risk_col = (
+        _col(
+            "RISK ASSESSMENT", "RISK ASSESS", "RISK ASSESSMENT REQUIRED",
+            "RISK ASSESSMENT Y/N", "RISK ASSESSMENT (Y/N)", "RA REQUIRED",
+            "REQUIRES RISK ASSESSMENT", "RISK ASSESSMENT REQUIRED?", "RA",
+            "RISK ASSESSMENT AVAILABLE (YES/NO) LOCATED BEHIND MSDS",
+            "RISK ASSESSMENT AVAILABLE",
+        )
+        or _col_contains("RISK ASSESSMENT")
     )
-    expiry_col = _col("SDS REVIEW DATE", "SDS EXPIRY", "SDS REVIEW", "REVIEW DATE", "EXPIRY DATE")
+    expiry_col = _col(
+        "SDS REVIEW DATE", "SDS EXPIRY", "SDS REVIEW", "REVIEW DATE", "EXPIRY DATE",
+        "SDS EXPIRY DATE",
+    )
 
     records: list[dict[str, Any]] = []
     for _, row in df.iterrows():
-        code = str(row.get("PRODUCT CODE", "")).strip()
+        code = str(row.get(code_col, "")).strip()
         if not code or code == "nan":
+            continue
+        # Skip section-divider rows (e.g. "Smart Clean Range") — product codes have no spaces
+        if " " in code:
             continue
 
         risk_val = str(row.get(risk_col, "") if risk_col else "").strip().upper()
