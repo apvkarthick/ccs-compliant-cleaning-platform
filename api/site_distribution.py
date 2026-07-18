@@ -184,9 +184,13 @@ def fetch_product_metadata(stock_codes: list[str]) -> dict[str, dict]:
         "signal_word,un_number,risk_assessment_required,sds_expiry"
     )
 
+    def _in_filter(codes: list[str] | set[str]) -> str:
+        """Build a PostgREST in.() value list with each code double-quoted to handle special chars."""
+        quoted = ",".join(f'"{c}"' for c in codes)
+        return f"in.({quoted})"
+
     # Direct lookup
-    codes_csv = ",".join(stock_codes)
-    rows = _sb_get("ccs_sds_links", f"select={_FIELDS}&stock_code=in.({codes_csv})")
+    rows = _sb_get("ccs_sds_links", f"select={_FIELDS}&stock_code={_in_filter(stock_codes)}")
     result: dict[str, dict] = {r["stock_code"]: r for r in rows if r.get("product_name")}
 
     missing = [c for c in stock_codes if c not in result]
@@ -209,8 +213,7 @@ def fetch_product_metadata(stock_codes: list[str]) -> dict[str, dict]:
                 alt_needed.add(alt)
 
     if alt_needed:
-        alt_csv = ",".join(alt_needed)
-        alt_rows = _sb_get("ccs_sds_links", f"select={_FIELDS}&stock_code=in.({alt_csv})")
+        alt_rows = _sb_get("ccs_sds_links", f"select={_FIELDS}&stock_code={_in_filter(alt_needed)}")
         alt_meta: dict[str, dict] = {r["stock_code"]: r for r in alt_rows if r.get("product_name")}
 
         for code in missing:
