@@ -468,7 +468,7 @@ def site_distribution_report(_auth: dict = Depends(require_auth)):
         "Would Send?", "Skip Reason",
         "Product Code", "Product Name", "Hazard Classification",
         "Primary Use", "Signal Word", "UN No.", "Risk Assessment Required", "SDS Expiry",
-        "SDS URL", "Risk URL", "Doc Status",
+        "SDS URL", "SDS Status", "Risk URL", "Risk Status",
     ])
 
     for site in all_sites:
@@ -495,14 +495,23 @@ def site_distribution_report(_auth: dict = Depends(require_auth)):
 
         if not stockcodes:
             w.writerow([accno, site_name, ho_name, emails_str, would_send, skip_reason or "no products",
-                        "", "", "", "", "", "", "", "", "", "", ""])
+                        "", "", "", "", "", "", "", "", "", "", "", ""])
             continue
 
         for code in stockcodes:
             # Metadata: direct hit or group fallback (related → primary)
             m = meta_map.get(code) or meta_map.get(group_fallback.get(code, ""), {})
             doc = docs_map.get(code)
-            doc_status = "matched" if doc else "skipped — no SDS/Risk link"
+            sds_url = doc.get("sds_url") if doc else ""
+            risk_url = doc.get("risk_url") if doc else ""
+            risk_req = m.get("risk_assessment_required")
+            sds_status = "matched" if sds_url else "skipped — no SDS link"
+            if not risk_req:
+                risk_status = "not required"
+            elif risk_url:
+                risk_status = "matched"
+            else:
+                risk_status = "skipped — no risk link"
             w.writerow([
                 accno, site_name, ho_name, emails_str, would_send, skip_reason,
                 code,
@@ -513,9 +522,8 @@ def site_distribution_report(_auth: dict = Depends(require_auth)):
                 m.get("un_number") or "",
                 "YES" if m.get("risk_assessment_required") else "NO",
                 m.get("sds_expiry") or "",
-                doc.get("sds_url") if doc else "",
-                doc.get("risk_url") if doc else "",
-                doc_status,
+                sds_url, sds_status,
+                risk_url, risk_status,
             ])
 
     from fastapi.responses import Response
