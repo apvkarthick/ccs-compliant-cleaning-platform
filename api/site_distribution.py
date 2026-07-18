@@ -386,22 +386,26 @@ def _sb_delete(table: str, filter_param: str) -> None:
 # ---------------------------------------------------------------------------
 
 def import_mapping(
-    mapping_bytes: bytes,
-    sds_bytes: bytes,
-    risk_bytes: bytes,
+    mapping_bytes: bytes | None = None,
+    sds_bytes: bytes | None = None,
+    risk_bytes: bytes | None = None,
     grouping_bytes: bytes | None = None,
     register_bytes: bytes | None = None,
 ) -> dict[str, int]:
     now = _now()
 
-    sites = parse_mapping_excel(mapping_bytes)
-    links = parse_sds_links(sds_bytes, risk_bytes)
+    sites: list[dict] = []
+    if mapping_bytes:
+        sites = parse_mapping_excel(mapping_bytes)
+        _sb_post_batch("ccs_site_mapping", [{**s, "imported_at": now} for s in sites])
 
-    _sb_post_batch("ccs_site_mapping", [{**s, "imported_at": now} for s in sites])
-    _sb_post_batch(
-        "ccs_sds_links",
-        [{**lnk, "imported_at": now} for lnk in links if lnk.get("sds_url") or lnk.get("risk_url")],
-    )
+    links: list[dict] = []
+    if sds_bytes or risk_bytes:
+        links = parse_sds_links(sds_bytes or b"", risk_bytes or b"")
+        _sb_post_batch(
+            "ccs_sds_links",
+            [{**lnk, "imported_at": now} for lnk in links if lnk.get("sds_url") or lnk.get("risk_url")],
+        )
 
     group_count = 0
     if grouping_bytes:

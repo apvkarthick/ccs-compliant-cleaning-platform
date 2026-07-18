@@ -365,16 +365,18 @@ def site_distribution_list(
 
 @app.post("/site-distribution/import")
 async def import_site_mapping(
-    mapping: UploadFile = File(..., description="email-product-mapping.xlsx"),
-    sds: UploadFile = File(..., description="sds-pdf-link.xlsx"),
-    risk: UploadFile = File(..., description="risk-pdf-link.xlsx"),
-    grouping: UploadFile | None = File(default=None, description="product-grouping.xlsx (optional)"),
-    register: UploadFile | None = File(default=None, description="Chemical Register Title Sheet.xlsx (optional)"),
+    mapping: UploadFile | None = File(default=None, description="Customer–product code mapping xlsx"),
+    sds: UploadFile | None = File(default=None, description="SDS PDF links xlsx"),
+    risk: UploadFile | None = File(default=None, description="Risk assessment PDF links xlsx"),
+    grouping: UploadFile | None = File(default=None, description="Product grouping / size variants xlsx"),
+    register: UploadFile | None = File(default=None, description="Chemical Register Title Sheet xlsx"),
     _auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
-    mapping_bytes = await mapping.read()
-    sds_bytes = await sds.read()
-    risk_bytes = await risk.read()
+    if not any([mapping, sds, risk, grouping, register]):
+        raise HTTPException(status_code=400, detail="Upload at least one file.")
+    mapping_bytes = await mapping.read() if mapping else None
+    sds_bytes = await sds.read() if sds else None
+    risk_bytes = await risk.read() if risk else None
     grouping_bytes = await grouping.read() if grouping else None
     register_bytes = await register.read() if register else None
     return import_mapping(mapping_bytes, sds_bytes, risk_bytes, grouping_bytes, register_bytes)

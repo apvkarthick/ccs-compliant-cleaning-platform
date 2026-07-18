@@ -953,12 +953,15 @@ function SiteDistribution() {
 
   async function handleImport(e) {
     e.preventDefault();
-    if (!mappingFile || !sdsFile || !riskFile) { setError('Select mapping, SDS, and risk files.'); return; }
+    if (!mappingFile && !sdsFile && !riskFile && !groupingFile && !registerFile) {
+      setError('Select at least one file to import.');
+      return;
+    }
     setImporting(true); setError(''); setNotice('');
     const form = new FormData();
-    form.append('mapping', mappingFile);
-    form.append('sds', sdsFile);
-    form.append('risk', riskFile);
+    if (mappingFile) form.append('mapping', mappingFile);
+    if (sdsFile) form.append('sds', sdsFile);
+    if (riskFile) form.append('risk', riskFile);
     if (groupingFile) form.append('grouping', groupingFile);
     if (registerFile) form.append('register', registerFile);
     try {
@@ -1121,11 +1124,11 @@ function SiteDistribution() {
           <form onSubmit={handleImport} className="upload-box">
             <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Import mapping files</label>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <label style={{ fontSize: 12, color: '#445' }}>Customer–Product Code Mapping (required)</label>
+              <label style={{ fontSize: 12, color: '#445' }}>Customer–Product Code Mapping</label>
               <input type="file" accept=".xlsx" onChange={e => setMappingFile(e.target.files?.[0] || null)} />
-              <label style={{ fontSize: 12, color: '#445' }}>SDS links (required)</label>
+              <label style={{ fontSize: 12, color: '#445' }}>SDS links</label>
               <input type="file" accept=".xlsx" onChange={e => setSdsFile(e.target.files?.[0] || null)} />
-              <label style={{ fontSize: 12, color: '#445' }}>Risk links (required)</label>
+              <label style={{ fontSize: 12, color: '#445' }}>Risk links</label>
               <input type="file" accept=".xlsx" onChange={e => setRiskFile(e.target.files?.[0] || null)} />
               <label style={{ fontSize: 12, color: '#445' }}>Product grouping (optional)</label>
               <input type="file" accept=".xlsx" onChange={e => setGroupingFile(e.target.files?.[0] || null)} />
