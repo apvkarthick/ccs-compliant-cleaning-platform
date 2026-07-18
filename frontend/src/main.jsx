@@ -1448,7 +1448,7 @@ function DataManagement() {
   const [history, setHistory] = useState(null);
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [clearConfirm, setClearConfirm] = useState(false);
+  const [clearConfirm, setClearConfirm] = useState(false);  // 'all' | table key | false
   const [clearing, setClearing] = useState(false);
   const [clearResult, setClearResult] = useState('');
 
@@ -1467,18 +1467,18 @@ function DataManagement() {
 
   useEffect(() => { loadAll(); }, []);
 
-  async function handleClearAll() {
+  async function handleClear(tables, label) {
     setClearing(true);
     setClearResult('');
     try {
       const r = await fetch(`${API_BASE}/site-distribution/data`, {
         method: 'DELETE',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tables: ['ccs_site_mapping', 'ccs_sds_links', 'ccs_stock_groups', 'ccs_site_exclusions', 'ccs_site_holds'] }),
+        body: JSON.stringify({ tables }),
       });
       if (r.ok) {
         setClearConfirm(false);
-        setClearResult('All data cleared. Re-upload mapping files to repopulate.');
+        setClearResult(`${label} cleared. Re-upload to repopulate.`);
         loadAll();
       } else {
         setClearResult('Clear failed — check console.');
@@ -1514,24 +1514,75 @@ function DataManagement() {
 
         {/* Current DB state */}
         <div style={{ marginBottom: 32 }}>
-          <h2 style={{ fontSize: 14, fontWeight: 700, color: '#17202a', marginBottom: 12 }}>Current database state</h2>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            {status && [
-              { key: 'ccs_site_mapping', label: 'Sites' },
-              { key: 'ccs_sds_links', label: 'SDS / Risk links' },
-              { key: 'ccs_stock_groups', label: 'Stock groups' },
-            ].map(({ key, label }) => {
-              const row = status[key] || {};
-              return (
-                <div key={key} style={{ background: '#fff', border: '1px solid #e2eaef', borderRadius: 8, padding: '14px 20px', minWidth: 160 }}>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: row.count > 0 ? '#2C6B33' : '#aaa' }}>{row.count ?? 0}</div>
-                  <div style={{ fontSize: 12, color: '#607080', marginTop: 2 }}>{label}</div>
-                  <div style={{ fontSize: 10, color: '#9aabb8', marginTop: 4 }}>Last: {fmtTs(row.last_import)}</div>
-                </div>
-              );
-            })}
-            {!status && !loading && <p style={{ color: '#607080', fontSize: 13 }}>No data yet — upload mapping files on the Sites page.</p>}
-          </div>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: '#17202a', marginBottom: 4 }}>Current database state</h2>
+          <p style={{ fontSize: 12, color: '#607080', marginBottom: 12 }}>Clear a specific table if you uploaded the wrong file — other tables are unaffected.</p>
+          {clearResult && (
+            <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 6, padding: '8px 12px', fontSize: 12, color: '#166534', marginBottom: 12 }}>
+              {clearResult}
+            </div>
+          )}
+          {!status && !loading && <p style={{ color: '#607080', fontSize: 13 }}>No data yet — upload mapping files on the Sites page.</p>}
+          {status && (() => {
+            const TABLES = [
+              { key: 'ccs_site_mapping', label: 'Customer–Product Mapping', file: 'Mapping file', also: [] },
+              { key: 'ccs_sds_links', label: 'SDS / Risk links + Register metadata', file: 'SDS links, Risk links, Chemical Register', also: [] },
+              { key: 'ccs_stock_groups', label: 'Product grouping (size variants)', file: 'Product grouping file', also: [] },
+            ];
+            return (
+              <div style={{ background: '#fff', border: '1px solid #e2eaef', borderRadius: 8, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead style={{ background: '#f8fafc' }}>
+                    <tr>
+                      <th style={th}>Table</th>
+                      <th style={th}>Populated by</th>
+                      <th style={{ ...th, textAlign: 'right' }}>Records</th>
+                      <th style={{ ...th, textAlign: 'right' }}>Last import</th>
+                      <th style={{ ...th, textAlign: 'center' }}>Clear</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {TABLES.map(({ key, label, file }) => {
+                      const row = status[key] || {};
+                      const isConfirming = clearConfirm === key;
+                      return (
+                        <tr key={key}>
+                          <td style={td}>
+                            <div style={{ fontWeight: 600, fontSize: 13 }}>{label}</div>
+                            <div style={{ fontSize: 10, color: '#9aabb8', fontFamily: 'monospace' }}>{key}</div>
+                          </td>
+                          <td style={{ ...td, fontSize: 11, color: '#607080' }}>{file}</td>
+                          <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: row.count > 0 ? '#2C6B33' : '#aaa' }}>{row.count ?? 0}</td>
+                          <td style={{ ...td, textAlign: 'right', fontSize: 11, color: '#607080' }}>{fmtTs(row.last_import)}</td>
+                          <td style={{ ...td, textAlign: 'center' }}>
+                            {!isConfirming ? (
+                              <button
+                                style={{ background: 'none', color: '#c0392b', border: '1px solid #e74c3c', borderRadius: 5, padding: '4px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+                                onClick={() => setClearConfirm(key)}
+                                disabled={clearing || row.count === 0}
+                              >
+                                Clear
+                              </button>
+                            ) : (
+                              <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                                <button className="btn-ghost" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => setClearConfirm(false)}>Cancel</button>
+                                <button
+                                  style={{ background: '#c0392b', color: '#fff', border: 'none', borderRadius: 5, padding: '3px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                                  disabled={clearing}
+                                  onClick={() => handleClear([key], label)}
+                                >
+                                  {clearing ? '…' : 'Confirm'}
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Import history */}
@@ -1591,15 +1642,10 @@ function DataManagement() {
             Deletes all sites, SDS links, stock groups, holds, and exclusions. Import history is preserved.
             Use this before a full re-import to avoid stale records from previous files.
           </p>
-          {clearResult && (
-            <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 6, padding: '8px 12px', fontSize: 12, color: '#166534', marginBottom: 12 }}>
-              {clearResult}
-            </div>
-          )}
-          {!clearConfirm ? (
+          {clearConfirm !== 'all' ? (
             <button
               style={{ background: '#fff', color: '#c0392b', border: '1.5px solid #e74c3c', borderRadius: 6, padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-              onClick={() => setClearConfirm(true)}
+              onClick={() => setClearConfirm('all')}
             >
               Clear all imported data
             </button>
@@ -1610,7 +1656,7 @@ function DataManagement() {
               <button
                 style={{ background: '#c0392b', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
                 disabled={clearing}
-                onClick={handleClearAll}
+                onClick={() => handleClear(['ccs_site_mapping', 'ccs_sds_links', 'ccs_stock_groups', 'ccs_site_exclusions', 'ccs_site_holds'], 'All data')}
               >
                 {clearing ? 'Clearing…' : 'Yes, clear all'}
               </button>
