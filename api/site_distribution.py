@@ -67,30 +67,33 @@ def parse_mapping_excel(data: bytes) -> list[dict[str, Any]]:
     return sites
 
 
-def parse_sds_links(sds_data: bytes, risk_data: bytes) -> list[dict[str, Any]]:
-    """Parse SDS URL file + Risk URL file → merged list of {stock_code, sds_url, risk_url}."""
+def parse_sds_links(sds_data: bytes | None = None, risk_data: bytes | None = None) -> list[dict[str, Any]]:
+    """Parse SDS URL file + Risk URL file → merged list of {stock_code, sds_url, risk_url}.
+    Either argument may be None or empty — only non-empty files are parsed."""
     sds_map: dict[str, str] = {}
     risk_map: dict[str, str] = {}
 
-    df_sds = pd.read_excel(io.BytesIO(sds_data), header=None, dtype=str)
-    for url in df_sds[0]:
-        url = str(url).strip()
-        if not url or url == "nan":
-            continue
-        fname = url.split("/")[-1]
-        m = re.match(r"([A-Z0-9]+)_", fname)
-        if m:
-            sds_map[m.group(1)] = url
+    if sds_data:
+        df_sds = pd.read_excel(io.BytesIO(sds_data), header=None, dtype=str)
+        for url in df_sds[0]:
+            url = str(url).strip()
+            if not url or url == "nan":
+                continue
+            fname = url.split("/")[-1]
+            m = re.match(r"([A-Z0-9]+)_", fname)
+            if m:
+                sds_map[m.group(1)] = url
 
-    df_risk = pd.read_excel(io.BytesIO(risk_data), header=None, dtype=str)
-    for url in df_risk[0]:
-        url = str(url).strip()
-        if not url or url == "nan":
-            continue
-        fname = url.split("/")[-1]
-        m = re.match(r"RISK_([A-Z0-9]+)_", fname)
-        if m:
-            risk_map[m.group(1)] = url
+    if risk_data:
+        df_risk = pd.read_excel(io.BytesIO(risk_data), header=None, dtype=str)
+        for url in df_risk[0]:
+            url = str(url).strip()
+            if not url or url == "nan":
+                continue
+            fname = url.split("/")[-1]
+            m = re.match(r"RISK_([A-Z0-9]+)_", fname)
+            if m:
+                risk_map[m.group(1)] = url
 
     all_codes = sorted(set(sds_map) | set(risk_map))
     return [
@@ -127,7 +130,11 @@ def parse_chemical_register(data: bytes) -> list[dict[str, Any]]:
     use_col = _col("PRIMARY USE", "APPLICATION", "USE", "PRIMARY USE / APPLICATION", "PRIMARY USE/APPLICATION")
     signal_col = _col("SIGNAL WORD", "SIGNAL")
     un_col = _col("UN NO", "UN NUMBER", "UN #", "UN#", "UN NO.")
-    risk_col = _col("RISK ASSESSMENT", "RISK ASSESS", "RISK ASSESSMENT REQUIRED")
+    risk_col = _col(
+        "RISK ASSESSMENT", "RISK ASSESS", "RISK ASSESSMENT REQUIRED",
+        "RISK ASSESSMENT Y/N", "RISK ASSESSMENT (Y/N)", "RA REQUIRED",
+        "REQUIRES RISK ASSESSMENT", "RISK ASSESSMENT REQUIRED?", "RA",
+    )
     expiry_col = _col("SDS REVIEW DATE", "SDS EXPIRY", "SDS REVIEW", "REVIEW DATE", "EXPIRY DATE")
 
     records: list[dict[str, Any]] = []
@@ -136,7 +143,8 @@ def parse_chemical_register(data: bytes) -> list[dict[str, Any]]:
         if not code or code == "nan":
             continue
 
-        risk_required = str(row.get(risk_col, "") if risk_col else "").strip().upper() == "YES"
+        risk_val = str(row.get(risk_col, "") if risk_col else "").strip().upper()
+        risk_required = risk_val in ("YES", "Y", "TRUE", "1", "X")
 
         raw_expiry = str(row.get(expiry_col, "") if expiry_col else "").strip()
         sds_expiry = None
@@ -404,7 +412,7 @@ def import_mapping(
 
     links: list[dict] = []
     if sds_bytes or risk_bytes:
-        links = parse_sds_links(sds_bytes or b"", risk_bytes or b"")
+        links = parse_sds_links(sds_bytes, risk_bytes)
         _sb_post_batch(
             "ccs_sds_links",
             [{**lnk, "imported_at": now} for lnk in links if lnk.get("sds_url") or lnk.get("risk_url")],
