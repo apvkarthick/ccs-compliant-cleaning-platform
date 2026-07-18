@@ -27,6 +27,7 @@ from .excel_parser import list_source_documents, parse_client_workbook
 from .site_distribution import (
     clear_table_data,
     exclude_site,
+    get_import_history,
     get_import_status,
     get_stats,
     hold_site,
@@ -416,6 +417,14 @@ def unhold_site_endpoint(
 @app.get("/site-distribution/import-status")
 def import_status_endpoint(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
     return get_import_status()
+
+
+@app.get("/site-distribution/import-history")
+def import_history_endpoint(
+    limit: int = Query(default=10, le=50),
+    _auth: dict = Depends(require_auth),
+) -> list[dict[str, Any]]:
+    return get_import_history(limit)
 
 
 class ClearDataRequest(BaseModel):

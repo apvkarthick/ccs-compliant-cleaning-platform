@@ -428,7 +428,28 @@ def import_mapping(
         _sb_post_batch("ccs_sds_links", list(deduped.values()))
         register_count = len(deduped)
 
+    # Record import event — ignore failure so it doesn't block the import response
+    try:
+        _sb_post_batch("ccs_import_history", [{
+            "imported_at": now,
+            "sites_count": len(sites),
+            "sds_links_count": len(links),
+            "groups_count": group_count,
+            "register_count": register_count,
+        }])
+    except Exception:
+        pass
+
     return {"sites": len(sites), "links": len(links), "groups": group_count, "register": register_count}
+
+
+def get_import_history(limit: int = 10) -> list[dict[str, Any]]:
+    """Return the most recent import events for the Data Management page."""
+    rows = _sb_get("ccs_import_history", f"select=*&order=imported_at.desc&limit={limit}")
+    # Mark the most recent as active, rest as superseded
+    for i, row in enumerate(rows):
+        row["status"] = "active" if i == 0 else "superseded"
+    return rows
 
 
 # ---------------------------------------------------------------------------

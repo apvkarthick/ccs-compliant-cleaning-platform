@@ -128,11 +128,19 @@ function App({ session }) {
     if (window.location.pathname === '/pdf-opens') return 'pdf-opens';
     if (window.location.pathname === '/library') return 'library';
     if (window.location.pathname === '/sites') return 'sites';
+    if (window.location.pathname === '/data-management') return 'data-management';
     return 'distribution';
   });
 
   function switchTab(tab) {
-    const paths = { 'email-opens': '/email-opens', 'pdf-opens': '/pdf-opens', 'distribution': '/app', 'library': '/library', 'sites': '/sites' };
+    const paths = {
+      'email-opens': '/email-opens',
+      'pdf-opens': '/pdf-opens',
+      'distribution': '/app',
+      'library': '/library',
+      'sites': '/sites',
+      'data-management': '/data-management',
+    };
     history.pushState(null, '', paths[tab] || '/app');
     setActiveTab(tab);
   }
@@ -147,6 +155,7 @@ function App({ session }) {
         <button className={`tab ${activeTab === 'sites' ? 'active' : ''}`} onClick={() => switchTab('sites')}>Sites</button>
         <button className={`tab ${activeTab === 'email-opens' ? 'active' : ''}`} onClick={() => switchTab('email-opens')}>Email Opens</button>
         <button className={`tab ${activeTab === 'library' ? 'active' : ''}`} onClick={() => switchTab('library')}><BookOpen size={13} style={{marginRight:4,verticalAlign:'middle'}}/>Doc Library</button>
+        <button className={`tab ${activeTab === 'data-management' ? 'active' : ''}`} onClick={() => switchTab('data-management')}>Data</button>
         <a className="tab" href="/rebrand">Rebrand SDS</a>
         <button className="tab tab-signout" onClick={handleSignOut} title="Sign out">
           <LogOut size={14} />
@@ -157,6 +166,7 @@ function App({ session }) {
       {activeTab === 'email-opens' && <EmailOpensDashboard />}
       {activeTab === 'pdf-opens' && <PdfOpensDashboard />}
       {activeTab === 'library' && <DocumentLibrary />}
+      {activeTab === 'data-management' && <DataManagement />}
     </main>
   );
 }
@@ -1143,70 +1153,6 @@ function SiteDistribution() {
             </a>
           </div>
 
-          {/* Data management */}
-          <div className="contact-box" style={{ marginTop: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Data management</label>
-              <button className="btn-ghost" style={{ fontSize: 11 }} onClick={loadImportStatus}>Refresh</button>
-            </div>
-            <p style={{ fontSize: 11, color: '#607080', marginTop: 4, marginBottom: 8, lineHeight: 1.5 }}>
-              New uploads update matching records by account/stock code — records <em>not</em> in the new file are kept. To start fresh, clear data first.
-            </p>
-            {importStatus && (
-              <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse', marginBottom: 10 }}>
-                <thead>
-                  <tr style={{ color: '#607080' }}>
-                    <th style={{ textAlign: 'left', paddingBottom: 4, fontWeight: 600 }}>Table</th>
-                    <th style={{ textAlign: 'right', paddingBottom: 4, fontWeight: 600 }}>Records</th>
-                    <th style={{ textAlign: 'right', paddingBottom: 4, fontWeight: 600 }}>Last import</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    { key: 'ccs_site_mapping', label: 'Sites' },
-                    { key: 'ccs_sds_links', label: 'SDS / Risk links' },
-                    { key: 'ccs_stock_groups', label: 'Stock groups' },
-                  ].map(({ key, label }) => {
-                    const row = importStatus[key] || {};
-                    const ts = row.last_import ? new Date(row.last_import).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
-                    return (
-                      <tr key={key} style={{ borderTop: '1px solid #e2eaef' }}>
-                        <td style={{ padding: '4px 0', color: '#17202a' }}>{label}</td>
-                        <td style={{ textAlign: 'right', color: row.count > 0 ? '#2C6B33' : '#607080', fontWeight: 600 }}>{row.count ?? '—'}</td>
-                        <td style={{ textAlign: 'right', color: '#607080' }}>{ts}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-            {!clearConfirm ? (
-              <button
-                className="btn-ghost"
-                style={{ fontSize: 12, color: '#c0392b', borderColor: '#c0392b', width: '100%' }}
-                onClick={() => { loadImportStatus(); setClearConfirm(true); }}
-              >
-                Clear all imported data
-              </button>
-            ) : (
-              <div style={{ background: '#fff5f5', border: '1px solid #e74c3c', borderRadius: 6, padding: 10 }}>
-                <p style={{ fontSize: 11, color: '#c0392b', marginBottom: 8, fontWeight: 600 }}>
-                  This deletes all sites, SDS links, stock groups, holds, and exclusions. Cannot be undone.
-                </p>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="btn-ghost" style={{ fontSize: 11, flex: 1 }} onClick={() => setClearConfirm(false)}>Cancel</button>
-                  <button
-                    style={{ flex: 1, background: '#c0392b', color: '#fff', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: '6px 0' }}
-                    disabled={clearing}
-                    onClick={handleClearData}
-                  >
-                    {clearing ? 'Clearing…' : 'Yes, clear all'}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Test contact box */}
           <div className="contact-box" style={{ marginTop: 16 }}>
             <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Test contact</label>
@@ -1479,6 +1425,188 @@ function Pill({ label, value, ok, warn }) {
       <div style={{ fontSize: 22, fontWeight: 700, color }}>{value ?? 0}</div>
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{label}</div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Data Management page  /data-management
+// ---------------------------------------------------------------------------
+
+function DataManagement() {
+  const [history, setHistory] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [clearConfirm, setClearConfirm] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [clearResult, setClearResult] = useState('');
+
+  async function loadAll() {
+    setLoading(true);
+    try {
+      const [hRes, sRes] = await Promise.all([
+        fetch(`${API_BASE}/site-distribution/import-history?limit=10`, { headers: getAuthHeaders() }),
+        fetch(`${API_BASE}/site-distribution/import-status`, { headers: getAuthHeaders() }),
+      ]);
+      if (hRes.ok) setHistory(await hRes.json());
+      if (sRes.ok) setStatus(await sRes.json());
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { loadAll(); }, []);
+
+  async function handleClearAll() {
+    setClearing(true);
+    setClearResult('');
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/data`, {
+        method: 'DELETE',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tables: ['ccs_site_mapping', 'ccs_sds_links', 'ccs_stock_groups', 'ccs_site_exclusions', 'ccs_site_holds'] }),
+      });
+      if (r.ok) {
+        setClearConfirm(false);
+        setClearResult('All data cleared. Re-upload mapping files to repopulate.');
+        loadAll();
+      } else {
+        setClearResult('Clear failed — check console.');
+      }
+    } catch (err) { setClearResult(`Error: ${err.message}`); }
+    finally { setClearing(false); }
+  }
+
+  function fmtTs(ts) {
+    if (!ts) return '—';
+    return new Date(ts).toLocaleString('en-AU', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: true,
+    });
+  }
+
+  const th = { fontSize: 11, fontWeight: 700, color: '#667789', textTransform: 'uppercase', letterSpacing: 0.5, padding: '8px 12px', borderBottom: '2px solid #e2eaef', textAlign: 'left', whiteSpace: 'nowrap' };
+  const td = { fontSize: 13, padding: '10px 12px', borderBottom: '1px solid #f0f4f8', verticalAlign: 'middle' };
+
+  return (
+    <section className="workbench">
+      <div className="topbar">
+        <div>
+          <p className="eyebrow">Compliant Cleaning Supplies</p>
+          <h1>Data Management</h1>
+        </div>
+        <button className="btn-ghost" onClick={loadAll} disabled={loading} style={{ fontSize: 13 }}>
+          {loading ? 'Loading…' : 'Refresh'}
+        </button>
+      </div>
+
+      <div style={{ maxWidth: 900, padding: '0 24px 40px' }}>
+
+        {/* Current DB state */}
+        <div style={{ marginBottom: 32 }}>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: '#17202a', marginBottom: 12 }}>Current database state</h2>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {status && [
+              { key: 'ccs_site_mapping', label: 'Sites' },
+              { key: 'ccs_sds_links', label: 'SDS / Risk links' },
+              { key: 'ccs_stock_groups', label: 'Stock groups' },
+            ].map(({ key, label }) => {
+              const row = status[key] || {};
+              return (
+                <div key={key} style={{ background: '#fff', border: '1px solid #e2eaef', borderRadius: 8, padding: '14px 20px', minWidth: 160 }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: row.count > 0 ? '#2C6B33' : '#aaa' }}>{row.count ?? 0}</div>
+                  <div style={{ fontSize: 12, color: '#607080', marginTop: 2 }}>{label}</div>
+                  <div style={{ fontSize: 10, color: '#9aabb8', marginTop: 4 }}>Last: {fmtTs(row.last_import)}</div>
+                </div>
+              );
+            })}
+            {!status && !loading && <p style={{ color: '#607080', fontSize: 13 }}>No data yet — upload mapping files on the Sites page.</p>}
+          </div>
+        </div>
+
+        {/* Import history */}
+        <div style={{ marginBottom: 32 }}>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: '#17202a', marginBottom: 4 }}>Import history (last 10)</h2>
+          <p style={{ fontSize: 12, color: '#607080', marginBottom: 12 }}>
+            Each upload updates matching records by account / stock code. Records not in the new file are kept — the active import is the most recent one.
+          </p>
+          {loading && <p style={{ color: '#607080', fontSize: 13 }}>Loading…</p>}
+          {!loading && (!history || history.length === 0) && (
+            <p style={{ color: '#607080', fontSize: 13 }}>No import history yet. Run migration 005 in Supabase then upload files.</p>
+          )}
+          {history && history.length > 0 && (
+            <div style={{ background: '#fff', border: '1px solid #e2eaef', borderRadius: 8, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead style={{ background: '#f8fafc' }}>
+                  <tr>
+                    <th style={th}>#</th>
+                    <th style={th}>Imported at</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Sites</th>
+                    <th style={{ ...th, textAlign: 'right' }}>SDS links</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Groups</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Register</th>
+                    <th style={{ ...th, textAlign: 'center' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((row, i) => (
+                    <tr key={row.id} style={{ background: row.status === 'active' ? '#f0fdf4' : '#fff' }}>
+                      <td style={{ ...td, color: '#9aabb8', fontSize: 11 }}>{row.id}</td>
+                      <td style={{ ...td, fontWeight: row.status === 'active' ? 700 : 400 }}>{fmtTs(row.imported_at)}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>{row.sites_count}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>{row.sds_links_count}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>{row.groups_count}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>{row.register_count}</td>
+                      <td style={{ ...td, textAlign: 'center' }}>
+                        <span style={{
+                          display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+                          background: row.status === 'active' ? '#d1fae5' : '#f3f4f6',
+                          color: row.status === 'active' ? '#065f46' : '#6b7280',
+                        }}>
+                          {row.status === 'active' ? 'Active' : 'Superseded'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Clear all */}
+        <div style={{ background: '#fff', border: '1px solid #fca5a5', borderRadius: 8, padding: 20 }}>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: '#991b1b', marginBottom: 6 }}>Clear all imported data</h2>
+          <p style={{ fontSize: 12, color: '#607080', marginBottom: 14 }}>
+            Deletes all sites, SDS links, stock groups, holds, and exclusions. Import history is preserved.
+            Use this before a full re-import to avoid stale records from previous files.
+          </p>
+          {clearResult && (
+            <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 6, padding: '8px 12px', fontSize: 12, color: '#166534', marginBottom: 12 }}>
+              {clearResult}
+            </div>
+          )}
+          {!clearConfirm ? (
+            <button
+              style={{ background: '#fff', color: '#c0392b', border: '1.5px solid #e74c3c', borderRadius: 6, padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              onClick={() => setClearConfirm(true)}
+            >
+              Clear all imported data
+            </button>
+          ) : (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: '#c0392b', fontWeight: 600 }}>Are you sure? This cannot be undone.</span>
+              <button className="btn-ghost" onClick={() => setClearConfirm(false)}>Cancel</button>
+              <button
+                style={{ background: '#c0392b', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+                disabled={clearing}
+                onClick={handleClearAll}
+              >
+                {clearing ? 'Clearing…' : 'Yes, clear all'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
