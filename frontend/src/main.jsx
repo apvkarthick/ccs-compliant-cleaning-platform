@@ -894,6 +894,11 @@ function SiteDistribution() {
   const [previewData, setPreviewData] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
+  // Data management
+  const [importStatus, setImportStatus] = useState(null);
+  const [clearConfirm, setClearConfirm] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
   const PAGE_SIZE = 50;
 
   async function loadStats() {
@@ -1043,6 +1048,31 @@ function SiteDistribution() {
     }
   }
 
+  async function loadImportStatus() {
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/import-status`, { headers: getAuthHeaders() });
+      if (r.ok) setImportStatus(await r.json());
+    } catch { /* ignore */ }
+  }
+
+  async function handleClearData() {
+    setClearing(true);
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/data`, {
+        method: 'DELETE',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tables: ['ccs_site_mapping', 'ccs_sds_links', 'ccs_stock_groups', 'ccs_site_exclusions', 'ccs_site_holds'] }),
+      });
+      if (r.ok) {
+        setClearConfirm(false);
+        setImportStatus(null);
+        loadStats();
+        loadSites();
+      }
+    } catch { /* ignore */ }
+    finally { setClearing(false); }
+  }
+
   async function handleSend() {
     setSending(true); setError(''); setTaskStatus(null);
     try {
@@ -1111,6 +1141,70 @@ function SiteDistribution() {
             >
               <Download size={15} style={{ marginRight: 6 }} />Download report
             </a>
+          </div>
+
+          {/* Data management */}
+          <div className="contact-box" style={{ marginTop: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Data management</label>
+              <button className="btn-ghost" style={{ fontSize: 11 }} onClick={loadImportStatus}>Refresh</button>
+            </div>
+            <p style={{ fontSize: 11, color: '#607080', marginTop: 4, marginBottom: 8, lineHeight: 1.5 }}>
+              New uploads update matching records by account/stock code — records <em>not</em> in the new file are kept. To start fresh, clear data first.
+            </p>
+            {importStatus && (
+              <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse', marginBottom: 10 }}>
+                <thead>
+                  <tr style={{ color: '#607080' }}>
+                    <th style={{ textAlign: 'left', paddingBottom: 4, fontWeight: 600 }}>Table</th>
+                    <th style={{ textAlign: 'right', paddingBottom: 4, fontWeight: 600 }}>Records</th>
+                    <th style={{ textAlign: 'right', paddingBottom: 4, fontWeight: 600 }}>Last import</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    { key: 'ccs_site_mapping', label: 'Sites' },
+                    { key: 'ccs_sds_links', label: 'SDS / Risk links' },
+                    { key: 'ccs_stock_groups', label: 'Stock groups' },
+                  ].map(({ key, label }) => {
+                    const row = importStatus[key] || {};
+                    const ts = row.last_import ? new Date(row.last_import).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+                    return (
+                      <tr key={key} style={{ borderTop: '1px solid #e2eaef' }}>
+                        <td style={{ padding: '4px 0', color: '#17202a' }}>{label}</td>
+                        <td style={{ textAlign: 'right', color: row.count > 0 ? '#2C6B33' : '#607080', fontWeight: 600 }}>{row.count ?? '—'}</td>
+                        <td style={{ textAlign: 'right', color: '#607080' }}>{ts}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+            {!clearConfirm ? (
+              <button
+                className="btn-ghost"
+                style={{ fontSize: 12, color: '#c0392b', borderColor: '#c0392b', width: '100%' }}
+                onClick={() => { loadImportStatus(); setClearConfirm(true); }}
+              >
+                Clear all imported data
+              </button>
+            ) : (
+              <div style={{ background: '#fff5f5', border: '1px solid #e74c3c', borderRadius: 6, padding: 10 }}>
+                <p style={{ fontSize: 11, color: '#c0392b', marginBottom: 8, fontWeight: 600 }}>
+                  This deletes all sites, SDS links, stock groups, holds, and exclusions. Cannot be undone.
+                </p>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="btn-ghost" style={{ fontSize: 11, flex: 1 }} onClick={() => setClearConfirm(false)}>Cancel</button>
+                  <button
+                    style={{ flex: 1, background: '#c0392b', color: '#fff', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: '6px 0' }}
+                    disabled={clearing}
+                    onClick={handleClearData}
+                  >
+                    {clearing ? 'Clearing…' : 'Yes, clear all'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Test contact box */}

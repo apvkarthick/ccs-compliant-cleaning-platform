@@ -25,7 +25,9 @@ from .distribution import (
 )
 from .excel_parser import list_source_documents, parse_client_workbook
 from .site_distribution import (
+    clear_table_data,
     exclude_site,
+    get_import_status,
     get_stats,
     hold_site,
     import_mapping,
@@ -409,6 +411,23 @@ def unhold_site_endpoint(
     _auth: dict = Depends(require_auth),
 ) -> dict[str, str]:
     return unhold_site(accno)
+
+
+@app.get("/site-distribution/import-status")
+def import_status_endpoint(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    return get_import_status()
+
+
+class ClearDataRequest(BaseModel):
+    tables: list[str]
+
+
+@app.delete("/site-distribution/data")
+def clear_data_endpoint(
+    body: ClearDataRequest,
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    return clear_table_data(body.tables)
 
 
 class PreviewEmailRequest(BaseModel):

@@ -26,26 +26,41 @@ _BATCH = 500
 # Excel parsers
 # ---------------------------------------------------------------------------
 
+def _first_val(row: Any, *candidates: str) -> str:
+    """Return first non-empty value from row matching any candidate column name (case-insensitive)."""
+    cols = {str(k).upper().strip(): v for k, v in row.items()}
+    for c in candidates:
+        v = str(cols.get(c.upper(), "")).strip()
+        if v and v != "nan":
+            return v
+    return ""
+
+
 def parse_mapping_excel(data: bytes) -> list[dict[str, Any]]:
     df = pd.read_excel(io.BytesIO(data), dtype=str)
+    # Normalise column headers to uppercase so mismatched casing never silently drops data
+    df.columns = [str(c).upper().strip() for c in df.columns]
     sites: list[dict[str, Any]] = []
     for _, row in df.iterrows():
-        accno = str(row.get("ACCNO", "")).strip()
-        if not accno or accno == "nan":
+        accno = _first_val(row, "ACCNO", "ACCOUNT_NO", "ACCOUNT", "ACC_NO", "ACCT")
+        if not accno:
             continue
-        emails = [
-            e.strip() for e in str(row.get("EMAIL") or row.get("CONT_EMAIL") or "").split(";")
-            if e.strip() and e.strip() != "nan"
-        ]
-        stockcodes = [
-            s.strip() for s in str(row.get("STOCKCODES", "")).split(",")
-            if s.strip() and s.strip() != "nan"
-        ]
+        name = _first_val(row, "NAME", "CUST_NAME", "CUSTOMER_NAME", "CUSTOMER",
+                          "SITE_NAME", "SITENAME", "ACCT_NAME", "ACCOUNT_NAME", "COMPANY")
+        ho_name = _first_val(row, "HO_NAME", "HEAD_OFFICE", "HEAD_OFFICE_NAME",
+                             "HEADOFFICE", "PARENT_NAME", "PARENT", "HO")
+        ho_accno = _first_val(row, "HO_ACCNO", "HEAD_OFFICE_ACCNO", "HO_ACCOUNT", "PARENT_ACCNO")
+        raw_email = _first_val(row, "EMAIL", "CONT_EMAIL", "CONTACT_EMAIL",
+                               "EMAIL_ADDRESS", "EMAILS", "CONT_EMAILS")
+        raw_codes = _first_val(row, "STOCKCODES", "STOCK_CODES", "PRODUCTS",
+                               "PRODUCT_CODES", "CODES", "ITEMS")
+        emails = [e.strip() for e in raw_email.split(";") if e.strip()]
+        stockcodes = [s.strip() for s in raw_codes.split(",") if s.strip()]
         sites.append({
             "accno": accno,
-            "ho_accno": str(row.get("HO_ACCNO", "")).strip(),
-            "ho_name": str(row.get("HO_NAME", "")).strip(),
-            "name": str(row.get("NAME", "")).strip(),
+            "ho_accno": ho_accno,
+            "ho_name": ho_name,
+            "name": name,
             "emails": emails,
             "stockcodes": stockcodes,
         })
@@ -453,6 +468,48 @@ def get_stats() -> dict[str, int]:
         }
     except Exception:
         return {"total_sites": 0, "excluded_sites": 0, "held_sites": 0, "active_sites": 0, "sds_links": 0}
+
+
+def get_import_status() -> dict[str, Any]:
+    """Return per-table record counts and last import timestamp for the admin data panel."""
+    _TABLE_PK = {
+        "ccs_site_mapping": "accno",
+        "ccs_sds_links": "stock_code",
+        "ccs_stock_groups": "primary_code",
+    }
+    result: dict[str, Any] = {}
+    for table, pk in _TABLE_PK.items():
+        rows_all = _sb_get(table, f"select={pk},imported_at")
+        last_ts = None
+        for r in rows_all:
+            ts = r.get("imported_at")
+            if ts and (last_ts is None or ts > last_ts):
+                last_ts = ts
+        result[table] = {"count": len(rows_all), "last_import": last_ts}
+    return result
+
+
+def clear_table_data(tables: list[str]) -> dict[str, str]:
+    """Delete all rows from the specified tables."""
+    _ALLOWED: dict[str, str] = {
+        "ccs_site_mapping": "accno",
+        "ccs_sds_links": "stock_code",
+        "ccs_stock_groups": "primary_code",
+        "ccs_site_exclusions": "accno",
+        "ccs_site_holds": "accno",
+    }
+    results: dict[str, str] = {}
+    for table in tables:
+        if table not in _ALLOWED:
+            results[table] = "skipped — not allowed"
+            continue
+        pk = _ALLOWED[table]
+        try:
+            _sb_delete(table, f"{pk}=not.is.null")
+            results[table] = "cleared"
+        except Exception as exc:
+            results[table] = f"error: {exc}"
+    return results
 
 
 def exclude_site(accno: str, name: str = "") -> dict[str, str]:
