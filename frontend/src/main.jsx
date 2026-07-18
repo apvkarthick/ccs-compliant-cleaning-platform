@@ -890,6 +890,10 @@ function SiteDistribution() {
   const [manualSending, setManualSending] = useState(false);
   const [manualResult, setManualResult] = useState('');
 
+  // Email preview
+  const [previewData, setPreviewData] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
   const PAGE_SIZE = 50;
 
   async function loadStats() {
@@ -1012,6 +1016,30 @@ function SiteDistribution() {
       setManualResult(`Error: ${err.message}`);
     } finally {
       setManualSending(false);
+    }
+  }
+
+  async function handlePreview() {
+    if (!manualSite) return;
+    setPreviewLoading(true);
+    setPreviewData(null);
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/preview-email`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accno: manualSite.accno,
+          stockcodes: [...manualCodes],
+          email: manualEmail || 'preview@example.com',
+        }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Preview failed');
+      setPreviewData(data);
+    } catch (err) {
+      setManualResult(`Error: ${err.message}`);
+    } finally {
+      setPreviewLoading(false);
     }
   }
 
@@ -1281,12 +1309,68 @@ function SiteDistribution() {
 
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button type="button" className="btn-ghost" onClick={() => setManualSite(null)}>Cancel</button>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  disabled={previewLoading || manualCodes.size === 0}
+                  onClick={handlePreview}
+                  style={{ border: '1px solid #2C6B33', color: '#2C6B33' }}
+                >
+                  {previewLoading ? 'Loading…' : 'Preview email'}
+                </button>
                 <button type="submit" className="primary" disabled={manualSending || manualCodes.size === 0}>
                   <Mail size={14} style={{ marginRight: 6 }} />
                   {manualSending ? 'Sending…' : manualDryRun ? 'Test send' : 'Send now'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Email preview overlay */}
+      {previewData && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1100,
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+          paddingTop: 40, paddingBottom: 40, overflowY: 'auto',
+        }} onClick={() => setPreviewData(null)}>
+          <div style={{
+            background: '#f3f4f6', borderRadius: 10, width: 700, maxWidth: '96vw',
+            boxShadow: '0 12px 40px rgba(0,0,0,0.25)', overflow: 'hidden',
+          }} onClick={e => e.stopPropagation()}>
+            {/* Email client chrome */}
+            <div style={{ background: '#1e2633', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>Email Preview</span>
+              <button onClick={() => setPreviewData(null)} style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+            </div>
+            {/* Email headers */}
+            <div style={{ background: '#fff', borderBottom: '1px solid #e2eaef', padding: '12px 20px', fontSize: 12, color: '#445', lineHeight: 1.8 }}>
+              <div><strong>From:</strong> Compliant Cleaning Supplies &lt;ccshub@ccsessentials.com.au&gt;</div>
+              <div><strong>To:</strong> {previewData.email}</div>
+              <div><strong>Subject:</strong> {previewData.subject}</div>
+              {previewData.register_url && (
+                <div style={{ marginTop: 6 }}>
+                  <strong>Attachment:</strong>{' '}
+                  <a href={previewData.register_url} target="_blank" rel="noreferrer"
+                    style={{ color: '#2C6B33', textDecoration: 'underline', fontSize: 12 }}>
+                    Chemical Register — {previewData.site_name}.xlsx
+                  </a>
+                  <span style={{ color: '#607080', marginLeft: 6 }}>(opens in new tab)</span>
+                </div>
+              )}
+            </div>
+            {/* Email body in iframe */}
+            <iframe
+              srcDoc={previewData.html}
+              title="Email preview"
+              style={{ width: '100%', height: 600, border: 'none', background: '#fff', display: 'block' }}
+              sandbox="allow-same-origin"
+            />
+            <div style={{ background: '#f3f4f6', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: '#607080' }}>{previewData.docs} document(s) · {previewData.site_name}</span>
+              <button className="btn-ghost" onClick={() => setPreviewData(null)} style={{ fontSize: 12 }}>Close</button>
+            </div>
           </div>
         </div>
       )}

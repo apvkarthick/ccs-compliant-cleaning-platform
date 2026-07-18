@@ -475,6 +475,43 @@ def unhold_site(accno: str) -> dict[str, str]:
     return {"unheld": accno}
 
 
+def preview_email(
+    accno: str,
+    stockcodes: list[str],
+    preview_addr: str = "preview@example.com",
+    *,
+    public_base_url: str = "",
+    tracking_secret: str = "",
+) -> dict[str, Any]:
+    """Compose full site email (incl. Chemical Register Excel) and return for preview without sending."""
+    sites = _sb_get("ccs_site_mapping", f"select=*&accno=eq.{quote(accno, safe='')}")
+    if not sites:
+        raise ValueError(f"Site {accno!r} not found")
+    site = sites[0]
+
+    use_codes = stockcodes if stockcodes else (site.get("stockcodes") or [])
+    if not use_codes:
+        raise ValueError(f"No products specified for site {accno!r}")
+
+    sds_map, risk_map, group_fallback, risk_required_set = load_lookup_maps()
+    docs = resolve_docs_for_site(use_codes, sds_map, risk_map, group_fallback, risk_required_set)
+
+    msg = compose_site_email(
+        site, docs, preview_addr,
+        batch_id="preview",
+        public_base_url=public_base_url,
+        tracking_secret=tracking_secret,
+    )
+    return {
+        "html": msg["html"],
+        "subject": msg["subject"],
+        "register_url": msg.get("register_url", ""),
+        "docs": len(docs),
+        "site_name": site.get("name", ""),
+        "email": preview_addr,
+    }
+
+
 def send_manual(
     accno: str,
     stockcodes: list[str],

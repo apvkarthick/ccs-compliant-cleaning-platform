@@ -32,6 +32,7 @@ from .site_distribution import (
     include_site,
     list_sites,
     load_lookup_maps,
+    preview_email,
     resolve_docs_for_site,
     send_manual,
     unhold_site,
@@ -408,6 +409,31 @@ def unhold_site_endpoint(
     _auth: dict = Depends(require_auth),
 ) -> dict[str, str]:
     return unhold_site(accno)
+
+
+class PreviewEmailRequest(BaseModel):
+    accno: str
+    stockcodes: list[str] = Field(default_factory=list)
+    email: str = "preview@example.com"
+
+
+@app.post("/site-distribution/preview-email")
+def preview_email_endpoint(
+    body: PreviewEmailRequest,
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    public_base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
+    tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
+    try:
+        return preview_email(
+            body.accno,
+            body.stockcodes,
+            body.email,
+            public_base_url=public_base,
+            tracking_secret=tracking_secret,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 class ManualSendRequest(BaseModel):
