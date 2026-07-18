@@ -1389,14 +1389,23 @@ function SiteDistribution() {
               <div><strong>From:</strong> Compliant Cleaning Supplies &lt;ccshub@ccsessentials.com.au&gt;</div>
               <div><strong>To:</strong> {previewData.email}</div>
               <div><strong>Subject:</strong> {previewData.subject}</div>
-              {previewData.register_url && (
+              {previewData.register_url ? (
                 <div style={{ marginTop: 6 }}>
                   <strong>Attachment:</strong>{' '}
                   <a href={previewData.register_url} target="_blank" rel="noreferrer"
                     style={{ color: '#2C6B33', textDecoration: 'underline', fontSize: 12 }}>
                     Chemical Register — {previewData.site_name}.xlsx
                   </a>
-                  <span style={{ color: '#607080', marginLeft: 6 }}>(opens in new tab)</span>
+                  <span style={{ color: '#607080', marginLeft: 6 }}>(click to download)</span>
+                </div>
+              ) : (
+                <div style={{ marginTop: 6, color: '#b45309', fontSize: 12 }}>
+                  <strong>Attachment:</strong> Chemical Register not generated
+                  {previewData.register_error && (
+                    <span style={{ marginLeft: 6, fontFamily: 'monospace', fontSize: 11 }}>
+                      — {previewData.register_error}
+                    </span>
+                  )}
                 </div>
               )}
             </div>

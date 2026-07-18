@@ -584,6 +584,7 @@ def preview_email(
         "html": msg["html"],
         "subject": msg["subject"],
         "register_url": msg.get("register_url", ""),
+        "register_error": msg.get("register_error", ""),
         "docs": len(docs),
         "site_name": site.get("name", ""),
         "email": preview_addr,
@@ -759,14 +760,15 @@ def compose_site_email(
 
     # Generate per-site Chemical Register Excel and upload to DO Spaces
     register_url = ""
+    register_error = ""
     stock_codes = site.get("stockcodes") or [d["code"] for d in docs]
     if stock_codes:
         try:
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             xlsx = generate_chemical_register_excel(site_name, accno, stock_codes, today)
             register_url = upload_register_to_spaces(xlsx, accno, today)
-        except Exception:
-            pass  # non-fatal: email sends without attachment if generation fails
+        except Exception as _exc:
+            register_error = str(_exc)  # surfaced in preview; non-fatal for live send
 
     msg: dict[str, Any] = {
         "to": email_addr,
@@ -780,6 +782,8 @@ def compose_site_email(
     if register_url:
         msg["attachments"] = [register_url]
         msg["register_url"] = register_url
+    if register_error:
+        msg["register_error"] = register_error
     return msg
 
 
