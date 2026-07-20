@@ -886,6 +886,7 @@ function SiteDistribution() {
   const [notice, setNotice] = useState('');
   const [showHelp, setShowHelp] = useState(false);
   const [testAlertResult, setTestAlertResult] = useState('');
+  const [testAlertPreviewHtml, setTestAlertPreviewHtml] = useState(null);
 
   // File inputs
   const [mappingFile, setMappingFile] = useState(null);
@@ -1104,13 +1105,22 @@ function SiteDistribution() {
 
   async function triggerTestAlert(endpoint, label) {
     setTestAlertResult(`Running ${label}…`);
+    setTestAlertPreviewHtml(null);
     try {
       const r = await fetch(`${API_BASE}${endpoint}`, { method: 'POST', headers: getAuthHeaders() });
-      const data = await r.json();
+      const text = await r.text();
+      let data;
+      try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
       if (!r.ok) throw new Error(data.detail || 'Failed');
-      const ghlStatus = data.ghl?.status || 'no email sent (GHL disabled or nothing to send)';
-      const count = data.new_count ?? data.expiring_count ?? data.held_count ?? '—';
-      setTestAlertResult(`${label}: count=${count}, GHL=${ghlStatus}`);
+      if (data.preview_html) {
+        setTestAlertPreviewHtml({ title: label, html: data.preview_html });
+        const count = data.expiring_count ?? data.held_count ?? '—';
+        setTestAlertResult(`${label}: ${count} item(s) — preview ready`);
+      } else {
+        const ghlStatus = data.ghl?.status || 'no email sent (GHL disabled or nothing to send)';
+        const count = data.new_count ?? '—';
+        setTestAlertResult(`${label}: count=${count}, GHL=${ghlStatus}`);
+      }
     } catch (err) {
       setTestAlertResult(`${label} error: ${err.message}`);
     }
@@ -1153,7 +1163,7 @@ function SiteDistribution() {
                 <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
                   <li><strong>Total sites</strong> — all imported from mapping file</li>
                   <li><strong>Active</strong> — sites that will receive emails (not held, not excluded)</li>
-                  <li><strong>On Hold</strong> — temporarily paused; skipped in sends; weekly internal hold-list email sent to ccshub@</li>
+                  <li><strong>On Hold</strong> — temporarily paused; skipped in sends; monthly internal hold-list email sent to ccshub@</li>
                   <li><strong>Excluded</strong> — permanently removed from all sends</li>
                   <li><strong>SDS links</strong> — total products with at least one SDS URL</li>
                 </ul>
@@ -1174,18 +1184,12 @@ function SiteDistribution() {
                 </ul>
               </div>
               <div>
-                <strong style={{ color: '#2C6B33' }}>Data Management</strong>
+                <strong style={{ color: '#2C6B33' }}>Automated alerts</strong>
                 <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
-                  <li>Go to <a href="/data-management" style={{ color: '#5c7cfa' }}>/data-management</a> directly to view import history and clear individual data tables (Mapping / SDS links / Stock groups)</li>
-                </ul>
-              </div>
-              <div>
-                <strong style={{ color: '#2C6B33' }}>Automated alerts (daily/weekly)</strong>
-                <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
-                  <li><strong>New product detection</strong> — daily 07:00 UTC. Detects product codes added since last run. First run seeds history silently.</li>
-                  <li><strong>SDS expiry alert</strong> — daily 07:15 UTC. Emails list of products expiring within 60 days.</li>
-                  <li><strong>Hold list notification</strong> — weekly Monday 07:30 UTC. Emails current hold list.</li>
-                  <li>All send to <strong>ccshub@ccsessentials.com.au</strong>. Use test buttons in sidebar to fire immediately.</li>
+                  <li><strong>New product detection</strong> — daily 5:00pm AEST. Detects product codes added since last run; review queue at <a href="/new-products" style={{ color: '#5c7cfa' }}>/new-products</a>. First run seeds history silently.</li>
+                  <li><strong>SDS expiry alert</strong> — 1st working day of each month, 9:00am AEST. Emails list of products expiring within 60 days.</li>
+                  <li><strong>Hold list notification</strong> — 1st working day of each month, 9:15am AEST. Emails current hold list.</li>
+                  <li>SDS expiry + hold list send to <strong>ccshub@ccsessentials.com.au</strong>. Use test buttons in sidebar to fire immediately and preview the email.</li>
                 </ul>
               </div>
             </div>
@@ -1526,6 +1530,32 @@ function SiteDistribution() {
           </div>
         </div>
       )}
+
+      {/* Alert email preview overlay */}
+      {testAlertPreviewHtml && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1200,
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+          padding: '60px 20px', overflowY: 'auto',
+        }} onClick={() => setTestAlertPreviewHtml(null)}>
+          <div style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: 780, boxShadow: '0 8px 40px rgba(0,0,0,0.3)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ background: '#1a2b3c', color: '#fff', padding: '12px 20px', borderRadius: '10px 10px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Email preview — {testAlertPreviewHtml.title}</span>
+              <button onClick={() => setTestAlertPreviewHtml(null)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px' }}>×</button>
+            </div>
+            <iframe
+              srcDoc={testAlertPreviewHtml.html}
+              title="Alert email preview"
+              style={{ width: '100%', height: 560, border: 'none', background: '#fff', display: 'block' }}
+              sandbox="allow-same-origin"
+            />
+            <div style={{ background: '#f3f4f6', padding: '10px 20px', display: 'flex', justifyContent: 'flex-end', borderRadius: '0 0 10px 10px' }}>
+              <button className="btn-ghost" onClick={() => setTestAlertPreviewHtml(null)} style={{ fontSize: 12 }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -1839,7 +1869,7 @@ function NewProductQueue() {
           <h1>New Product Queue</h1>
         </div>
         <div style={{ fontSize: 13, color: '#607080' }}>
-          Sites with product codes added since last send · Detected daily 07:00 UTC
+          Sites with product codes added since last send · Detected daily 5pm AEST
         </div>
       </div>
 

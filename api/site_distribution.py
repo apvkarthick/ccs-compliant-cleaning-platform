@@ -957,7 +957,7 @@ def detect_and_record_new_products() -> dict[str, Any]:
                 new_rows.append({"accno": accno, "stock_code": code, "first_seen_at": now})
 
     if new_rows:
-        _sb_post_batch("ccs_site_product_history", new_rows, on_conflict="ignore-duplicates")
+        _sb_post_batch("ccs_site_product_history", new_rows, on_conflict="merge-duplicates")
 
     by_site: dict[str, list[str]] = {}
     for r in new_rows:
