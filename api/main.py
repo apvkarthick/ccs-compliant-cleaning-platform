@@ -682,6 +682,17 @@ def add_register_product(
     from urllib.request import Request, urlopen
     from urllib.error import HTTPError
 
+    def _normalise_date(val: str) -> str | None:
+        if not val:
+            return None
+        val = val.strip()
+        # Accept DD/MM/YYYY or DD-MM-YYYY → convert to ISO YYYY-MM-DD
+        import re as _re
+        m = _re.match(r"^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$", val)
+        if m:
+            return f"{m.group(3)}-{m.group(2).zfill(2)}-{m.group(1).zfill(2)}"
+        return val  # already ISO or empty
+
     row = {
         "stock_code": req.stock_code.strip().upper(),
         "product_name": req.product_name or None,
@@ -693,7 +704,7 @@ def add_register_product(
         "chemical_class": req.chemical_class or None,
         "packing_group": req.packing_group or None,
         "primary_use": req.primary_use or None,
-        "sds_expiry": req.sds_expiry or None,
+        "sds_expiry": _normalise_date(req.sds_expiry),
         "sds_url": req.sds_url or None,
         "risk_url": req.risk_url or None,
     }
