@@ -152,13 +152,17 @@ def parse_chemical_register(data: bytes) -> list[dict[str, Any]]:
     # Standard format: "PRODUCT CODE" header; Title Sheet: col A is blank → renamed __UNNAMED_0__
     code_col = _col("PRODUCT CODE") or (clean_cols[0] if clean_cols else df.columns[0])
 
-    name_col = _col(
-        "PRODUCT NAME", "CHEMICAL NAME", "PRODUCT / CHEMICAL NAME", "PRODUCT/CHEMICAL NAME",
-        "NAME OF SUBSTANCE", "SUBSTANCE NAME",
+    name_col = (
+        _col(
+            "PRODUCT NAME", "CHEMICAL NAME", "PRODUCT / CHEMICAL NAME", "PRODUCT/CHEMICAL NAME",
+            "NAME OF SUBSTANCE", "SUBSTANCE NAME",
+        )
+        or _col_contains("CHEMICAL / PRODUCT")  # master register: "CHEMICAL / PRODUCT - SmartClean Range"
     )
     hazard_col = (
         _col(
             "HAZARD CLASSIFICATION", "HAZARD CLASS", "GHS CLASSIFICATION", "CLASSIFICATION",
+            "HAZARD STATUS",
             "IS IT CLASSED AS HAZARDOUS OR DANGEROUS? (Y/N & H/D)",
             "IS IT CLASSED AS HAZARDOUS OR DANGEROUS?",
         )
