@@ -155,7 +155,7 @@ function App({ session }) {
         <button className={`tab ${activeTab === 'sites' ? 'active' : ''}`} onClick={() => switchTab('sites')}>Sites</button>
         <button className={`tab ${activeTab === 'email-opens' ? 'active' : ''}`} onClick={() => switchTab('email-opens')}>Email Opens</button>
         <button className={`tab ${activeTab === 'library' ? 'active' : ''}`} onClick={() => switchTab('library')}><BookOpen size={13} style={{marginRight:4,verticalAlign:'middle'}}/>Doc Library</button>
-        <button className={`tab ${activeTab === 'data-management' ? 'active' : ''}`} onClick={() => switchTab('data-management')}>Data</button>
+
         <a className="tab" href="/rebrand">Rebrand SDS</a>
         <button className="tab tab-signout" onClick={handleSignOut} title="Sign out">
           <LogOut size={14} />
