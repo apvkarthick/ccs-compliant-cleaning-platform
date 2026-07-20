@@ -432,6 +432,24 @@ def _sb_post_batch(table: str, rows: list[dict], *, on_conflict: str = "merge-du
             raise RuntimeError(f"Supabase upsert to {table} failed ({exc.code}): {body[:300]}")
 
 
+def _sb_insert(table: str, rows: list[dict]) -> None:
+    """Plain INSERT — no upsert Prefer header. Caller must ensure no duplicates."""
+    if not rows:
+        return
+    url = f"{_sb_url()}/rest/v1/{table}"
+    headers = {**_sb_headers(), "Prefer": "return=minimal"}
+    for i in range(0, len(rows), _BATCH):
+        batch = rows[i : i + _BATCH]
+        data = json.dumps(batch).encode()
+        req = Request(url, data=data, method="POST", headers=headers)
+        try:
+            with urlopen(req, timeout=60):
+                pass
+        except HTTPError as exc:
+            body = exc.read().decode()
+            raise RuntimeError(f"Supabase insert to {table} failed ({exc.code}): {body[:300]}")
+
+
 def _sb_get(table: str, params: str = "") -> list[dict]:
     url = f"{_sb_url()}/rest/v1/{table}?{params}"
     req = Request(url, method="GET", headers=_sb_headers())
@@ -440,6 +458,22 @@ def _sb_get(table: str, params: str = "") -> list[dict]:
             return json.loads(resp.read().decode())
     except HTTPError as exc:
         raise RuntimeError(f"Supabase GET {table} failed ({exc.code}): {exc.read().decode()[:200]}")
+
+
+def _sb_get_all(table: str, params: str = "") -> list[dict]:
+    """Paginated fetch — returns all rows regardless of PostgREST default page size."""
+    page_size = 1000
+    results: list[dict] = []
+    offset = 0
+    while True:
+        sep = "&" if params else ""
+        page_params = f"{params}{sep}limit={page_size}&offset={offset}"
+        batch = _sb_get(table, page_params)
+        results.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
+    return results
 
 
 def _sb_delete(table: str, filter_param: str) -> None:
@@ -944,7 +978,8 @@ def detect_and_record_new_products() -> dict[str, Any]:
     Insert new (accno, stock_code) pairs. Returns counts and per-site breakdown.
     On first run (empty history) seeds the table without flagging anything as new."""
     sites = _sb_get("ccs_site_mapping", "select=accno,name,stockcodes")
-    history_rows = _sb_get("ccs_site_product_history", "select=accno,stock_code")
+    # Paginated fetch — history can exceed PostgREST's default 1000-row page
+    history_rows = _sb_get_all("ccs_site_product_history", "select=accno,stock_code")
     seen: set[tuple[str, str]] = {(r["accno"], r["stock_code"]) for r in history_rows}
     first_run = len(seen) == 0
 
@@ -957,7 +992,9 @@ def detect_and_record_new_products() -> dict[str, Any]:
                 new_rows.append({"accno": accno, "stock_code": code, "first_seen_at": now})
 
     if new_rows:
-        _sb_post_batch("ccs_site_product_history", new_rows, on_conflict="merge-duplicates")
+        # Plain INSERT — no upsert Prefer header (old PostgREST doesn't support resolution=);
+        # duplicates already filtered via `seen` above so no 409 risk
+        _sb_insert("ccs_site_product_history", new_rows)
 
     by_site: dict[str, list[str]] = {}
     for r in new_rows:
