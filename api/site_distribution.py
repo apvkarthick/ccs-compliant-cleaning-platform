@@ -248,9 +248,14 @@ def fetch_product_metadata(stock_codes: list[str]) -> dict[str, dict]:
     )
 
     def _in_filter(codes: list[str] | set[str]) -> str:
-        """Build a PostgREST in.() value list with each code double-quoted to handle special chars."""
-        quoted = ",".join(f'"{c}"' for c in codes)
-        return f"in.({quoted})"
+        """Build a PostgREST in.() value list.
+        Percent-encode special URL chars (&, comma, etc.) in each value so the
+        query string stays valid; the HTTP layer decodes them before PostgREST
+        parses the filter.  Avoids double-quoted syntax which older PostgREST
+        versions do not support."""
+        from urllib.parse import quote as _q
+        safe = ",".join(_q(str(c), safe="") for c in codes)
+        return f"in.({safe})"
 
     # Direct lookup
     rows = _sb_get("ccs_sds_links", f"select={_FIELDS}&stock_code={_in_filter(stock_codes)}")
