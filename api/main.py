@@ -590,6 +590,46 @@ def site_distribution_report(_auth: dict = Depends(require_auth)):
     )
 
 
+@app.post("/site-distribution/test/detect-new-products")
+def test_detect_new_products(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    """Test trigger: run new-product detection immediately and send notification if new products found."""
+    from datetime import datetime, timezone
+    from .site_distribution import detect_and_record_new_products, _render_new_products_email, send_internal_notification
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    result = detect_and_record_new_products()
+    ghl_result = None
+    if result["new_count"] > 0 and not result["first_run"]:
+        html = _render_new_products_email(result["by_site"], today)
+        ghl_result = send_internal_notification(f"[TEST] New products detected — {today}", html)
+    return {**result, "ghl": ghl_result}
+
+
+@app.post("/site-distribution/test/sds-expiry-alerts")
+def test_sds_expiry_alerts(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    """Test trigger: check SDS expiry window and send alert if any found."""
+    from datetime import datetime, timezone
+    from .site_distribution import get_expiring_sds, _render_expiry_email, send_internal_notification
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    expiring = get_expiring_sds(days_ahead=60)
+    ghl_result = None
+    if expiring:
+        html = _render_expiry_email(expiring, today)
+        ghl_result = send_internal_notification(f"[TEST] SDS expiry alert — {len(expiring)} product(s) ({today})", html)
+    return {"expiring_count": len(expiring), "products": expiring[:20], "ghl": ghl_result}
+
+
+@app.post("/site-distribution/test/hold-list-notification")
+def test_hold_list_notification(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    """Test trigger: send hold list notification immediately."""
+    from datetime import datetime, timezone
+    from .site_distribution import get_held_sites, _render_hold_list_email, send_internal_notification
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    held = get_held_sites()
+    html = _render_hold_list_email(held, today)
+    ghl_result = send_internal_notification(f"[TEST] Weekly hold list — {len(held)} site(s) ({today})", html)
+    return {"held_count": len(held), "sites": held[:20], "ghl": ghl_result}
+
+
 @app.get("/ccs-msds-track", response_class=HTMLResponse)
 def track_msds_download(
     doc: str = Query(...),

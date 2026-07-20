@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
-import { AlertCircle, BookOpen, CheckCircle2, Download, FileSpreadsheet, Link2, LogOut, Mail, Pause, Play, Send, Upload, X } from 'lucide-react';
+import { AlertCircle, BookOpen, CheckCircle2, Download, FileSpreadsheet, HelpCircle, Link2, LogOut, Mail, Pause, Play, Send, Upload, X } from 'lucide-react';
 import './styles.css';
 
 const supabase = createClient(
@@ -881,6 +881,8 @@ function SiteDistribution() {
   const [dryRun, setDryRun] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [showHelp, setShowHelp] = useState(false);
+  const [testAlertResult, setTestAlertResult] = useState('');
 
   // File inputs
   const [mappingFile, setMappingFile] = useState(null);
@@ -1097,6 +1099,20 @@ function SiteDistribution() {
     } catch (err) { setError(err.message); setSending(false); }
   }
 
+  async function triggerTestAlert(endpoint, label) {
+    setTestAlertResult(`Running ${label}…`);
+    try {
+      const r = await fetch(`${API_BASE}${endpoint}`, { method: 'POST', headers: getAuthHeaders() });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Failed');
+      const ghlStatus = data.ghl?.status || 'no email sent (GHL disabled or nothing to send)';
+      const count = data.new_count ?? data.expiring_count ?? data.held_count ?? '—';
+      setTestAlertResult(`${label}: count=${count}, GHL=${ghlStatus}`);
+    } catch (err) {
+      setTestAlertResult(`${label} error: ${err.message}`);
+    }
+  }
+
   const progressMeta = taskStatus?.meta || taskStatus?.result || {};
   const progressPct = progressMeta.total ? Math.round((progressMeta.done || 0) / progressMeta.total * 100) : 0;
 
@@ -1114,6 +1130,62 @@ function SiteDistribution() {
             <Pill label="On Hold" value={stats.held_sites} warn={stats.held_sites > 0} />
             <Pill label="Excluded" value={stats.excluded_sites} warn={stats.excluded_sites > 0} />
             <Pill label="SDS links" value={stats.sds_links} ok={stats.sds_links > 0} />
+          </div>
+        )}
+      </div>
+
+      {/* Help panel */}
+      <div style={{ maxWidth: 960, margin: '0 auto 12px', padding: '0 0' }}>
+        <button
+          onClick={() => setShowHelp(h => !h)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5c7cfa', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, padding: '4px 0' }}
+        >
+          <HelpCircle size={13} />{showHelp ? 'Hide help' : 'How to use this page'}
+        </button>
+        {showHelp && (
+          <div style={{ background: '#f0f4ff', border: '1px solid #c9d8ff', borderRadius: 8, padding: '16px 20px', marginTop: 6, fontSize: 13, lineHeight: 1.7 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 32px' }}>
+              <div>
+                <strong style={{ color: '#2C6B33' }}>Status bar (top right)</strong>
+                <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
+                  <li><strong>Total sites</strong> — all imported from mapping file</li>
+                  <li><strong>Active</strong> — sites that will receive emails (not held, not excluded)</li>
+                  <li><strong>On Hold</strong> — temporarily paused; skipped in sends; weekly internal hold-list email sent to ccshub@</li>
+                  <li><strong>Excluded</strong> — permanently removed from all sends</li>
+                  <li><strong>SDS links</strong> — total products with at least one SDS URL</li>
+                </ul>
+              </div>
+              <div>
+                <strong style={{ color: '#2C6B33' }}>Site row actions</strong>
+                <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
+                  <li><strong>Hold / Unhold</strong> — temporarily pause a site. Row dims to 65% opacity. Reversed by clicking Unhold.</li>
+                  <li><strong>Active / Excl</strong> — toggle permanent exclusion. Excluded rows dim to 40%.</li>
+                  <li><strong>Send (blue)</strong> — open manual send modal for this site</li>
+                </ul>
+                <strong style={{ color: '#2C6B33', display: 'block', marginTop: 8 }}>Manual send modal</strong>
+                <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
+                  <li>All site products pre-checked — uncheck to exclude any from this send</li>
+                  <li>Email defaults to the Test Contact (set in sidebar) or site's own email</li>
+                  <li><strong>Preview email</strong> — renders the full HTML email + Chemical Register attachment link in a preview overlay. Dry run only — nothing sent.</li>
+                  <li><strong>Send</strong> — with Dry run checked, logs result without sending to GHL</li>
+                </ul>
+              </div>
+              <div>
+                <strong style={{ color: '#2C6B33' }}>Data Management</strong>
+                <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
+                  <li>Go to <a href="/data-management" style={{ color: '#5c7cfa' }}>/data-management</a> directly to view import history and clear individual data tables (Mapping / SDS links / Stock groups)</li>
+                </ul>
+              </div>
+              <div>
+                <strong style={{ color: '#2C6B33' }}>Automated alerts (daily/weekly)</strong>
+                <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
+                  <li><strong>New product detection</strong> — daily 07:00 UTC. Detects product codes added since last run. First run seeds history silently.</li>
+                  <li><strong>SDS expiry alert</strong> — daily 07:15 UTC. Emails list of products expiring within 60 days.</li>
+                  <li><strong>Hold list notification</strong> — weekly Monday 07:30 UTC. Emails current hold list.</li>
+                  <li>All send to <strong>ccshub@ccsessentials.com.au</strong>. Use test buttons in sidebar to fire immediately.</li>
+                </ul>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -1169,6 +1241,31 @@ function SiteDistribution() {
               placeholder="staff@example.com"
               style={{ width: '100%', padding: '7px 10px', border: '1px solid #d8e1e8', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }}
             />
+          </div>
+
+          {/* Test alert triggers */}
+          <div className="contact-box" style={{ marginTop: 16 }}>
+            <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Test alerts</label>
+            <p style={{ fontSize: 12, color: '#607080', marginTop: 6, marginBottom: 8 }}>
+              Fire each automated alert immediately. Sends to ccshub@ via GHL (skipped if GHL disabled).
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <button className="btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 12 }}
+                onClick={() => triggerTestAlert('/site-distribution/test/detect-new-products', 'New products')}>
+                New product detection
+              </button>
+              <button className="btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 12 }}
+                onClick={() => triggerTestAlert('/site-distribution/test/sds-expiry-alerts', 'SDS expiry')}>
+                SDS expiry alerts
+              </button>
+              <button className="btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 12 }}
+                onClick={() => triggerTestAlert('/site-distribution/test/hold-list-notification', 'Hold list')}>
+                Hold list notification
+              </button>
+            </div>
+            {testAlertResult && (
+              <p style={{ fontSize: 11, color: '#445', marginTop: 8, wordBreak: 'break-word' }}>{testAlertResult}</p>
+            )}
           </div>
 
           {/* Bulk send — disabled pending mapping verification */}
