@@ -916,6 +916,19 @@ function SiteDistribution() {
   const [clearConfirm, setClearConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
 
+  // Add product to Chemical Register
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [addProd, setAddProd] = useState({ stock_code: '', product_name: '', hazard_classification: '', un_number: '', maximum_qty: '', risk_assessment_required: false, hazchem: '', chemical_class: '', packing_group: '', primary_use: '', sds_expiry: '', sds_url: '', risk_url: '' });
+  const [addProdResult, setAddProdResult] = useState('');
+  const [addProdSaving, setAddProdSaving] = useState(false);
+
+  // New customer send
+  const [showNewCustomer, setShowNewCustomer] = useState(false);
+  const [ncForm, setNcForm] = useState({ customer_name: '', email: '', stockcodes_text: '', dry_run: true });
+  const [ncResult, setNcResult] = useState('');
+  const [ncSending, setNcSending] = useState(false);
+  const [ncPreviewHtml, setNcPreviewHtml] = useState(null);
+
   const PAGE_SIZE = 50;
 
   async function loadStats() {
@@ -1127,6 +1140,53 @@ function SiteDistribution() {
     }
   }
 
+  async function handleAddProduct(e) {
+    e.preventDefault();
+    if (!addProd.stock_code.trim()) return;
+    setAddProdSaving(true);
+    setAddProdResult('');
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/register/product`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...addProd, stock_code: addProd.stock_code.trim().toUpperCase() }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Failed');
+      setAddProdResult(`${data.status === 'created' ? 'Created' : 'Updated'}: ${data.stock_code}`);
+      setAddProd({ stock_code: '', product_name: '', hazard_classification: '', un_number: '', maximum_qty: '', risk_assessment_required: false, hazchem: '', chemical_class: '', packing_group: '', primary_use: '', sds_expiry: '', sds_url: '', risk_url: '' });
+    } catch (err) {
+      setAddProdResult(`Error: ${err.message}`);
+    } finally {
+      setAddProdSaving(false);
+    }
+  }
+
+  async function handleNewCustomerSend(e) {
+    e.preventDefault();
+    if (!ncForm.customer_name || !ncForm.email || !ncForm.stockcodes_text) return;
+    const codes = ncForm.stockcodes_text.split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+    if (!codes.length) return;
+    setNcSending(true);
+    setNcResult('');
+    setNcPreviewHtml(null);
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/send-new-customer`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer_name: ncForm.customer_name, email: ncForm.email, stockcodes: codes, dry_run: ncForm.dry_run }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Failed');
+      if (data.html) setNcPreviewHtml({ title: `New Customer — ${ncForm.customer_name}`, html: data.html });
+      setNcResult(`${ncForm.dry_run ? 'Dry run OK' : data.status} — ${data.docs} doc(s) to ${data.email}`);
+    } catch (err) {
+      setNcResult(`Error: ${err.message}`);
+    } finally {
+      setNcSending(false);
+    }
+  }
+
   const progressMeta = taskStatus?.meta || taskStatus?.result || {};
   const progressPct = progressMeta.total ? Math.round((progressMeta.done || 0) / progressMeta.total * 100) : 0;
 
@@ -1273,6 +1333,96 @@ function SiteDistribution() {
             </div>
             {testAlertResult && (
               <p style={{ fontSize: 11, color: '#445', marginTop: 8, wordBreak: 'break-word' }}>{testAlertResult}</p>
+            )}
+          </div>
+
+          {/* Add product to Chemical Register */}
+          <div className="contact-box" style={{ marginTop: 16 }}>
+            <button
+              onClick={() => { setShowAddProduct(v => !v); setAddProdResult(''); }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789', display: 'flex', alignItems: 'center', gap: 6, padding: 0 }}
+            >
+              <FileSpreadsheet size={13} />{showAddProduct ? '▲ Hide' : '▼ Add to Chemical Register'}
+            </button>
+            {showAddProduct && (
+              <form onSubmit={handleAddProduct} style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {[
+                  ['Product Code *', 'stock_code', 'text', true],
+                  ['Product Name', 'product_name', 'text', false],
+                  ['Hazard Status', 'hazard_classification', 'text', false],
+                  ['UN Number', 'un_number', 'text', false],
+                  ['Maximum Qty', 'maximum_qty', 'text', false],
+                  ['Hazchem', 'hazchem', 'text', false],
+                  ['Class', 'chemical_class', 'text', false],
+                  ['Packing Group', 'packing_group', 'text', false],
+                  ['Primary Use', 'primary_use', 'text', false],
+                  ['SDS Review Date', 'sds_expiry', 'text', false],
+                  ['SDS URL', 'sds_url', 'url', false],
+                  ['Risk URL', 'risk_url', 'url', false],
+                ].map(([label, key, type, req]) => (
+                  <div key={key}>
+                    <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>{label}</label>
+                    <input
+                      type={type}
+                      required={req}
+                      value={addProd[key]}
+                      onChange={e => setAddProd(p => ({ ...p, [key]: e.target.value }))}
+                      style={{ width: '100%', padding: '5px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 12, boxSizing: 'border-box' }}
+                    />
+                  </div>
+                ))}
+                <label style={{ fontSize: 11, color: '#445', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={addProd.risk_assessment_required} onChange={e => setAddProd(p => ({ ...p, risk_assessment_required: e.target.checked }))} />
+                  Risk Assessment Required
+                </label>
+                <button type="submit" className="primary" disabled={addProdSaving} style={{ marginTop: 4 }}>
+                  {addProdSaving ? 'Saving…' : 'Save to Register'}
+                </button>
+                {addProdResult && (
+                  <p style={{ fontSize: 11, color: addProdResult.startsWith('Error') ? '#c0392b' : '#2C6B33', margin: 0 }}>{addProdResult}</p>
+                )}
+              </form>
+            )}
+          </div>
+
+          {/* Send to new customer (no purchase history) */}
+          <div className="contact-box" style={{ marginTop: 16 }}>
+            <button
+              onClick={() => { setShowNewCustomer(v => !v); setNcResult(''); setNcPreviewHtml(null); }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789', display: 'flex', alignItems: 'center', gap: 6, padding: 0 }}
+            >
+              <Send size={13} />{showNewCustomer ? '▲ Hide' : '▼ New Customer Send'}
+            </button>
+            {showNewCustomer && (
+              <form onSubmit={handleNewCustomerSend} style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <p style={{ fontSize: 11, color: '#607080', margin: 0 }}>Send SDS pack to a customer not yet in the site mapping.</p>
+                <div>
+                  <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>Customer Name *</label>
+                  <input required type="text" value={ncForm.customer_name} onChange={e => setNcForm(f => ({ ...f, customer_name: e.target.value }))}
+                    style={{ width: '100%', padding: '5px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 12, boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>Email *</label>
+                  <input required type="email" value={ncForm.email} onChange={e => setNcForm(f => ({ ...f, email: e.target.value }))}
+                    style={{ width: '100%', padding: '5px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 12, boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>Product Codes (one per line or comma-separated)</label>
+                  <textarea required rows={4} value={ncForm.stockcodes_text} onChange={e => setNcForm(f => ({ ...f, stockcodes_text: e.target.value }))}
+                    placeholder="AIRDRY5LK&#10;BATHGREEN5L&#10;ALLPURP5L"
+                    style={{ width: '100%', padding: '5px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 12, boxSizing: 'border-box', resize: 'vertical' }} />
+                </div>
+                <label style={{ fontSize: 11, color: '#445', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={ncForm.dry_run} onChange={e => setNcForm(f => ({ ...f, dry_run: e.target.checked }))} />
+                  Dry run (preview only, no email sent)
+                </label>
+                <button type="submit" className="primary" disabled={ncSending}>
+                  {ncSending ? 'Sending…' : ncForm.dry_run ? 'Preview' : 'Send'}
+                </button>
+                {ncResult && (
+                  <p style={{ fontSize: 11, color: ncResult.startsWith('Error') ? '#c0392b' : '#2C6B33', margin: 0 }}>{ncResult}</p>
+                )}
+              </form>
             )}
           </div>
 
@@ -1553,6 +1703,31 @@ function SiteDistribution() {
             />
             <div style={{ background: '#f3f4f6', padding: '10px 20px', display: 'flex', justifyContent: 'flex-end', borderRadius: '0 0 10px 10px' }}>
               <button className="btn-ghost" onClick={() => setTestAlertPreviewHtml(null)} style={{ fontSize: 12 }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {ncPreviewHtml && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1200,
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+          padding: '60px 20px', overflowY: 'auto',
+        }} onClick={() => setNcPreviewHtml(null)}>
+          <div style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: 780, boxShadow: '0 8px 40px rgba(0,0,0,0.3)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ background: '#1a2b3c', color: '#fff', padding: '12px 20px', borderRadius: '10px 10px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Email preview — {ncPreviewHtml.title}</span>
+              <button onClick={() => setNcPreviewHtml(null)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px' }}>×</button>
+            </div>
+            <iframe
+              srcDoc={ncPreviewHtml.html}
+              title="New customer email preview"
+              style={{ width: '100%', height: 560, border: 'none', background: '#fff', display: 'block' }}
+              sandbox="allow-same-origin"
+            />
+            <div style={{ background: '#f3f4f6', padding: '10px 20px', display: 'flex', justifyContent: 'flex-end', borderRadius: '0 0 10px 10px' }}>
+              <button className="btn-ghost" onClick={() => setNcPreviewHtml(null)} style={{ fontSize: 12 }}>Close</button>
             </div>
           </div>
         </div>

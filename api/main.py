@@ -26,6 +26,7 @@ from .distribution import (
 from .excel_parser import list_source_documents, parse_client_workbook
 from .site_distribution import (
     clear_table_data,
+    compose_site_email,
     exclude_site,
     get_import_history,
     get_import_status,
@@ -35,11 +36,14 @@ from .site_distribution import (
     include_site,
     list_sites,
     load_lookup_maps,
+    mark_products_notified,
     preview_email,
     resolve_docs_for_site,
     send_manual,
     unhold_site,
     _sb_get,
+    _sb_url,
+    _sb_headers,
 )
 from .rebrand import rebrand_sds
 from .rebrand_pdf import rebrand_pdf
@@ -507,7 +511,7 @@ def site_distribution_report(_auth: dict = Depends(require_auth)):
     excl_set = {r["accno"] for r in _sb_get("ccs_site_exclusions", "select=accno")}
     held_set = {r["accno"] for r in _sb_get("ccs_site_holds", "select=accno")}
     all_sites = _sb_get("ccs_site_mapping", "select=*&order=name.asc")
-    sds_map, risk_map, group_fallback, risk_required_set = load_lookup_maps()
+    sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
 
     # Load all product metadata in one query
     all_links = _sb_get(
@@ -610,14 +614,6 @@ def send_new_products_endpoint(
     _auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
     """Send SDS pack for selected new products, then mark them as notified."""
-    import os
-    from .site_distribution import (
-        compose_site_email,
-        load_lookup_maps,
-        resolve_docs_for_site,
-        mark_products_notified,
-        _sb_get,
-    )
     from .distribution import _find_or_create_ghl_contact_id, _send_messages_via_ghl
 
     sites = _sb_get("ccs_site_mapping", f"select=*&accno=eq.{req.accno}")
@@ -625,22 +621,28 @@ def send_new_products_endpoint(
         raise HTTPException(status_code=404, detail="Site not found")
     site = sites[0]
 
-    sds_map, risk_map, group_fallback, risk_required_set = load_lookup_maps()
-    docs = resolve_docs_for_site(req.stockcodes, sds_map, risk_map, group_fallback, risk_required_set)
+    sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
+
+    # Send full site Chemical Register — new product email includes all products,
+    # not just the newly detected ones (full compliance pack + distinct subject).
+    full_stockcodes = site.get("stockcodes") or req.stockcodes
+    docs = resolve_docs_for_site(full_stockcodes, sds_map, risk_map, group_fallback, risk_required_set, register_codes)
 
     public_base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
     tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
+    site_name = site.get("name", req.accno)
     msg = compose_site_email(
-        {**site, "stockcodes": req.stockcodes},
+        {**site, "stockcodes": full_stockcodes},
         docs,
         req.email,
         public_base_url=public_base,
         tracking_secret=tracking_secret,
+        subject=f"New Product Compliance Notice — {site_name}",
     )
 
     ghl_result: dict[str, Any] = {"status": "dry_run"}
     if not req.dry_run:
-        contact_id = _find_or_create_ghl_contact_id({"email": req.email, "name": site.get("name", "")})
+        contact_id = _find_or_create_ghl_contact_id({"email": req.email, "name": site_name})
         if contact_id:
             msg["contact_id"] = contact_id
         ghl_result = _send_messages_via_ghl([msg])
@@ -649,6 +651,125 @@ def send_new_products_endpoint(
         mark_products_notified([{"accno": req.accno, "stock_code": c} for c in req.stockcodes])
 
     return {"status": ghl_result.get("status", "ok"), "docs": len(docs), "email": req.email}
+
+
+# ---------------------------------------------------------------------------
+# Add single product to Chemical Register
+# ---------------------------------------------------------------------------
+
+class AddProductRequest(BaseModel):
+    stock_code: str
+    product_name: str = ""
+    hazard_classification: str = ""
+    un_number: str = ""
+    maximum_qty: str = ""
+    risk_assessment_required: bool = False
+    hazchem: str = ""
+    chemical_class: str = ""
+    packing_group: str = ""
+    primary_use: str = ""
+    sds_expiry: str = ""
+    sds_url: str = ""
+    risk_url: str = ""
+
+
+@app.post("/site-distribution/register/product")
+def add_register_product(
+    req: AddProductRequest,
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    """Add or update a single product in the Chemical Register (ccs_sds_links)."""
+    from urllib.request import Request, urlopen
+    from urllib.error import HTTPError
+
+    row = {
+        "stock_code": req.stock_code.strip().upper(),
+        "product_name": req.product_name or None,
+        "hazard_classification": req.hazard_classification or None,
+        "un_number": req.un_number or None,
+        "maximum_qty": req.maximum_qty or None,
+        "risk_assessment_required": req.risk_assessment_required,
+        "hazchem": req.hazchem or None,
+        "chemical_class": req.chemical_class or None,
+        "packing_group": req.packing_group or None,
+        "primary_use": req.primary_use or None,
+        "sds_expiry": req.sds_expiry or None,
+        "sds_url": req.sds_url or None,
+        "risk_url": req.risk_url or None,
+    }
+
+    # Check if product exists already; if so PATCH, else INSERT.
+    url_base = f"{_sb_url()}/rest/v1/ccs_sds_links"
+    headers = _sb_headers()
+    existing = _sb_get("ccs_sds_links", f"select=stock_code&stock_code=eq.{row['stock_code']}")
+    if existing:
+        patch_url = f"{url_base}?stock_code=eq.{row['stock_code']}"
+        patch_headers = {**headers, "Prefer": "return=minimal"}
+        body = _json.dumps(row).encode()
+        req_http = Request(patch_url, data=body, method="PATCH", headers=patch_headers)
+        try:
+            with urlopen(req_http, timeout=30):
+                pass
+        except HTTPError as exc:
+            raise HTTPException(status_code=500, detail=f"Update failed: {exc.read().decode()[:200]}")
+        return {"status": "updated", "stock_code": row["stock_code"]}
+    else:
+        insert_url = url_base
+        insert_headers = {**headers, "Prefer": "return=minimal"}
+        body = _json.dumps([row]).encode()
+        req_http = Request(insert_url, data=body, method="POST", headers=insert_headers)
+        try:
+            with urlopen(req_http, timeout=30):
+                pass
+        except HTTPError as exc:
+            raise HTTPException(status_code=500, detail=f"Insert failed: {exc.read().decode()[:200]}")
+        return {"status": "created", "stock_code": row["stock_code"]}
+
+
+# ---------------------------------------------------------------------------
+# Send to brand new customer (no purchase history in mapping)
+# ---------------------------------------------------------------------------
+
+class NewCustomerSendRequest(BaseModel):
+    customer_name: str
+    email: str
+    stockcodes: list[str]
+    dry_run: bool = True
+
+
+@app.post("/site-distribution/send-new-customer")
+def send_new_customer_endpoint(
+    req: NewCustomerSendRequest,
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    """Send SDS pack to a brand new customer not yet in the site mapping."""
+    from .distribution import _find_or_create_ghl_contact_id, _send_messages_via_ghl
+
+    if not req.stockcodes:
+        raise HTTPException(status_code=400, detail="stockcodes required")
+
+    sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
+    docs = resolve_docs_for_site(req.stockcodes, sds_map, risk_map, group_fallback, risk_required_set, register_codes)
+    if not docs:
+        return {"status": "skipped", "reason": "no SDS/Risk documents found for supplied product codes"}
+
+    public_base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
+    tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
+    site = {"name": req.customer_name, "ho_name": req.customer_name, "accno": "", "stockcodes": req.stockcodes}
+    msg = compose_site_email(
+        site, docs, req.email,
+        public_base_url=public_base,
+        tracking_secret=tracking_secret,
+    )
+
+    if req.dry_run:
+        return {"status": "dry_run", "docs": len(docs), "email": req.email, "html": msg.get("html", "")}
+
+    contact_id = _find_or_create_ghl_contact_id({"email": req.email, "name": req.customer_name})
+    if contact_id:
+        msg["contact_id"] = contact_id
+    result = _send_messages_via_ghl([msg])
+    return {"status": result.get("status", "ok"), "docs": len(docs), "email": req.email}
 
 
 @app.post("/site-distribution/test/detect-new-products")

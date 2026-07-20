@@ -122,7 +122,7 @@ def site_distribution_task(self, dry_run: bool = True, batch_id: str = "") -> di
     all_sites = _sb_get("ccs_site_mapping", "select=*&order=name.asc")
     sites = [s for s in all_sites if s.get("accno") not in skip_set]
 
-    sds_map, risk_map, group_fallback, risk_required_set = load_lookup_maps()
+    sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
 
     summary: dict = {"sent": 0, "failed": 0, "skipped": 0, "dry_run": dry_run, "total": len(sites), "done": 0}
     self.update_state(state="PROGRESS", meta=dict(summary))
@@ -131,7 +131,7 @@ def site_distribution_task(self, dry_run: bool = True, batch_id: str = "") -> di
         accno = site.get("accno", "")
         try:
             stockcodes = site.get("stockcodes") or []
-            docs = resolve_docs_for_site(stockcodes, sds_map, risk_map, group_fallback, risk_required_set)
+            docs = resolve_docs_for_site(stockcodes, sds_map, risk_map, group_fallback, risk_required_set, register_codes)
             emails = [e for e in (site.get("emails") or []) if e]
 
             if not docs or not emails:

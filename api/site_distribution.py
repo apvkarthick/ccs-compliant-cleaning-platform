@@ -188,6 +188,10 @@ def parse_chemical_register(data: bytes) -> list[dict[str, Any]]:
         "SDS REVIEW DATE", "SDS EXPIRY", "SDS REVIEW", "REVIEW DATE", "EXPIRY DATE",
         "SDS EXPIRY DATE",
     )
+    maxqty_col = _col("MAXIMUM QTY", "MAXIMUM QUANTITY", "MAX QTY", "MAX. QTY")
+    hazchem_col = _col("HAZCHEM", "HAZCHEM CODE")
+    class_col = _col("CLASS", "DG CLASS", "HAZARD CLASS CODE")
+    packgroup_col = _col("PACKING GROUP", "PACK GROUP", "PG")
 
     records: list[dict[str, Any]] = []
     for _, row in df.iterrows():
@@ -227,6 +231,10 @@ def parse_chemical_register(data: bytes) -> list[dict[str, Any]]:
             "primary_use": _val(use_col),
             "signal_word": _val(signal_col),
             "un_number": _val(un_col),
+            "maximum_qty": _val(maxqty_col),
+            "hazchem": _val(hazchem_col),
+            "chemical_class": _val(class_col),
+            "packing_group": _val(packgroup_col),
         })
     return records
 
@@ -244,7 +252,8 @@ def fetch_product_metadata(stock_codes: list[str]) -> dict[str, dict]:
 
     _FIELDS = (
         "stock_code,product_name,hazard_classification,primary_use,"
-        "signal_word,un_number,risk_assessment_required,sds_expiry"
+        "signal_word,un_number,risk_assessment_required,sds_expiry,"
+        "maximum_qty,hazchem,chemical_class,packing_group"
     )
 
     def _in_filter(codes: list[str] | set[str]) -> str:
@@ -293,68 +302,151 @@ def fetch_product_metadata(stock_codes: list[str]) -> dict[str, dict]:
     return result
 
 
+_PREPARED_BY = "Matthew King Compliant Cleaning Supplies & Systems PTY LTD  Ph 1300 314 491"
+
+
 def generate_chemical_register_excel(
     site_name: str,
     accno: str,
     stock_codes: list[str],
     today: str,
+    register_codes: set[str] | None = None,
 ) -> bytes:
-    """Generate a per-site Chemical Register Excel filtered to the site's product codes."""
+    """Generate a per-site Chemical Register Excel (columns A–K) with branded cover page.
+
+    Only includes codes present in the Chemical Register (ccs_sds_links). Output is
+    sorted alphabetically by product code.
+    """
     from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
     metadata = fetch_product_metadata(stock_codes)
+
+    # Filter to Chemical Register codes only, sorted alphabetically
+    filtered_codes = sorted(
+        (c for c in stock_codes if c in metadata),
+        key=lambda x: x.upper(),
+    )
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Chemical Register"
 
-    GREEN = "2C6B33"
+    NAVY = "1A2E44"   # dark navy — title row
+    TEAL = "1F6B7A"   # dark teal — location/date header row
+    GREEN = "2C6B33"  # CCS green — column header row
     WHITE = "FFFFFF"
+    LIGHT = "F5F8FA"
 
-    ws.merge_cells("A1:H1")
-    ws["A1"] = "CHEMICAL REGISTER"
-    ws["A1"].font = Font(bold=True, size=14, color=WHITE)
-    ws["A1"].fill = PatternFill("solid", fgColor=GREEN)
-    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[1].height = 24
+    def _hdr_cell(cell, text, bg, bold=True, size=11, align="center"):
+        cell.value = text
+        cell.font = Font(bold=bold, size=size, color=WHITE)
+        cell.fill = PatternFill("solid", fgColor=bg)
+        cell.alignment = Alignment(horizontal=align, vertical="center", wrap_text=True)
 
-    ws["A2"] = "Customer:"
-    ws["A2"].font = Font(bold=True)
-    ws["B2"] = site_name
-    ws["E2"] = "Date:"
-    ws["E2"].font = Font(bold=True)
-    ws["F2"] = today
+    def _label_cell(cell, text):
+        cell.value = text
+        cell.font = Font(bold=True, size=10, color="334455")
+        cell.alignment = Alignment(horizontal="left", vertical="center")
 
-    ws.append([""])  # spacer
+    def _value_cell(cell, text):
+        cell.value = text
+        cell.font = Font(size=10, color="223344")
+        cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
+    # ── Row 1: CHEMICAL REGISTER title ──────────────────────────────────────
+    ws.merge_cells("A1:K1")
+    _hdr_cell(ws["A1"], "CHEMICAL REGISTER", NAVY, size=16)
+    ws.row_dimensions[1].height = 36
+
+    # ── Row 2: brand sub-title ───────────────────────────────────────────────
+    ws.merge_cells("A2:K2")
+    ws["A2"].value = "Compliant Cleaning Supplies  |  Childcare Cleaning Supplies"
+    ws["A2"].font = Font(italic=True, size=10, color="445566")
+    ws["A2"].alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[2].height = 18
+
+    # ── Row 3: SITE-SPECIFIC label ───────────────────────────────────────────
+    ws.merge_cells("A3:K3")
+    ws["A3"].value = "SITE-SPECIFIC WORKPLACE CHEMICAL REGISTER"
+    ws["A3"].font = Font(bold=True, size=12, color=NAVY)
+    ws["A3"].alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[3].height = 22
+
+    # ── Row 4: spacer ────────────────────────────────────────────────────────
+    ws.row_dimensions[4].height = 8
+
+    # ── Row 5: LOCATION / DATE / PREPARED BY labels ──────────────────────────
+    ws.merge_cells("A5:B5")
+    _hdr_cell(ws["A5"], "LOCATION", TEAL, size=10)
+    ws.merge_cells("C5:E5")
+    _hdr_cell(ws["C5"], "REGISTER CREATION DATE", TEAL, size=10)
+    ws.merge_cells("F5:K5")
+    _hdr_cell(ws["F5"], "PREPARED BY", TEAL, size=10)
+    ws.row_dimensions[5].height = 20
+
+    # ── Row 6: LOCATION / DATE / PREPARED BY values ──────────────────────────
+    ws.merge_cells("A6:B6")
+    _value_cell(ws["A6"], site_name)
+    ws.merge_cells("C6:E6")
+    _value_cell(ws["C6"], today)
+    ws.merge_cells("F6:K6")
+    _value_cell(ws["F6"], _PREPARED_BY)
+    ws.row_dimensions[6].height = 20
+
+    # ── Rows 7-10: spacers ────────────────────────────────────────────────────
+    for r in range(7, 11):
+        ws.row_dimensions[r].height = 8
+
+    # ── Row 11: Column headers A–K ────────────────────────────────────────────
     headers = [
-        "Product Code", "Product Name", "Hazard Classification",
-        "Primary Use", "Signal Word", "UN No.",
-        "Risk Assessment", "SDS Expiry",
+        "Product Code",
+        "Chemical / Product",
+        "Hazard Status",
+        "UN Number",
+        "Maximum Qty",
+        "Risk Assessment",
+        "Hazchem",
+        "Class",
+        "Packing Group",
+        "Primary Use",
+        "SDS Review Date",
     ]
-    ws.append(headers)
-    hdr_row = ws.max_row
-    for col_idx in range(1, len(headers) + 1):
-        cell = ws.cell(row=hdr_row, column=col_idx)
-        cell.font = Font(bold=True, color=WHITE)
-        cell.fill = PatternFill("solid", fgColor=GREEN)
-        cell.alignment = Alignment(horizontal="center")
+    for col_idx, hdr in enumerate(headers, start=1):
+        cell = ws.cell(row=11, column=col_idx)
+        _hdr_cell(cell, hdr, GREEN, size=10)
+    ws.row_dimensions[11].height = 22
 
-    for code in stock_codes:
+    # ── Rows 12+: data (filtered + sorted) ────────────────────────────────────
+    thin = Side(style="thin", color="D0DCE8")
+    border = Border(bottom=thin)
+    for row_idx, code in enumerate(filtered_codes, start=12):
         m = metadata.get(code, {})
-        ws.append([
+        bg = PatternFill("solid", fgColor=LIGHT) if row_idx % 2 == 0 else None
+        row_vals = [
             code,
             m.get("product_name") or "",
             m.get("hazard_classification") or "",
-            m.get("primary_use") or "",
-            m.get("signal_word") or "",
             m.get("un_number") or "",
+            m.get("maximum_qty") or "",
             "YES" if m.get("risk_assessment_required") else "NO",
+            m.get("hazchem") or "",
+            m.get("chemical_class") or "",
+            m.get("packing_group") or "",
+            m.get("primary_use") or "",
             m.get("sds_expiry") or "",
-        ])
+        ]
+        for col_idx, val in enumerate(row_vals, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+            cell.font = Font(size=10)
+            cell.alignment = Alignment(vertical="center", wrap_text=False)
+            cell.border = border
+            if bg:
+                cell.fill = bg
+        ws.row_dimensions[row_idx].height = 16
 
-    for col_letter, width in zip("ABCDEFGH", [15, 30, 28, 28, 15, 12, 18, 15]):
+    # ── Column widths A–K ─────────────────────────────────────────────────────
+    for col_letter, width in zip("ABCDEFGHIJK", [16, 32, 20, 14, 14, 18, 12, 10, 14, 22, 16]):
         ws.column_dimensions[col_letter].width = width
 
     buf = io.BytesIO()
@@ -691,8 +783,8 @@ def preview_email(
     if not use_codes:
         raise ValueError(f"No products specified for site {accno!r}")
 
-    sds_map, risk_map, group_fallback, risk_required_set = load_lookup_maps()
-    docs = resolve_docs_for_site(use_codes, sds_map, risk_map, group_fallback, risk_required_set)
+    sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
+    docs = resolve_docs_for_site(use_codes, sds_map, risk_map, group_fallback, risk_required_set, register_codes)
 
     msg = compose_site_email(
         site, docs, preview_addr,
@@ -730,8 +822,8 @@ def send_manual(
     if not use_codes:
         raise ValueError(f"No products specified for site {accno!r}")
 
-    sds_map, risk_map, group_fallback, risk_required_set = load_lookup_maps()
-    docs = resolve_docs_for_site(use_codes, sds_map, risk_map, group_fallback, risk_required_set)
+    sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
+    docs = resolve_docs_for_site(use_codes, sds_map, risk_map, group_fallback, risk_required_set, register_codes)
     if not docs:
         return {"status": "skipped", "reason": "no SDS/Risk documents found for selected products"}
 
@@ -763,15 +855,19 @@ def send_manual(
 # Document resolution
 # ---------------------------------------------------------------------------
 
-def load_lookup_maps() -> tuple[dict[str, str], dict[str, str], dict[str, str], set[str]]:
+def load_lookup_maps() -> tuple[dict[str, str], dict[str, str], dict[str, str], set[str], set[str]]:
     """Load SDS links + stock groups into memory.
-    Returns (sds_map, risk_map, group_fallback, risk_required_set) where
-    group_fallback maps a related code → its primary code and
-    risk_required_set is codes where risk_assessment_required = True."""
+
+    Returns (sds_map, risk_map, group_fallback, risk_required_set, register_codes) where:
+    - group_fallback maps related_code → primary_code
+    - risk_required_set: codes where risk_assessment_required = True
+    - register_codes: all stock_codes present in ccs_sds_links (the Chemical Register)
+    """
     links = _sb_get("ccs_sds_links", "select=stock_code,sds_url,risk_url,risk_assessment_required")
     sds_map = {r["stock_code"]: r["sds_url"] for r in links if r.get("sds_url")}
     risk_map = {r["stock_code"]: r["risk_url"] for r in links if r.get("risk_url")}
     risk_required_set = {r["stock_code"] for r in links if r.get("risk_assessment_required")}
+    register_codes: set[str] = {r["stock_code"] for r in links}
 
     groups = _sb_get("ccs_stock_groups", "select=primary_code,related_codes")
     group_fallback: dict[str, str] = {}
@@ -781,7 +877,7 @@ def load_lookup_maps() -> tuple[dict[str, str], dict[str, str], dict[str, str], 
             if related and related not in sds_map and related not in risk_map:
                 group_fallback[related] = primary
 
-    return sds_map, risk_map, group_fallback, risk_required_set
+    return sds_map, risk_map, group_fallback, risk_required_set, register_codes
 
 
 def resolve_docs_for_site(
@@ -790,12 +886,24 @@ def resolve_docs_for_site(
     risk_map: dict[str, str],
     group_fallback: dict[str, str],
     risk_required_set: set[str] | None = None,
+    register_codes: set[str] | None = None,
 ) -> list[dict[str, str]]:
+    """Resolve SDS/Risk URLs for each code.
+
+    - Excludes codes not in the Chemical Register (register_codes) when register_codes is provided.
+      A code may still be included if it resolves to a registered code via group_fallback.
+    - Output is sorted alphabetically by product code.
+    """
     docs: list[dict[str, str]] = []
     for code in stockcodes:
+        # Filter: skip codes that are not in the Chemical Register and have no group fallback
+        # to a registered code. This removes accessories/equipment from email sends.
+        if register_codes is not None:
+            primary_fallback = group_fallback.get(code, "")
+            if code not in register_codes and primary_fallback not in register_codes:
+                continue
+
         sds_url = sds_map.get(code, "")
-        # Only include risk URL if Chemical Register marks this product as requiring it.
-        # None means register not yet imported — fall back to including risk URL if available.
         risk_url = ""
         if risk_required_set is None or code in risk_required_set:
             risk_url = risk_map.get(code, "")
@@ -807,6 +915,8 @@ def resolve_docs_for_site(
                     risk_url = risk_map.get(primary, "")
         if sds_url or risk_url:
             docs.append({"code": code, "sds_url": sds_url, "risk_url": risk_url})
+
+    docs.sort(key=lambda d: d["code"].upper())
     return docs
 
 
@@ -822,6 +932,7 @@ def compose_site_email(
     batch_id: str = "",
     public_base_url: str = "",
     tracking_secret: str = "",
+    subject: str = "",
 ) -> dict[str, Any]:
     site_name = site.get("name", "")
     ho_name = site.get("ho_name", "") or site_name
@@ -895,7 +1006,7 @@ def compose_site_email(
         "name": site_name,
         "contact_id": contact_id,
         "accno": accno,
-        "subject": f"Your SDS Compliance Pack — {site_name}",
+        "subject": subject or f"Your SDS Compliance Pack — {site_name}",
         "html": html_body,
         "documents": documents,
     }
