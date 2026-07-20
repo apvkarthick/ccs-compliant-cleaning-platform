@@ -415,11 +415,11 @@ def _sb_headers() -> dict[str, str]:
     }
 
 
-def _sb_post_batch(table: str, rows: list[dict]) -> None:
+def _sb_post_batch(table: str, rows: list[dict], *, on_conflict: str = "merge-duplicates") -> None:
     if not rows:
         return
     url = f"{_sb_url()}/rest/v1/{table}"
-    headers = {**_sb_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"}
+    headers = {**_sb_headers(), "Prefer": f"resolution={on_conflict},return=minimal"}
     for i in range(0, len(rows), _BATCH):
         batch = rows[i : i + _BATCH]
         data = json.dumps(batch).encode()
@@ -868,3 +868,147 @@ def compose_site_email(
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# ---------------------------------------------------------------------------
+# Beat task helpers — new product detection, expiry alerts, hold notifications
+# ---------------------------------------------------------------------------
+
+_INTERNAL_EMAIL = "ccshub@ccsessentials.com.au"
+_INTERNAL_NAME = "CCS Hub Internal"
+
+
+def detect_and_record_new_products() -> dict[str, Any]:
+    """Compare ccs_site_mapping stockcodes vs ccs_site_product_history.
+    Insert new (accno, stock_code) pairs. Returns counts and per-site breakdown.
+    On first run (empty history) seeds the table without flagging anything as new."""
+    sites = _sb_get("ccs_site_mapping", "select=accno,name,stockcodes")
+    history_rows = _sb_get("ccs_site_product_history", "select=accno,stock_code")
+    seen: set[tuple[str, str]] = {(r["accno"], r["stock_code"]) for r in history_rows}
+    first_run = len(seen) == 0
+
+    new_rows: list[dict[str, Any]] = []
+    now = datetime.now(timezone.utc).isoformat()
+    for site in sites:
+        accno = site.get("accno", "")
+        for code in (site.get("stockcodes") or []):
+            if (accno, code) not in seen:
+                new_rows.append({"accno": accno, "stock_code": code, "first_seen_at": now})
+
+    if new_rows:
+        _sb_post_batch("ccs_site_product_history", new_rows, on_conflict="ignore-duplicates")
+
+    by_site: dict[str, list[str]] = {}
+    for r in new_rows:
+        by_site.setdefault(r["accno"], []).append(r["stock_code"])
+
+    site_names = {s["accno"]: s.get("name", s["accno"]) for s in sites}
+    return {
+        "new_count": len(new_rows),
+        "first_run": first_run,
+        "by_site": {site_names.get(k, k): v for k, v in by_site.items()},
+    }
+
+
+def get_expiring_sds(days_ahead: int = 60) -> list[dict[str, Any]]:
+    """Return sds_links rows with sds_expiry within days_ahead days from today."""
+    import datetime as _dt
+    today = datetime.now(timezone.utc).date()
+    cutoff = today + _dt.timedelta(days=days_ahead)
+    return _sb_get(
+        "ccs_sds_links",
+        f"select=stock_code,product_name,sds_expiry"
+        f"&sds_expiry=gte.{today.isoformat()}"
+        f"&sds_expiry=lte.{cutoff.isoformat()}"
+        f"&order=sds_expiry.asc",
+    )
+
+
+def get_held_sites() -> list[dict[str, Any]]:
+    """Return all sites currently on hold."""
+    return _sb_get("ccs_site_holds", "select=accno,name,held_at&order=held_at.asc")
+
+
+def send_internal_notification(subject: str, html_body: str) -> dict[str, Any]:
+    """Send an internal notification email to ccshub@ccsessentials.com.au via GHL."""
+    from .distribution import _find_or_create_ghl_contact_id, _send_messages_via_ghl
+    contact_id = _find_or_create_ghl_contact_id({"email": _INTERNAL_EMAIL, "name": _INTERNAL_NAME}) or _INTERNAL_EMAIL
+    msg: dict[str, Any] = {
+        "to": _INTERNAL_EMAIL,
+        "name": _INTERNAL_NAME,
+        "contact_id": contact_id,
+        "subject": subject,
+        "html": html_body,
+        "documents": [],
+    }
+    return _send_messages_via_ghl([msg])
+
+
+def _internal_email_wrapper(title: str, body_html: str, today: str) -> str:
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  body{{font-family:Arial,sans-serif;font-size:14px;color:#222;margin:0;padding:24px;background:#f5f5f5}}
+  .card{{background:#fff;border-radius:6px;padding:24px;max-width:760px;margin:0 auto;box-shadow:0 1px 4px rgba(0,0,0,.1)}}
+  h2{{margin:0 0 4px;color:#2C6B33;font-size:18px}}
+  .meta{{color:#888;font-size:12px;margin-bottom:20px}}
+  table{{width:100%;border-collapse:collapse;margin-top:12px}}
+  th{{background:#2C6B33;color:#fff;text-align:left;padding:8px 10px;font-size:13px}}
+  td{{padding:7px 10px;border-bottom:1px solid #eee;font-size:13px}}
+  tr:last-child td{{border-bottom:none}}
+  .empty{{color:#888;font-style:italic;padding:12px 0}}
+</style></head>
+<body><div class="card">
+<h2>{title}</h2>
+<div class="meta">Generated {today} · CCS Platform</div>
+{body_html}
+</div></body></html>"""
+
+
+def _render_new_products_email(by_site: dict[str, list[str]], today: str) -> str:
+    if not by_site:
+        body = '<p class="empty">No new products detected.</p>'
+    else:
+        rows = "".join(
+            f"<tr><td>{site}</td><td>{len(codes)}</td><td style='font-size:12px'>{', '.join(codes)}</td></tr>"
+            for site, codes in sorted(by_site.items())
+        )
+        total = sum(len(v) for v in by_site.values())
+        body = (
+            f"<p><strong>{total} new product–site pairs</strong> detected across {len(by_site)} site(s).</p>"
+            f"<table><tr><th>Site</th><th>Count</th><th>Product Codes</th></tr>{rows}</table>"
+        )
+    return _internal_email_wrapper("New Products Detected", body, today)
+
+
+def _render_expiry_email(products: list[dict[str, Any]], today: str) -> str:
+    if not products:
+        body = '<p class="empty">No products expiring within 60 days.</p>'
+    else:
+        rows = "".join(
+            f"<tr><td>{p.get('stock_code','')}</td>"
+            f"<td>{p.get('product_name') or '—'}</td>"
+            f"<td>{p.get('sds_expiry','')}</td></tr>"
+            for p in products
+        )
+        body = (
+            f"<p><strong>{len(products)} product(s)</strong> with SDS expiring within 60 days.</p>"
+            f"<table><tr><th>Stock Code</th><th>Product Name</th><th>Expiry Date</th></tr>{rows}</table>"
+        )
+    return _internal_email_wrapper("SDS Expiry Alert", body, today)
+
+
+def _render_hold_list_email(sites: list[dict[str, Any]], today: str) -> str:
+    if not sites:
+        body = '<p class="empty">No sites currently on hold.</p>'
+    else:
+        rows = "".join(
+            f"<tr><td>{s.get('name','')}</td><td>{s.get('accno','')}</td>"
+            f"<td>{(s.get('held_at') or '')[:10]}</td></tr>"
+            for s in sites
+        )
+        body = (
+            f"<p><strong>{len(sites)} site(s)</strong> currently on hold.</p>"
+            f"<table><tr><th>Site Name</th><th>Acc No</th><th>Held Since</th></tr>{rows}</table>"
+        )
+    return _internal_email_wrapper("Weekly Hold List", body, today)

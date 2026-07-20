@@ -28,5 +28,20 @@ celery_app.conf.update(
             "task": "ccs.run_scheduled_distributions",
             "schedule": crontab(hour=6, minute=0),
         },
+        # Daily at 07:00 UTC — detect new product–site pairs
+        "detect-new-products": {
+            "task": "ccs.detect_new_products",
+            "schedule": crontab(hour=7, minute=0),
+        },
+        # Daily at 07:15 UTC — SDS expiry alerts (60-day window)
+        "send-sds-expiry-alerts": {
+            "task": "ccs.send_sds_expiry_alerts",
+            "schedule": crontab(hour=7, minute=15),
+        },
+        # Weekly Monday 07:30 UTC — hold list notification
+        "send-hold-list-notification": {
+            "task": "ccs.send_hold_list_notification",
+            "schedule": crontab(hour=7, minute=30, day_of_week=1),
+        },
     },
 )
