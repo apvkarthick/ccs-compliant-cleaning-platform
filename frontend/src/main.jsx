@@ -129,6 +129,7 @@ function App({ session }) {
     if (window.location.pathname === '/library') return 'library';
     if (window.location.pathname === '/sites') return 'sites';
     if (window.location.pathname === '/data-management') return 'data-management';
+    if (window.location.pathname === '/new-products') return 'new-products';
     return 'distribution';
   });
 
@@ -140,6 +141,7 @@ function App({ session }) {
       'library': '/library',
       'sites': '/sites',
       'data-management': '/data-management',
+      'new-products': '/new-products',
     };
     history.pushState(null, '', paths[tab] || '/app');
     setActiveTab(tab);
@@ -167,6 +169,7 @@ function App({ session }) {
       {activeTab === 'pdf-opens' && <PdfOpensDashboard />}
       {activeTab === 'library' && <DocumentLibrary />}
       {activeTab === 'data-management' && <DataManagement />}
+      {activeTab === 'new-products' && <NewProductQueue />}
     </main>
   );
 }
@@ -1760,6 +1763,158 @@ function DataManagement() {
             </div>
           )}
         </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// New Product Queue  /new-products
+// ---------------------------------------------------------------------------
+
+function NewProductQueue() {
+  const [queue, setQueue] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [testEmail, setTestEmail] = useState('');
+  const [selected, setSelected] = useState({});   // {accno: Set<stock_code>}
+  const [sending, setSending] = useState('');      // accno currently sending
+  const [results, setResults] = useState({});      // {accno: string}
+
+  async function loadQueue() {
+    setLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/new-products`, { headers: getAuthHeaders() });
+      if (r.ok) {
+        const data = await r.json();
+        setQueue(data);
+        const init = {};
+        data.forEach(site => {
+          init[site.accno] = new Set(site.products.map(p => p.stock_code));
+        });
+        setSelected(init);
+      }
+    } finally { setLoading(false); }
+  }
+
+  useEffect(() => { loadQueue(); }, []);
+
+  function toggleCode(accno, code) {
+    setSelected(prev => {
+      const s = new Set(prev[accno] || []);
+      if (s.has(code)) s.delete(code); else s.add(code);
+      return { ...prev, [accno]: s };
+    });
+  }
+
+  function toggleAll(accno, codes, checked) {
+    setSelected(prev => ({ ...prev, [accno]: checked ? new Set(codes) : new Set() }));
+  }
+
+  async function handleSend(site, dryRun) {
+    const codes = [...(selected[site.accno] || [])];
+    if (!codes.length) return;
+    const email = testEmail || (site.emails || [])[0] || '';
+    if (!email) { setResults(r => ({ ...r, [site.accno]: 'No email address — set Test Contact above' })); return; }
+    setSending(site.accno);
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/new-products/send`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accno: site.accno, stockcodes: codes, email, dry_run: dryRun }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Failed');
+      setResults(r => ({ ...r, [site.accno]: `${dryRun ? 'Dry run OK' : 'Sent'} — ${data.docs} doc(s) to ${data.email}` }));
+      if (!dryRun) loadQueue();
+    } catch (err) {
+      setResults(r => ({ ...r, [site.accno]: `Error: ${err.message}` }));
+    } finally { setSending(''); }
+  }
+
+  return (
+    <section className="workbench">
+      <div className="topbar">
+        <div>
+          <p className="eyebrow">Compliant Cleaning Supplies</p>
+          <h1>New Product Queue</h1>
+        </div>
+        <div style={{ fontSize: 13, color: '#607080' }}>
+          Sites with product codes added since last send · Detected daily 07:00 UTC
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 860, margin: '0 auto', padding: '0 0 40px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, padding: '12px 16px', background: '#f0f4ff', borderRadius: 8, border: '1px solid #c9d8ff' }}>
+          <label style={{ fontSize: 13, fontWeight: 600, color: '#334', whiteSpace: 'nowrap' }}>Test / override email</label>
+          <input
+            type="email"
+            value={testEmail}
+            onChange={e => setTestEmail(e.target.value)}
+            placeholder="staff@example.com (blank = use site email)"
+            style={{ flex: 1, padding: '7px 10px', border: '1px solid #c9d8ff', borderRadius: 6, fontSize: 13 }}
+          />
+        </div>
+
+        {loading ? (
+          <p style={{ color: '#607080', fontSize: 14 }}>Loading…</p>
+        ) : queue.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#607080', fontSize: 14 }}>
+            No pending new products. Queue is empty — all detected products have been actioned.
+          </div>
+        ) : (
+          queue.map(site => {
+            const codes = site.products.map(p => p.stock_code);
+            const sel = selected[site.accno] || new Set();
+            const allChecked = codes.every(c => sel.has(c));
+            return (
+              <div key={site.accno} style={{ background: '#fff', border: '1px solid #e0e8f0', borderRadius: 8, marginBottom: 16, overflow: 'hidden' }}>
+                <div style={{ padding: '12px 16px', background: '#f8fafc', borderBottom: '1px solid #e0e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ fontWeight: 700, fontSize: 14 }}>{site.name}</span>
+                    <span style={{ fontSize: 11, color: '#607080', marginLeft: 8 }}>#{site.accno}</span>
+                    <span style={{ fontSize: 11, color: '#607080', marginLeft: 8 }}>{site.emails?.join('; ')}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: '#607080' }}>{sel.size}/{codes.length} selected</span>
+                    <button
+                      className="btn-ghost"
+                      style={{ fontSize: 11, padding: '3px 8px' }}
+                      onClick={() => handleSend(site, true)}
+                      disabled={sending === site.accno || !sel.size}
+                    >Preview dry run</button>
+                    <button
+                      style={{ background: '#2C6B33', color: '#fff', border: 'none', borderRadius: 5, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                      onClick={() => handleSend(site, false)}
+                      disabled={sending === site.accno || !sel.size}
+                    >
+                      {sending === site.accno ? 'Sending…' : 'Send'}
+                    </button>
+                  </div>
+                </div>
+                {results[site.accno] && (
+                  <div style={{ padding: '6px 16px', background: results[site.accno].startsWith('Error') ? '#fff5f5' : '#f0fdf4', fontSize: 12, color: results[site.accno].startsWith('Error') ? '#c0392b' : '#2C6B33', borderBottom: '1px solid #e0e8f0' }}>
+                    {results[site.accno]}
+                  </div>
+                )}
+                <div style={{ padding: '10px 16px' }}>
+                  <label style={{ fontSize: 11, color: '#607080', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                    <input type="checkbox" checked={allChecked} onChange={e => toggleAll(site.accno, codes, e.target.checked)} />
+                    Select all
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {site.products.map(p => (
+                      <label key={p.stock_code} style={{ fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: sel.has(p.stock_code) ? '#e8f5e9' : '#f5f7fa', border: `1px solid ${sel.has(p.stock_code) ? '#2C6B33' : '#d8e1e8'}`, borderRadius: 4 }}>
+                        <input type="checkbox" checked={sel.has(p.stock_code)} onChange={() => toggleCode(site.accno, p.stock_code)} />
+                        {p.stock_code}
+                        <span style={{ fontSize: 10, color: '#99aabb' }}>{p.first_seen_at?.slice(0,10)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
     </section>
   );

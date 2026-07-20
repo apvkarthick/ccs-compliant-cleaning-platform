@@ -452,6 +452,17 @@ def _sb_delete(table: str, filter_param: str) -> None:
         raise RuntimeError(f"Supabase DELETE {table} failed ({exc.code}): {exc.read().decode()[:200]}")
 
 
+def _sb_patch(table: str, filter_param: str, data: dict) -> None:
+    url = f"{_sb_url()}/rest/v1/{table}?{filter_param}"
+    headers = {**_sb_headers(), "Prefer": "return=minimal"}
+    req = Request(url, data=json.dumps(data).encode(), method="PATCH", headers=headers)
+    try:
+        with urlopen(req, timeout=30):
+            pass
+    except HTTPError as exc:
+        raise RuntimeError(f"Supabase PATCH {table} failed ({exc.code}): {exc.read().decode()[:200]}")
+
+
 # ---------------------------------------------------------------------------
 # Import
 # ---------------------------------------------------------------------------
@@ -876,6 +887,56 @@ def _now() -> str:
 
 _INTERNAL_EMAIL = "ccshub@ccsessentials.com.au"
 _INTERNAL_NAME = "CCS Hub Internal"
+
+
+def _is_first_weekday_of_month_aest() -> bool:
+    """True if today in AEST (UTC+10) is the first Mon–Fri of the calendar month."""
+    import datetime as _dt
+    aest = _dt.timezone(_dt.timedelta(hours=10))
+    today = datetime.now(aest).date()
+    if today.weekday() >= 5:
+        return False
+    first = today.replace(day=1)
+    for delta in range((today - first).days):
+        if (first + _dt.timedelta(days=delta)).weekday() < 5:
+            return False
+    return True
+
+
+def get_new_product_queue() -> list[dict[str, Any]]:
+    """Return unactioned new-product entries grouped by site (notified_at IS NULL)."""
+    rows = _sb_get(
+        "ccs_site_product_history",
+        "select=accno,stock_code,first_seen_at&notified_at=is.null&order=first_seen_at.desc",
+    )
+    sites = {s["accno"]: s for s in _sb_get("ccs_site_mapping", "select=accno,name,emails")}
+    by_site: dict[str, dict] = {}
+    for r in rows:
+        accno = r["accno"]
+        if accno not in by_site:
+            site = sites.get(accno, {})
+            by_site[accno] = {
+                "accno": accno,
+                "name": site.get("name", accno),
+                "emails": site.get("emails") or [],
+                "products": [],
+            }
+        by_site[accno]["products"].append({
+            "stock_code": r["stock_code"],
+            "first_seen_at": r["first_seen_at"],
+        })
+    return list(by_site.values())
+
+
+def mark_products_notified(entries: list[dict[str, Any]]) -> None:
+    """Set notified_at=now for each (accno, stock_code) pair."""
+    now = datetime.now(timezone.utc).isoformat()
+    for e in entries:
+        _sb_patch(
+            "ccs_site_product_history",
+            f"accno=eq.{quote(e['accno'], safe='')}&stock_code=eq.{quote(e['stock_code'], safe='')}",
+            {"notified_at": now},
+        )
 
 
 def detect_and_record_new_products() -> dict[str, Any]:

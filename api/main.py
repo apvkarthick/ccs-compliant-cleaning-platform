@@ -590,6 +590,67 @@ def site_distribution_report(_auth: dict = Depends(require_auth)):
     )
 
 
+@app.get("/site-distribution/new-products")
+def get_new_products_queue(_auth: dict = Depends(require_auth)) -> list[dict[str, Any]]:
+    """Return unactioned new-product entries grouped by site."""
+    from .site_distribution import get_new_product_queue
+    return get_new_product_queue()
+
+
+class NewProductSendRequest(BaseModel):
+    accno: str
+    stockcodes: list[str]
+    email: str
+    dry_run: bool = True
+
+
+@app.post("/site-distribution/new-products/send")
+def send_new_products_endpoint(
+    req: NewProductSendRequest,
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    """Send SDS pack for selected new products, then mark them as notified."""
+    import os
+    from .site_distribution import (
+        compose_site_email,
+        load_lookup_maps,
+        resolve_docs_for_site,
+        mark_products_notified,
+        _sb_get,
+    )
+    from .distribution import _find_or_create_ghl_contact_id, _send_messages_via_ghl
+
+    sites = _sb_get("ccs_site_mapping", f"select=*&accno=eq.{req.accno}")
+    if not sites:
+        raise HTTPException(status_code=404, detail="Site not found")
+    site = sites[0]
+
+    sds_map, risk_map, group_fallback, risk_required_set = load_lookup_maps()
+    docs = resolve_docs_for_site(req.stockcodes, sds_map, risk_map, group_fallback, risk_required_set)
+
+    public_base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
+    tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
+    msg = compose_site_email(
+        {**site, "stockcodes": req.stockcodes},
+        docs,
+        req.email,
+        public_base_url=public_base,
+        tracking_secret=tracking_secret,
+    )
+
+    ghl_result: dict[str, Any] = {"status": "dry_run"}
+    if not req.dry_run:
+        contact_id = _find_or_create_ghl_contact_id({"email": req.email, "name": site.get("name", "")})
+        if contact_id:
+            msg["contact_id"] = contact_id
+        ghl_result = _send_messages_via_ghl([msg])
+
+    if not req.dry_run and ghl_result.get("status") != "skipped":
+        mark_products_notified([{"accno": req.accno, "stock_code": c} for c in req.stockcodes])
+
+    return {"status": ghl_result.get("status", "ok"), "docs": len(docs), "email": req.email}
+
+
 @app.post("/site-distribution/test/detect-new-products")
 def test_detect_new_products(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
     """Test trigger: run new-product detection immediately and send notification if new products found."""

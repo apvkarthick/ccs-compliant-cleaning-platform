@@ -42,30 +42,24 @@ def run_scheduled_distributions() -> dict:
 
 @celery_app.task(name="ccs.detect_new_products")
 def detect_new_products_task() -> dict:
-    """Daily beat task: detect new product–site pairs since last run, send internal notification."""
-    from datetime import datetime, timezone
-    from .site_distribution import (
-        detect_and_record_new_products,
-        _render_new_products_email,
-        send_internal_notification,
-    )
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    result = detect_and_record_new_products()
-    if result["new_count"] > 0 and not result["first_run"]:
-        html = _render_new_products_email(result["by_site"], today)
-        send_internal_notification(f"New products detected — {today}", html)
-    return result
+    """Daily beat task: detect and record new product–site pairs.
+    No email sent — CCS team reviews and actions via /new-products page."""
+    from .site_distribution import detect_and_record_new_products
+    return detect_and_record_new_products()
 
 
 @celery_app.task(name="ccs.send_sds_expiry_alerts")
 def send_sds_expiry_alerts_task() -> dict:
-    """Daily beat task: email internal team about SDS expiring within 60 days."""
+    """Monthly beat task (first working day of month, 9am AEST): SDS expiry alert."""
     from datetime import datetime, timezone
     from .site_distribution import (
+        _is_first_weekday_of_month_aest,
         get_expiring_sds,
         _render_expiry_email,
         send_internal_notification,
     )
+    if not _is_first_weekday_of_month_aest():
+        return {"skipped": True, "reason": "not first weekday of month"}
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     expiring = get_expiring_sds(days_ahead=60)
     if expiring:
@@ -79,17 +73,20 @@ def send_sds_expiry_alerts_task() -> dict:
 
 @celery_app.task(name="ccs.send_hold_list_notification")
 def send_hold_list_notification_task() -> dict:
-    """Weekly beat task: email internal team the current hold list."""
+    """Monthly beat task (first working day of month, 9am AEST): hold list notification."""
     from datetime import datetime, timezone
     from .site_distribution import (
+        _is_first_weekday_of_month_aest,
         get_held_sites,
         _render_hold_list_email,
         send_internal_notification,
     )
+    if not _is_first_weekday_of_month_aest():
+        return {"skipped": True, "reason": "not first weekday of month"}
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     held = get_held_sites()
     html = _render_hold_list_email(held, today)
-    send_internal_notification(f"Weekly hold list — {len(held)} site(s) on hold ({today})", html)
+    send_internal_notification(f"Monthly hold list — {len(held)} site(s) on hold ({today})", html)
     return {"held_count": len(held)}
 
 
