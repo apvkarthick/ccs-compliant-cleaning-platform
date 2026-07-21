@@ -861,13 +861,14 @@ def load_lookup_maps() -> tuple[dict[str, str], dict[str, str], dict[str, str], 
     Returns (sds_map, risk_map, group_fallback, risk_required_set, register_codes) where:
     - group_fallback maps related_code → primary_code
     - risk_required_set: codes where risk_assessment_required = True
-    - register_codes: all stock_codes present in ccs_sds_links (the Chemical Register)
+    - register_codes: codes that are in the master Chemical Register (product_name IS NOT NULL).
+      SDS-URL-only entries without a Chemical Register row are excluded intentionally.
     """
-    links = _sb_get("ccs_sds_links", "select=stock_code,sds_url,risk_url,risk_assessment_required")
+    links = _sb_get("ccs_sds_links", "select=stock_code,sds_url,risk_url,risk_assessment_required,product_name")
     sds_map = {r["stock_code"]: r["sds_url"] for r in links if r.get("sds_url")}
     risk_map = {r["stock_code"]: r["risk_url"] for r in links if r.get("risk_url")}
     risk_required_set = {r["stock_code"] for r in links if r.get("risk_assessment_required")}
-    register_codes: set[str] = {r["stock_code"] for r in links}
+    register_codes: set[str] = {r["stock_code"] for r in links if r.get("product_name")}
 
     groups = _sb_get("ccs_stock_groups", "select=primary_code,related_codes")
     group_fallback: dict[str, str] = {}
