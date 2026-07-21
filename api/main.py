@@ -386,6 +386,49 @@ async def import_site_mapping(
     return import_mapping(mapping_bytes, sds_bytes, risk_bytes, grouping_bytes, register_bytes)
 
 
+@app.get("/site-distribution/sharepoint-check")
+def sharepoint_check(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    """Check SharePoint connectivity and Graph API permissions."""
+    from .sharepoint import check_permissions, SharePointError
+    try:
+        return check_permissions()
+    except SharePointError as e:
+        return {"error": str(e), "has_permissions": False, "site_accessible": False}
+
+
+@app.post("/site-distribution/import-from-sharepoint")
+def import_from_sharepoint(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    """Pull latest import files from SharePoint and run the same import pipeline.
+
+    Pulls from compliantcs.sharepoint.com/sites/SDSPlatform:
+      Customer Purchased List/     -> mapping
+      SDS With URL Links/          -> sds_links
+      Risk Assessments.../         -> risk_links
+      Product Size Mapping/        -> stock_groups
+      Chemical Register/           -> chemical_register
+    """
+    from .sharepoint import pull_all_import_files, SharePointError
+    from .site_distribution import import_mapping
+    try:
+        files = pull_all_import_files()
+    except SharePointError as e:
+        raise HTTPException(status_code=502, detail=f"SharePoint error: {e}")
+
+    def _bytes(key: str) -> bytes | None:
+        entry = files.get(key)
+        return entry[1] if entry else None
+
+    pulled = {k: v[0] if v else None for k, v in files.items()}
+    result = import_mapping(
+        mapping_bytes=_bytes("mapping"),
+        sds_bytes=_bytes("sds_links"),
+        risk_bytes=_bytes("risk_links"),
+        grouping_bytes=_bytes("stock_groups"),
+        register_bytes=_bytes("chemical_register"),
+    )
+    return {**result, "pulled_files": pulled}
+
+
 @app.post("/site-distribution/exclude/{accno}")
 def exclude_site_endpoint(
     accno: str,

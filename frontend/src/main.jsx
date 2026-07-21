@@ -937,6 +937,11 @@ function SiteDistribution() {
   const [ncSending, setNcSending] = useState(false);
   const [ncPreviewHtml, setNcPreviewHtml] = useState(null);
 
+  // SharePoint pull
+  const [spPulling, setSpPulling] = useState(false);
+  const [spPullResult, setSpPullResult] = useState(null);
+  const [spPullError, setSpPullError] = useState('');
+
   const PAGE_SIZE = 50;
 
   async function loadStats() {
@@ -1001,6 +1006,20 @@ function SiteDistribution() {
       loadStats(); loadSites();
     } catch (err) { setError(err.message); }
     finally { setImporting(false); }
+  }
+
+  async function handleSpPull() {
+    setSpPulling(true); setSpPullError(''); setSpPullResult(null); setError(''); setNotice('');
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/import-from-sharepoint`, { method: 'POST', headers: getAuthHeaders() });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'SharePoint pull failed');
+      const regNote = data.register ? `, ${data.register} register products` : '';
+      setNotice(`SharePoint import: ${data.sites} sites, ${data.links} SDS/Risk links, ${data.groups} product groups${regNote}.`);
+      setSpPullResult(data.pulled_files || {});
+      loadStats(); loadSites();
+    } catch (err) { setSpPullError(err.message); }
+    finally { setSpPulling(false); }
   }
 
   async function toggleExclude(site) {
@@ -1287,6 +1306,38 @@ function SiteDistribution() {
               <Upload size={16} style={{ marginRight: 6 }} />{importing ? 'Importing…' : 'Import'}
             </button>
           </form>
+
+          {/* SharePoint pull */}
+          <div className="upload-box" style={{ marginTop: 8 }}>
+            <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Pull from SharePoint</label>
+            <p style={{ fontSize: 12, color: '#607080', marginTop: 6, marginBottom: 8 }}>
+              Pulls latest file from each folder in <strong>SDS Share Folder</strong> on SharePoint and imports all 5 mapping files in one step. Requires Azure admin consent (Files.Read.All + Sites.Read.All).
+            </p>
+            <button
+              type="button"
+              className="primary"
+              disabled={spPulling}
+              onClick={handleSpPull}
+              style={{ width: '100%' }}
+            >
+              <Upload size={16} style={{ marginRight: 6 }} />{spPulling ? 'Pulling from SharePoint…' : 'Pull from SharePoint'}
+            </button>
+            {spPullError && (
+              <div className="error-msg" style={{ marginTop: 8 }}>{spPullError}</div>
+            )}
+            {spPullResult && (
+              <div style={{ marginTop: 10, fontSize: 12, display: 'grid', gap: 4 }}>
+                {Object.entries(spPullResult).map(([key, filename]) => (
+                  <div key={key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <span style={{ color: filename ? '#167245' : '#9a6500', fontWeight: 700 }}>{filename ? '✓' : '–'}</span>
+                    <span style={{ color: '#445', textTransform: 'capitalize' }}>{key.replace(/_/g, ' ')}</span>
+                    {filename && <span style={{ color: '#667789', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{filename}</span>}
+                    {!filename && <span style={{ color: '#9a6500' }}>no file in folder</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Report download */}
           <div className="contact-box" style={{ marginTop: 16 }}>
