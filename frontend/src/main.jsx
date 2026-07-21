@@ -884,6 +884,8 @@ function SiteDistribution() {
   const [stats, setStats] = useState(null);
   const [sites, setSites] = useState([]);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [lastSentFilter, setLastSentFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -956,6 +958,8 @@ function SiteDistribution() {
     try {
       const params = new URLSearchParams({ page, page_size: PAGE_SIZE });
       if (search) params.set('search', search);
+      if (statusFilter !== 'all') params.set('status', statusFilter);
+      if (lastSentFilter !== 'all') params.set('last_sent', lastSentFilter);
       const r = await fetch(`${API_BASE}/site-distribution/sites?${params}`, { headers: getAuthHeaders() });
       if (r.ok) setSites((await r.json()).sites || []);
     } catch (err) { setError(err.message); }
@@ -963,7 +967,7 @@ function SiteDistribution() {
   }
 
   useEffect(() => { loadStats(); }, []);
-  useEffect(() => { loadSites(); }, [page, search]);
+  useEffect(() => { loadSites(); }, [page, search, statusFilter, lastSentFilter]);
 
   // Poll task progress
   useEffect(() => {
@@ -1226,11 +1230,19 @@ function SiteDistribution() {
           <h1>Site Distribution</h1>
         </div>
         {stats && (
-          <div style={{ display: 'flex', gap: 10 }}>
-            <Pill label="Total sites" value={stats.total_sites} ok={stats.total_sites > 0} />
-            <Pill label="Active" value={stats.active_sites} ok={stats.active_sites > 0} />
-            <Pill label="On Hold" value={stats.held_sites} warn={stats.held_sites > 0} />
-            <Pill label="Excluded" value={stats.excluded_sites} warn={stats.excluded_sites > 0} />
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button onClick={() => { setStatusFilter('all'); setPage(1); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+              <Pill label="Total sites" value={stats.total_sites} ok={stats.total_sites > 0} active={statusFilter === 'all'} />
+            </button>
+            <button onClick={() => { setStatusFilter('active'); setPage(1); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+              <Pill label="Active" value={stats.active_sites} ok={stats.active_sites > 0} active={statusFilter === 'active'} />
+            </button>
+            <button onClick={() => { setStatusFilter('hold'); setPage(1); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+              <Pill label="On Hold" value={stats.held_sites} warn={stats.held_sites > 0} active={statusFilter === 'hold'} />
+            </button>
+            <button onClick={() => { setStatusFilter('excluded'); setPage(1); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+              <Pill label="Excluded" value={stats.excluded_sites} warn={stats.excluded_sites > 0} active={statusFilter === 'excluded'} />
+            </button>
             <Pill label="SDS links" value={stats.sds_links} ok={stats.sds_links > 0} />
           </div>
         )}
@@ -1508,7 +1520,31 @@ function SiteDistribution() {
           {notice && <div className="notice ok" style={{ marginBottom: 12 }}><CheckCircle2 size={15} /><span>{notice}</span></div>}
           {error && <div className="notice error" style={{ marginBottom: 12 }}><AlertCircle size={15} /><span>{error}</span></div>}
 
-          {/* Search + table */}
+          {/* Filter bar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+            {[['all','All'],['active','Active'],['hold','On Hold'],['excluded','Excluded']].map(([val, label]) => (
+              <button key={val} onClick={() => { setStatusFilter(val); setPage(1); }}
+                style={{ padding: '5px 12px', borderRadius: 20, border: '1px solid', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  background: statusFilter === val ? '#0f766e' : '#f4f7f9',
+                  color: statusFilter === val ? '#fff' : '#445',
+                  borderColor: statusFilter === val ? '#0f766e' : '#d8e1e8' }}>
+                {label}
+              </button>
+            ))}
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label style={{ fontSize: 11, color: '#667789', textTransform: 'uppercase', fontWeight: 800 }}>Last sent</label>
+              <select value={lastSentFilter} onChange={e => { setLastSentFilter(e.target.value); setPage(1); }}
+                style={{ fontSize: 12, padding: '4px 8px', border: '1px solid #d8e1e8', borderRadius: 6, background: '#fff', color: '#17202a' }}>
+                <option value="all">Any time</option>
+                <option value="this_week">This week</option>
+                <option value="this_month">This month</option>
+                <option value="older">Over 30 days ago</option>
+                <option value="never">Never sent</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Search + pagination */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <input
               type="search"
@@ -1533,6 +1569,7 @@ function SiteDistribution() {
                     <th>Head Office</th>
                     <th>Emails</th>
                     <th style={{ textAlign: 'right' }}>Products</th>
+                    <th>Last Sent</th>
                     <th style={{ textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
@@ -1549,6 +1586,11 @@ function SiteDistribution() {
                       </td>
                       <td style={{ textAlign: 'right', fontSize: 12 }}>
                         {(site.stockcodes || []).length}
+                      </td>
+                      <td style={{ fontSize: 11, color: site.last_sent_at ? '#445' : '#aab', whiteSpace: 'nowrap' }}>
+                        {site.last_sent_at
+                          ? new Date(site.last_sent_at).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })
+                          : 'Never'}
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
@@ -1802,10 +1844,10 @@ function SiteDistribution() {
   );
 }
 
-function Pill({ label, value, ok, warn }) {
+function Pill({ label, value, ok, warn, active }) {
   const color = ok ? 'var(--ok)' : warn ? 'var(--warn)' : 'var(--muted)';
   return (
-    <div style={{ background: 'var(--soft)', border: '1px solid var(--line)', borderRadius: 6, padding: '8px 14px', minWidth: 90 }}>
+    <div style={{ background: active ? '#f0faf8' : 'var(--soft)', border: `1px solid ${active ? 'var(--accent)' : 'var(--line)'}`, borderRadius: 6, padding: '8px 14px', minWidth: 90, outline: active ? '2px solid var(--accent)' : 'none', outlineOffset: -1 }}>
       <div style={{ fontSize: 22, fontWeight: 700, color }}>{value ?? 0}</div>
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{label}</div>
     </div>

@@ -552,6 +552,29 @@ def _sb_get(table: str, params: str = "") -> list[dict]:
         raise RuntimeError(f"Supabase GET {table} failed ({exc.code}): {exc.read().decode()[:200]}")
 
 
+def _sb_patch(table: str, row_filter: str, data: dict) -> None:
+    url = f"{_sb_url()}/rest/v1/{table}?{row_filter}"
+    req = Request(
+        url, method="PATCH",
+        headers={**_sb_headers(), "Content-Type": "application/json"},
+        data=json.dumps(data).encode(),
+    )
+    try:
+        with urlopen(req, timeout=15):
+            pass
+    except HTTPError as exc:
+        raise RuntimeError(f"Supabase PATCH {table} failed ({exc.code}): {exc.read().decode()[:200]}")
+
+
+def _update_last_sent_at(accno: str) -> None:
+    if not accno:
+        return
+    try:
+        _sb_patch("ccs_site_mapping", f"accno=eq.{quote(accno, safe='')}", {"last_sent_at": _now()})
+    except Exception:
+        pass  # non-fatal
+
+
 def _sb_get_all(table: str, params: str = "") -> list[dict]:
     """Paginated fetch — returns all rows regardless of PostgREST default page size."""
     page_size = 1000
@@ -674,17 +697,51 @@ def get_import_history(limit: int = 10) -> list[dict[str, Any]]:
 # Sites listing
 # ---------------------------------------------------------------------------
 
-def list_sites(search: str = "", page: int = 1, page_size: int = 50) -> dict[str, Any]:
+def list_sites(search: str = "", page: int = 1, page_size: int = 50, status: str = "all", last_sent: str = "all") -> dict[str, Any]:
+    from datetime import datetime, timedelta, timezone as _tz
+
+    excl_set = {r["accno"] for r in _sb_get_all("ccs_site_exclusions", "select=accno")}
+    held_set = {r["accno"] for r in _sb_get_all("ccs_site_holds", "select=accno")}
+
     offset = (page - 1) * page_size
     params = f"select=*&order=name.asc&limit={page_size}&offset={offset}"
     if search:
         enc = quote(search.replace("%", ""), safe="")
         params += f"&or=(name.ilike.*{enc}*,ho_name.ilike.*{enc}*)"
 
+    # Status filter — push to PostgREST via in()/not.in()
+    if status == "hold" and held_set:
+        joined = ",".join(quote(a, safe="") for a in held_set)
+        params += f"&accno=in.({joined})"
+    elif status == "hold":
+        return {"sites": [], "page": page, "page_size": page_size}
+    elif status == "excluded" and excl_set:
+        joined = ",".join(quote(a, safe="") for a in excl_set)
+        params += f"&accno=in.({joined})"
+    elif status == "excluded":
+        return {"sites": [], "page": page, "page_size": page_size}
+    elif status == "active":
+        combined = excl_set | held_set
+        if combined:
+            joined = ",".join(quote(a, safe="") for a in combined)
+            params += f"&accno=not.in.({joined})"
+
+    # Last-sent filter
+    now_utc = datetime.now(_tz.utc)
+    if last_sent == "never":
+        params += "&last_sent_at=is.null"
+    elif last_sent == "this_week":
+        cutoff = (now_utc - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        params += f"&last_sent_at=gte.{cutoff}"
+    elif last_sent == "this_month":
+        cutoff = (now_utc - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        params += f"&last_sent_at=gte.{cutoff}"
+    elif last_sent == "older":
+        cutoff = (now_utc - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        params += f"&last_sent_at=lt.{cutoff}&last_sent_at=not.is.null"
+
     sites = _sb_get("ccs_site_mapping", params)
 
-    excl_set = {r["accno"] for r in _sb_get_all("ccs_site_exclusions", "select=accno")}
-    held_set = {r["accno"] for r in _sb_get_all("ccs_site_holds", "select=accno")}
     for site in sites:
         site["excluded"] = site.get("accno") in excl_set
         site["held"] = site.get("accno") in held_set
@@ -849,6 +906,7 @@ def send_manual(
     if contact_id:
         msg["contact_id"] = contact_id
     result = _send_messages_via_ghl([msg])
+    _update_last_sent_at(accno)
     return {
         "status": result.get("status", "unknown"),
         "site": site.get("name"),

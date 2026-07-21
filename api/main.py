@@ -362,9 +362,11 @@ def site_distribution_list(
     search: str = Query(default=""),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, le=200),
+    status: str = Query(default="all"),
+    last_sent: str = Query(default="all"),
     _auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
-    return list_sites(search=search, page=page, page_size=page_size)
+    return list_sites(search=search, page=page, page_size=page_size, status=status, last_sent=last_sent)
 
 
 @app.post("/site-distribution/import")
