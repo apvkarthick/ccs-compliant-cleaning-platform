@@ -480,7 +480,17 @@ tbody tr:last-child td {
 
 /* Document Library helpers */
 .desk {
+  max-width: 1220px;
+  margin: 0 auto;
   padding: 0;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  margin-bottom: 14px;
 }
 
 .btn-ghost {
