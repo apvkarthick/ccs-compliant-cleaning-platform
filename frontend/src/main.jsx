@@ -130,6 +130,8 @@ function App({ session }) {
     if (window.location.pathname === '/sites') return 'sites';
     if (window.location.pathname === '/data-management') return 'data-management';
     if (window.location.pathname === '/new-products') return 'new-products';
+    if (window.location.pathname === '/customers') return 'customers';
+    if (window.location.pathname === '/tools') return 'tools';
     return 'distribution';
   });
 
@@ -142,6 +144,8 @@ function App({ session }) {
       'sites': '/sites',
       'data-management': '/data-management',
       'new-products': '/new-products',
+      'customers': '/customers',
+      'tools': '/tools',
     };
     history.pushState(null, '', paths[tab] || '/app');
     setActiveTab(tab);
@@ -156,6 +160,8 @@ function App({ session }) {
       <div className="tab-bar">
         <button className={`tab ${activeTab === 'sites' ? 'active' : ''}`} onClick={() => switchTab('sites')}>Sites</button>
         <button className={`tab ${activeTab === 'new-products' ? 'active' : ''}`} onClick={() => switchTab('new-products')}>New Products</button>
+        <button className={`tab ${activeTab === 'customers' ? 'active' : ''}`} onClick={() => switchTab('customers')}>Customers</button>
+        <button className={`tab ${activeTab === 'tools' ? 'active' : ''}`} onClick={() => switchTab('tools')}>Import & Tools</button>
         <button className={`tab ${activeTab === 'email-opens' ? 'active' : ''}`} onClick={() => switchTab('email-opens')}>Email Opens</button>
         <button className={`tab ${activeTab === 'library' ? 'active' : ''}`} onClick={() => switchTab('library')}><BookOpen size={13} style={{marginRight:4,verticalAlign:'middle'}}/>Doc Library</button>
 
@@ -171,6 +177,8 @@ function App({ session }) {
       {activeTab === 'library' && <DocumentLibrary />}
       {activeTab === 'data-management' && <DataManagement />}
       {activeTab === 'new-products' && <NewProductQueue />}
+      {activeTab === 'customers' && <CustomerActions />}
+      {activeTab === 'tools' && <ImportTools />}
     </main>
   );
 }
@@ -888,25 +896,8 @@ function SiteDistribution() {
   const [lastSentFilter, setLastSentFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [taskId, setTaskId] = useState('');
-  const [taskStatus, setTaskStatus] = useState(null);
-  const [dryRun, setDryRun] = useState(true);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [showHelp, setShowHelp] = useState(false);
-  const [testAlertResult, setTestAlertResult] = useState('');
-  const [testAlertPreviewHtml, setTestAlertPreviewHtml] = useState(null);
-
-  // File inputs
-  const [mappingFile, setMappingFile] = useState(null);
-  const [sdsFile, setSdsFile] = useState(null);
-  const [riskFile, setRiskFile] = useState(null);
-  const [groupingFile, setGroupingFile] = useState(null);
-  const [registerFile, setRegisterFile] = useState(null);
-
-  // Test contact override — staff enter a test email; used as default in manual send modal
   const [testEmail, setTestEmail] = useState('');
 
   // Manual send modal
@@ -920,29 +911,6 @@ function SiteDistribution() {
   // Email preview
   const [previewData, setPreviewData] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-
-  // Data management
-  const [importStatus, setImportStatus] = useState(null);
-  const [clearConfirm, setClearConfirm] = useState(false);
-  const [clearing, setClearing] = useState(false);
-
-  // Add product to Chemical Register
-  const [showAddProduct, setShowAddProduct] = useState(false);
-  const [addProd, setAddProd] = useState({ stock_code: '', product_name: '', hazard_classification: '', un_number: '', maximum_qty: '', risk_assessment_required: false, hazchem: '', chemical_class: '', packing_group: '', primary_use: '', sds_expiry: '', sds_url: '', risk_url: '' });
-  const [addProdResult, setAddProdResult] = useState('');
-  const [addProdSaving, setAddProdSaving] = useState(false);
-
-  // New customer send
-  const [showNewCustomer, setShowNewCustomer] = useState(false);
-  const [ncForm, setNcForm] = useState({ customer_name: '', email: '', accno: '', stockcodes_text: '', dry_run: true });
-  const [ncResult, setNcResult] = useState('');
-  const [ncSending, setNcSending] = useState(false);
-  const [ncPreviewHtml, setNcPreviewHtml] = useState(null);
-
-  // SharePoint pull
-  const [spPulling, setSpPulling] = useState(false);
-  const [spPullResult, setSpPullResult] = useState(null);
-  const [spPullError, setSpPullError] = useState('');
 
   const PAGE_SIZE = 50;
 
@@ -987,44 +955,6 @@ function SiteDistribution() {
     }, 2000);
     return () => clearInterval(interval);
   }, [taskId]);
-
-  async function handleImport(e) {
-    e.preventDefault();
-    if (!mappingFile && !sdsFile && !riskFile && !groupingFile && !registerFile) {
-      setError('Select at least one file to import.');
-      return;
-    }
-    setImporting(true); setError(''); setNotice('');
-    const form = new FormData();
-    if (mappingFile) form.append('mapping', mappingFile);
-    if (sdsFile) form.append('sds', sdsFile);
-    if (riskFile) form.append('risk', riskFile);
-    if (groupingFile) form.append('grouping', groupingFile);
-    if (registerFile) form.append('register', registerFile);
-    try {
-      const r = await fetch(`${API_BASE}/site-distribution/import`, { method: 'POST', headers: getAuthHeaders(), body: form });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || 'Import failed');
-      const regNote = data.register ? `, ${data.register} register products` : '';
-      setNotice(`Imported: ${data.sites} sites, ${data.links} SDS/Risk links, ${data.groups} product groups${regNote}.`);
-      loadStats(); loadSites();
-    } catch (err) { setError(err.message); }
-    finally { setImporting(false); }
-  }
-
-  async function handleSpPull() {
-    setSpPulling(true); setSpPullError(''); setSpPullResult(null); setError(''); setNotice('');
-    try {
-      const r = await fetch(`${API_BASE}/site-distribution/import-from-sharepoint`, { method: 'POST', headers: getAuthHeaders() });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || 'SharePoint pull failed');
-      const regNote = data.register ? `, ${data.register} register products` : '';
-      setNotice(`SharePoint import: ${data.sites} sites, ${data.links} SDS/Risk links, ${data.groups} product groups${regNote}.`);
-      setSpPullResult(data.pulled_files || {});
-      loadStats(); loadSites();
-    } catch (err) { setSpPullError(err.message); }
-    finally { setSpPulling(false); }
-  }
 
   async function toggleExclude(site) {
     const accno = site.accno;
@@ -1112,116 +1042,6 @@ function SiteDistribution() {
     }
   }
 
-  async function loadImportStatus() {
-    try {
-      const r = await fetch(`${API_BASE}/site-distribution/import-status`, { headers: getAuthHeaders() });
-      if (r.ok) setImportStatus(await r.json());
-    } catch { /* ignore */ }
-  }
-
-  async function handleClearData() {
-    setClearing(true);
-    try {
-      const r = await fetch(`${API_BASE}/site-distribution/data`, {
-        method: 'DELETE',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tables: ['ccs_site_mapping', 'ccs_sds_links', 'ccs_stock_groups', 'ccs_site_exclusions', 'ccs_site_holds'] }),
-      });
-      if (r.ok) {
-        setClearConfirm(false);
-        setImportStatus(null);
-        loadStats();
-        loadSites();
-      }
-    } catch { /* ignore */ }
-    finally { setClearing(false); }
-  }
-
-  async function handleSend() {
-    setSending(true); setError(''); setTaskStatus(null);
-    try {
-      const r = await fetch(`${API_BASE}/site-distribution/send?dry_run=${dryRun}`, { method: 'POST', headers: getAuthHeaders() });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || 'Send failed');
-      setTaskId(data.task_id);
-      setTaskStatus({ state: 'PENDING', meta: {} });
-    } catch (err) { setError(err.message); setSending(false); }
-  }
-
-  async function triggerTestAlert(endpoint, label) {
-    setTestAlertResult(`Running ${label}…`);
-    setTestAlertPreviewHtml(null);
-    try {
-      const r = await fetch(`${API_BASE}${endpoint}`, { method: 'POST', headers: getAuthHeaders() });
-      const text = await r.text();
-      let data;
-      try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
-      if (!r.ok) throw new Error(data.detail || 'Failed');
-      if (data.preview_html) {
-        setTestAlertPreviewHtml({ title: label, html: data.preview_html });
-        const count = data.expiring_count ?? data.held_count ?? '—';
-        setTestAlertResult(`${label}: ${count} item(s) — preview ready`);
-      } else {
-        const ghlStatus = data.ghl?.status || 'no email sent (GHL disabled or nothing to send)';
-        const count = data.new_count ?? '—';
-        setTestAlertResult(`${label}: count=${count}, GHL=${ghlStatus}`);
-      }
-    } catch (err) {
-      setTestAlertResult(`${label} error: ${err.message}`);
-    }
-  }
-
-  async function handleAddProduct(e) {
-    e.preventDefault();
-    if (!addProd.stock_code.trim()) return;
-    setAddProdSaving(true);
-    setAddProdResult('');
-    try {
-      const r = await fetch(`${API_BASE}/site-distribution/register/product`, {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...addProd, stock_code: addProd.stock_code.trim().toUpperCase() }),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || 'Failed');
-      setAddProdResult(`${data.status === 'created' ? 'Created' : 'Updated'}: ${data.stock_code}`);
-      setAddProd({ stock_code: '', product_name: '', hazard_classification: '', un_number: '', maximum_qty: '', risk_assessment_required: false, hazchem: '', chemical_class: '', packing_group: '', primary_use: '', sds_expiry: '', sds_url: '', risk_url: '' });
-    } catch (err) {
-      setAddProdResult(`Error: ${err.message}`);
-    } finally {
-      setAddProdSaving(false);
-    }
-  }
-
-  async function handleNewCustomerSend(e) {
-    e.preventDefault();
-    if (!ncForm.customer_name || !ncForm.email || !ncForm.stockcodes_text) return;
-    const codes = ncForm.stockcodes_text.split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
-    if (!codes.length) return;
-    setNcSending(true);
-    setNcResult('');
-    setNcPreviewHtml(null);
-    try {
-      const r = await fetch(`${API_BASE}/site-distribution/send-new-customer`, {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customer_name: ncForm.customer_name, email: ncForm.email, accno: ncForm.accno, stockcodes: codes, dry_run: ncForm.dry_run }),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || 'Failed');
-      if (data.html) setPreviewData(data);
-      if (!ncForm.dry_run && data.saved_accno) { loadSites(); loadStats(); }
-      setNcResult(`${ncForm.dry_run ? 'Dry run OK' : data.status} — ${data.docs} doc(s) to ${data.email}${data.saved_accno ? ` · saved as ${data.saved_accno}` : ''}`);
-    } catch (err) {
-      setNcResult(`Error: ${err.message}`);
-    } finally {
-      setNcSending(false);
-    }
-  }
-
-  const progressMeta = taskStatus?.meta || taskStatus?.result || {};
-  const progressPct = progressMeta.total ? Math.round((progressMeta.done || 0) / progressMeta.total * 100) : 0;
-
   return (
     <section className="workbench">
       <div className="topbar">
@@ -1249,7 +1069,7 @@ function SiteDistribution() {
       </div>
 
       {/* Help panel */}
-      <div style={{ maxWidth: 960, margin: '0 auto 12px', padding: '0 0' }}>
+      <div style={{ marginBottom: 12 }}>
         <button
           onClick={() => setShowHelp(h => !h)}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5c7cfa', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, padding: '4px 0' }}
@@ -1264,33 +1084,24 @@ function SiteDistribution() {
                 <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
                   <li><strong>Total sites</strong> — all imported from mapping file</li>
                   <li><strong>Active</strong> — sites that will receive emails (not held, not excluded)</li>
-                  <li><strong>On Hold</strong> — temporarily paused; skipped in sends; monthly internal hold-list email sent to ccshub@</li>
+                  <li><strong>On Hold</strong> — temporarily paused; skipped in sends</li>
                   <li><strong>Excluded</strong> — permanently removed from all sends</li>
-                  <li><strong>SDS links</strong> — total products with at least one SDS URL</li>
                 </ul>
               </div>
               <div>
-                <strong style={{ color: '#2C6B33' }}>Site row actions</strong>
+                <strong style={{ color: '#2C6B33' }}>Row actions</strong>
                 <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
-                  <li><strong>Hold / Unhold</strong> — temporarily pause a site. Row dims to 65% opacity. Reversed by clicking Unhold.</li>
-                  <li><strong>Active / Excl</strong> — toggle permanent exclusion. Excluded rows dim to 40%.</li>
-                  <li><strong>Send (blue)</strong> — open manual send modal for this site</li>
-                </ul>
-                <strong style={{ color: '#2C6B33', display: 'block', marginTop: 8 }}>Manual send modal</strong>
-                <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
-                  <li>All site products pre-checked — uncheck to exclude any from this send</li>
-                  <li>Email defaults to the Test Contact (set in sidebar) or site's own email</li>
-                  <li><strong>Preview email</strong> — renders the full HTML email + Chemical Register attachment link in a preview overlay. Dry run only — nothing sent.</li>
-                  <li><strong>Send</strong> — with Dry run checked, logs result without sending to GHL</li>
+                  <li><strong>Hold / Unhold</strong> — temporarily pause a site</li>
+                  <li><strong>Active / Excl</strong> — toggle permanent exclusion</li>
+                  <li><strong>Send</strong> — open manual send modal for this site</li>
+                  <li>Email defaults to Test Contact input (above table) or site's own email</li>
                 </ul>
               </div>
               <div>
-                <strong style={{ color: '#2C6B33' }}>Automated alerts</strong>
+                <strong style={{ color: '#2C6B33' }}>Other pages</strong>
                 <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
-                  <li><strong>New product detection</strong> — daily 5:00pm AEST. Detects product codes added since last run; review queue at <a href="/new-products" style={{ color: '#5c7cfa' }}>/new-products</a>. First run seeds history silently.</li>
-                  <li><strong>SDS expiry alert</strong> — 1st working day of each month, 9:00am AEST. Emails list of products expiring within 60 days.</li>
-                  <li><strong>Hold list notification</strong> — 1st working day of each month, 9:15am AEST. Emails current hold list.</li>
-                  <li>SDS expiry + hold list send to <strong>ccshub@ccsessentials.com.au</strong>. Use test buttons in sidebar to fire immediately and preview the email.</li>
+                  <li><strong>Import &amp; Tools</strong> — upload mapping files, pull from SharePoint, site report, test alerts</li>
+                  <li><strong>Customers</strong> — add products to Chemical Register, send to new customers</li>
                 </ul>
               </div>
             </div>
@@ -1298,351 +1109,130 @@ function SiteDistribution() {
         )}
       </div>
 
-      <div className="layout">
-        <aside className="side-panel">
-          {/* Import */}
-          <form onSubmit={handleImport} className="upload-box">
-            <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Import mapping files</label>
-            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <label style={{ fontSize: 12, color: '#445' }}>Customer–Product Code Mapping</label>
-              <input type="file" accept=".xlsx" onChange={e => setMappingFile(e.target.files?.[0] || null)} />
-              <label style={{ fontSize: 12, color: '#445' }}>SDS links</label>
-              <input type="file" accept=".xlsx" onChange={e => setSdsFile(e.target.files?.[0] || null)} />
-              <label style={{ fontSize: 12, color: '#445' }}>Risk links</label>
-              <input type="file" accept=".xlsx" onChange={e => setRiskFile(e.target.files?.[0] || null)} />
-              <label style={{ fontSize: 12, color: '#445' }}>Product grouping (optional)</label>
-              <input type="file" accept=".xlsx" onChange={e => setGroupingFile(e.target.files?.[0] || null)} />
-              <label style={{ fontSize: 12, color: '#445' }}>Chemical Register — Title Sheet (optional, sets SDS expiry + risk assessment flag)</label>
-              <input type="file" accept=".xlsx" onChange={e => setRegisterFile(e.target.files?.[0] || null)} />
-            </div>
-            <button type="submit" className="primary" disabled={importing} style={{ marginTop: 12 }}>
-              <Upload size={16} style={{ marginRight: 6 }} />{importing ? 'Importing…' : 'Import'}
-            </button>
-          </form>
+      {/* Test contact inline */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, padding: '10px 14px', background: '#f8fafc', border: '1px solid #e2eaef', borderRadius: 8 }}>
+        <label style={{ fontSize: 12, fontWeight: 700, color: '#445', whiteSpace: 'nowrap' }}>Test contact</label>
+        <input
+          type="email"
+          value={testEmail}
+          onChange={e => setTestEmail(e.target.value)}
+          placeholder="staff@example.com — pre-fills Send modal"
+          style={{ flex: 1, padding: '6px 10px', border: '1px solid #d8e1e8', borderRadius: 6, fontSize: 13 }}
+        />
+      </div>
 
-          {/* SharePoint pull */}
-          <div className="upload-box" style={{ marginTop: 8 }}>
-            <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Pull from SharePoint</label>
-            <p style={{ fontSize: 12, color: '#607080', marginTop: 6, marginBottom: 8 }}>
-              Pulls latest file from each folder in <strong>SDS Share Folder</strong> on SharePoint and imports all 5 mapping files in one step. Requires Azure admin consent (Files.Read.All + Sites.Read.All).
-            </p>
-            <button
-              type="button"
-              className="primary"
-              disabled={spPulling}
-              onClick={handleSpPull}
-              style={{ width: '100%' }}
-            >
-              <Upload size={16} style={{ marginRight: 6 }} />{spPulling ? 'Pulling from SharePoint…' : 'Pull from SharePoint'}
-            </button>
-            {spPullError && (
-              <div className="error-msg" style={{ marginTop: 8 }}>{spPullError}</div>
-            )}
-            {spPullResult && (
-              <div style={{ marginTop: 10, fontSize: 12, display: 'grid', gap: 4 }}>
-                {Object.entries(spPullResult).map(([key, filename]) => (
-                  <div key={key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <span style={{ color: filename ? '#167245' : '#9a6500', fontWeight: 700 }}>{filename ? '✓' : '–'}</span>
-                    <span style={{ color: '#445', textTransform: 'capitalize' }}>{key.replace(/_/g, ' ')}</span>
-                    {filename && <span style={{ color: '#667789', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{filename}</span>}
-                    {!filename && <span style={{ color: '#9a6500' }}>no file in folder</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+      {error && <div className="notice error" style={{ marginBottom: 12 }}><AlertCircle size={15} /><span>{error}</span></div>}
 
-          {/* Report download */}
-          <div className="contact-box" style={{ marginTop: 16 }}>
-            <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Test report</label>
-            <p style={{ fontSize: 12, color: '#607080', marginTop: 6, marginBottom: 8 }}>
-              Download CSV — every site, what documents they'd receive, and why any are skipped.
-            </p>
-            <a
-              href={`${API_BASE}/site-distribution/report.csv`}
-              download
-              className="primary"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', padding: '8px 14px', borderRadius: 6, fontSize: 13 }}
-            >
-              <Download size={15} style={{ marginRight: 6 }} />Download report
-            </a>
-          </div>
-
-          {/* Test contact box */}
-          <div className="contact-box" style={{ marginTop: 16 }}>
-            <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Test contact</label>
-            <p style={{ fontSize: 12, color: '#607080', marginTop: 6, marginBottom: 8 }}>
-              Enter a staff email. Clicking Send on any site row will pre-fill this address in the send modal.
-            </p>
-            <input
-              type="email"
-              value={testEmail}
-              onChange={e => setTestEmail(e.target.value)}
-              placeholder="staff@example.com"
-              style={{ width: '100%', padding: '7px 10px', border: '1px solid #d8e1e8', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }}
-            />
-          </div>
-
-          {/* Test alert triggers */}
-          <div className="contact-box" style={{ marginTop: 16 }}>
-            <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789' }}>Test alerts</label>
-            <p style={{ fontSize: 12, color: '#607080', marginTop: 6, marginBottom: 8 }}>
-              Fire each automated alert immediately. Sends to ccshub@ via GHL (skipped if GHL disabled).
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <button className="btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 12 }}
-                onClick={() => triggerTestAlert('/site-distribution/test/detect-new-products', 'New products')}>
-                New product detection
-              </button>
-              <button className="btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 12 }}
-                onClick={() => triggerTestAlert('/site-distribution/test/sds-expiry-alerts', 'SDS expiry')}>
-                SDS expiry alerts
-              </button>
-              <button className="btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 12 }}
-                onClick={() => triggerTestAlert('/site-distribution/test/hold-list-notification', 'Hold list')}>
-                Hold list notification
-              </button>
-            </div>
-            {testAlertResult && (
-              <p style={{ fontSize: 11, color: '#445', marginTop: 8, wordBreak: 'break-word' }}>{testAlertResult}</p>
-            )}
-          </div>
-
-          {/* Add product to Chemical Register */}
-          <div className="contact-box" style={{ marginTop: 16 }}>
-            <button
-              onClick={() => { setShowAddProduct(v => !v); setAddProdResult(''); }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789', display: 'flex', alignItems: 'center', gap: 6, padding: 0 }}
-            >
-              <FileSpreadsheet size={13} />{showAddProduct ? '▲ Hide' : '▼ Add to Chemical Register'}
-            </button>
-            {showAddProduct && (
-              <form onSubmit={handleAddProduct} style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {[
-                  ['Product Code *', 'stock_code', 'text', true],
-                  ['Product Name', 'product_name', 'text', false],
-                  ['Hazard Status', 'hazard_classification', 'text', false],
-                  ['UN Number', 'un_number', 'text', false],
-                  ['Maximum Qty', 'maximum_qty', 'text', false],
-                  ['Hazchem', 'hazchem', 'text', false],
-                  ['Class', 'chemical_class', 'text', false],
-                  ['Packing Group', 'packing_group', 'text', false],
-                  ['Primary Use', 'primary_use', 'text', false],
-                  ['SDS Review Date', 'sds_expiry', 'text', false],
-                  ['SDS URL', 'sds_url', 'url', false],
-                  ['Risk URL', 'risk_url', 'url', false],
-                ].map(([label, key, type, req]) => (
-                  <div key={key}>
-                    <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>{label}</label>
-                    <input
-                      type={type}
-                      required={req}
-                      value={addProd[key]}
-                      onChange={e => setAddProd(p => ({ ...p, [key]: e.target.value }))}
-                      style={{ width: '100%', padding: '5px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 12, boxSizing: 'border-box' }}
-                    />
-                  </div>
-                ))}
-                <label style={{ fontSize: 11, color: '#445', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={addProd.risk_assessment_required} onChange={e => setAddProd(p => ({ ...p, risk_assessment_required: e.target.checked }))} />
-                  Risk Assessment Required
-                </label>
-                <button type="submit" className="primary" disabled={addProdSaving} style={{ marginTop: 4 }}>
-                  {addProdSaving ? 'Saving…' : 'Save to Register'}
-                </button>
-                {addProdResult && (
-                  <p style={{ fontSize: 11, color: addProdResult.startsWith('Error') ? '#c0392b' : '#2C6B33', margin: 0 }}>{addProdResult}</p>
-                )}
-              </form>
-            )}
-          </div>
-
-          {/* Send to new customer (no purchase history) */}
-          <div className="contact-box" style={{ marginTop: 16 }}>
-            <button
-              onClick={() => { setShowNewCustomer(v => !v); setNcResult(''); setNcPreviewHtml(null); }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#667789', display: 'flex', alignItems: 'center', gap: 6, padding: 0 }}
-            >
-              <Send size={13} />{showNewCustomer ? '▲ Hide' : '▼ New Customer Send'}
-            </button>
-            {showNewCustomer && (
-              <form onSubmit={handleNewCustomerSend} style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <p style={{ fontSize: 11, color: '#607080', margin: 0 }}>Send SDS pack to a customer not yet in the site mapping.</p>
-                <div>
-                  <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>Customer Name *</label>
-                  <input required type="text" value={ncForm.customer_name} onChange={e => setNcForm(f => ({ ...f, customer_name: e.target.value }))}
-                    style={{ width: '100%', padding: '5px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 12, boxSizing: 'border-box' }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>Account No (optional — used as site ID)</label>
-                  <input type="text" value={ncForm.accno} onChange={e => setNcForm(f => ({ ...f, accno: e.target.value }))}
-                    placeholder="e.g. 9999 (defaults to email if blank)"
-                    style={{ width: '100%', padding: '5px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 12, boxSizing: 'border-box' }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>Email *</label>
-                  <input required type="email" value={ncForm.email} onChange={e => setNcForm(f => ({ ...f, email: e.target.value }))}
-                    style={{ width: '100%', padding: '5px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 12, boxSizing: 'border-box' }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>Product Codes (one per line or comma-separated)</label>
-                  <textarea required rows={4} value={ncForm.stockcodes_text} onChange={e => setNcForm(f => ({ ...f, stockcodes_text: e.target.value }))}
-                    placeholder="AIRDRY5LK&#10;BATHGREEN5L&#10;ALLPURP5L"
-                    style={{ width: '100%', padding: '5px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 12, boxSizing: 'border-box', resize: 'vertical' }} />
-                </div>
-                <label style={{ fontSize: 11, color: '#445', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={ncForm.dry_run} onChange={e => setNcForm(f => ({ ...f, dry_run: e.target.checked }))} />
-                  Dry run (preview only, no email sent)
-                </label>
-                <button type="submit" className="primary" disabled={ncSending}>
-                  {ncSending ? 'Sending…' : ncForm.dry_run ? 'Preview' : 'Send'}
-                </button>
-                {ncResult && (
-                  <p style={{ fontSize: 11, color: ncResult.startsWith('Error') ? '#c0392b' : '#2C6B33', margin: 0 }}>{ncResult}</p>
-                )}
-              </form>
-            )}
-          </div>
-
-          {/* Bulk send — disabled pending mapping verification */}
-          <div className="contact-box" style={{ marginTop: 12, opacity: 0.55, pointerEvents: 'none' }}>
-            <label style={{ fontWeight: 700, fontSize: '0.78rem', letterSpacing: 1, textTransform: 'uppercase', color: '#b45309' }}>Bulk send — disabled</label>
-            <p style={{ fontSize: 12, color: '#b45309', marginTop: 6 }}>
-              Bulk GHL sending is locked until mapping is verified. Use the Send button per site row for individual test sends.
-            </p>
-            <button className="primary" disabled style={{ marginTop: 8, opacity: 0.4 }}>
-              <Send size={16} style={{ marginRight: 6 }} />Send to all sites
-            </button>
-          </div>
-        </aside>
-
-        <div className="main-panel">
-          {notice && <div className="notice ok" style={{ marginBottom: 12 }}><CheckCircle2 size={15} /><span>{notice}</span></div>}
-          {error && <div className="notice error" style={{ marginBottom: 12 }}><AlertCircle size={15} /><span>{error}</span></div>}
-
-          {/* Filter bar */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-            {[['all','All'],['active','Active'],['hold','On Hold'],['excluded','Excluded']].map(([val, label]) => (
-              <button key={val} onClick={() => { setStatusFilter(val); setPage(1); }}
-                style={{ padding: '5px 12px', borderRadius: 20, border: '1px solid', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  background: statusFilter === val ? '#0f766e' : '#f4f7f9',
-                  color: statusFilter === val ? '#fff' : '#445',
-                  borderColor: statusFilter === val ? '#0f766e' : '#d8e1e8' }}>
-                {label}
-              </button>
-            ))}
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <label style={{ fontSize: 11, color: '#667789', textTransform: 'uppercase', fontWeight: 800 }}>Last sent</label>
-              <select value={lastSentFilter} onChange={e => { setLastSentFilter(e.target.value); setPage(1); }}
-                style={{ fontSize: 12, padding: '4px 8px', border: '1px solid #d8e1e8', borderRadius: 6, background: '#fff', color: '#17202a' }}>
-                <option value="all">Any time</option>
-                <option value="this_week">This week</option>
-                <option value="this_month">This month</option>
-                <option value="older">Over 30 days ago</option>
-                <option value="never">Never sent</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Search + pagination */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <input
-              type="search"
-              placeholder="Search sites…"
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1); }}
-              style={{ flex: 1, padding: '7px 12px', border: '1px solid #d8e1e8', borderRadius: 6, fontSize: '0.875rem' }}
-            />
-            <span style={{ fontSize: 12, color: '#607080', whiteSpace: 'nowrap' }}>Page {page}</span>
-            <button className="btn-ghost" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>‹</button>
-            <button className="btn-ghost" onClick={() => setPage(p => p + 1)} disabled={sites.length < PAGE_SIZE}>›</button>
-          </div>
-
-          {loading ? (
-            <p style={{ color: '#607080', fontSize: 14 }}>Loading…</p>
-          ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Site</th>
-                    <th>Head Office</th>
-                    <th>Emails</th>
-                    <th style={{ textAlign: 'right' }}>Products</th>
-                    <th>Last Sent</th>
-                    <th style={{ textAlign: 'center' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sites.map(site => (
-                    <tr key={site.accno} style={{ opacity: site.excluded ? 0.4 : site.held ? 0.65 : 1 }}>
-                      <td>
-                        <div style={{ fontWeight: 600, fontSize: 13 }}>{site.name}</div>
-                        <div style={{ fontSize: 11, color: '#607080' }}>#{site.accno}</div>
-                      </td>
-                      <td style={{ fontSize: 12 }}>{site.ho_name}</td>
-                      <td style={{ fontSize: 11, color: '#445', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {(site.emails || []).join('; ')}
-                      </td>
-                      <td style={{ textAlign: 'right', fontSize: 12 }}>
-                        {(site.stockcodes || []).length}
-                      </td>
-                      <td style={{ fontSize: 11, color: site.last_sent_at ? '#445' : '#aab', whiteSpace: 'nowrap' }}>
-                        {site.last_sent_at
-                          ? new Date(site.last_sent_at).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })
-                          : 'Never'}
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
-                          <button
-                            className="btn-ghost"
-                            title={site.held ? 'Remove hold' : 'Put on hold'}
-                            style={{
-                              fontSize: 10, borderRadius: 4, padding: '2px 6px',
-                              color: site.held ? '#e67e22' : '#99aabb',
-                              border: `1px solid ${site.held ? '#e67e22' : '#c8d4de'}`,
-                            }}
-                            onClick={() => toggleHold(site)}
-                          >
-                            {site.held ? <><Play size={10} style={{ marginRight: 2 }} />Unhold</> : <><Pause size={10} style={{ marginRight: 2 }} />Hold</>}
-                          </button>
-                          <button
-                            className="btn-ghost"
-                            style={{
-                              fontSize: 10, borderRadius: 4, padding: '2px 6px',
-                              color: site.excluded ? '#d35400' : '#2C6B33',
-                              border: `1px solid ${site.excluded ? '#d35400' : '#2C6B33'}`,
-                            }}
-                            onClick={() => toggleExclude(site)}
-                          >
-                            {site.excluded ? 'Excl' : 'Active'}
-                          </button>
-                          <button
-                            className="btn-ghost"
-                            title="Manual send"
-                            style={{
-                              fontSize: 10, borderRadius: 4, padding: '2px 6px',
-                              color: '#5c7cfa', border: '1px solid #5c7cfa',
-                            }}
-                            onClick={() => openManualSend(site)}
-                          >
-                            <Mail size={10} style={{ marginRight: 2 }} />Send
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {sites.length === 0 && (
-                    <tr><td colSpan={5} style={{ textAlign: 'center', color: '#607080', padding: 24 }}>
-                      {stats?.total_sites === 0 ? 'No sites imported yet — upload mapping files.' : 'No results.'}
-                    </td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
+      {/* Filter bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+        {[['all','All'],['active','Active'],['hold','On Hold'],['excluded','Excluded']].map(([val, label]) => (
+          <button key={val} onClick={() => { setStatusFilter(val); setPage(1); }}
+            style={{ padding: '5px 12px', borderRadius: 20, border: '1px solid', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              background: statusFilter === val ? '#0f766e' : '#f4f7f9',
+              color: statusFilter === val ? '#fff' : '#445',
+              borderColor: statusFilter === val ? '#0f766e' : '#d8e1e8' }}>
+            {label}
+          </button>
+        ))}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <label style={{ fontSize: 11, color: '#667789', textTransform: 'uppercase', fontWeight: 800 }}>Last sent</label>
+          <select value={lastSentFilter} onChange={e => { setLastSentFilter(e.target.value); setPage(1); }}
+            style={{ fontSize: 12, padding: '4px 8px', border: '1px solid #d8e1e8', borderRadius: 6, background: '#fff', color: '#17202a' }}>
+            <option value="all">Any time</option>
+            <option value="this_week">This week</option>
+            <option value="this_month">This month</option>
+            <option value="older">Over 30 days ago</option>
+            <option value="never">Never sent</option>
+          </select>
         </div>
       </div>
+
+      {/* Search + pagination */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <input
+          type="search"
+          placeholder="Search sites…"
+          value={search}
+          onChange={e => { setSearch(e.target.value); setPage(1); }}
+          style={{ flex: 1, padding: '7px 12px', border: '1px solid #d8e1e8', borderRadius: 6, fontSize: '0.875rem' }}
+        />
+        <span style={{ fontSize: 12, color: '#607080', whiteSpace: 'nowrap' }}>Page {page}</span>
+        <button className="btn-ghost" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>‹</button>
+        <button className="btn-ghost" onClick={() => setPage(p => p + 1)} disabled={sites.length < PAGE_SIZE}>›</button>
+      </div>
+
+      {loading ? (
+        <p style={{ color: '#607080', fontSize: 14 }}>Loading…</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Site</th>
+                <th>Head Office</th>
+                <th>Emails</th>
+                <th style={{ textAlign: 'right' }}>Products</th>
+                <th>Last Sent</th>
+                <th style={{ textAlign: 'center' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sites.map(site => (
+                <tr key={site.accno} style={{ opacity: site.excluded ? 0.4 : site.held ? 0.65 : 1 }}>
+                  <td>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{site.name}</div>
+                    <div style={{ fontSize: 11, color: '#607080' }}>#{site.accno}</div>
+                  </td>
+                  <td style={{ fontSize: 12 }}>{site.ho_name}</td>
+                  <td style={{ fontSize: 11, color: '#445', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {(site.emails || []).join('; ')}
+                  </td>
+                  <td style={{ textAlign: 'right', fontSize: 12 }}>
+                    {(site.stockcodes || []).length}
+                  </td>
+                  <td style={{ fontSize: 11, color: site.last_sent_at ? '#445' : '#aab', whiteSpace: 'nowrap' }}>
+                    {site.last_sent_at
+                      ? new Date(site.last_sent_at).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })
+                      : 'Never'}
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                      <button
+                        className="btn-ghost"
+                        title={site.held ? 'Remove hold' : 'Put on hold'}
+                        style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', color: site.held ? '#e67e22' : '#99aabb', border: `1px solid ${site.held ? '#e67e22' : '#c8d4de'}` }}
+                        onClick={() => toggleHold(site)}
+                      >
+                        {site.held ? <><Play size={10} style={{ marginRight: 2 }} />Unhold</> : <><Pause size={10} style={{ marginRight: 2 }} />Hold</>}
+                      </button>
+                      <button
+                        className="btn-ghost"
+                        style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', color: site.excluded ? '#d35400' : '#2C6B33', border: `1px solid ${site.excluded ? '#d35400' : '#2C6B33'}` }}
+                        onClick={() => toggleExclude(site)}
+                      >
+                        {site.excluded ? 'Excl' : 'Active'}
+                      </button>
+                      <button
+                        className="btn-ghost"
+                        title="Manual send"
+                        style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', color: '#5c7cfa', border: '1px solid #5c7cfa' }}
+                        onClick={() => openManualSend(site)}
+                      >
+                        <Mail size={10} style={{ marginRight: 2 }} />Send
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {sites.length === 0 && (
+                <tr><td colSpan={6} style={{ textAlign: 'center', color: '#607080', padding: 24 }}>
+                  {stats?.total_sites === 0 ? 'No sites imported yet — use Import & Tools to upload mapping files.' : 'No results.'}
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Manual send modal */}
       {manualSite && (
@@ -1790,56 +1380,6 @@ function SiteDistribution() {
         </div>
       )}
 
-      {/* Alert email preview overlay */}
-      {testAlertPreviewHtml && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1200,
-          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-          padding: '60px 20px', overflowY: 'auto',
-        }} onClick={() => setTestAlertPreviewHtml(null)}>
-          <div style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: 780, boxShadow: '0 8px 40px rgba(0,0,0,0.3)' }}
-            onClick={e => e.stopPropagation()}>
-            <div style={{ background: '#1a2b3c', color: '#fff', padding: '12px 20px', borderRadius: '10px 10px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>Email preview — {testAlertPreviewHtml.title}</span>
-              <button onClick={() => setTestAlertPreviewHtml(null)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px' }}>×</button>
-            </div>
-            <iframe
-              srcDoc={testAlertPreviewHtml.html}
-              title="Alert email preview"
-              style={{ width: '100%', height: 560, border: 'none', background: '#fff', display: 'block' }}
-              sandbox="allow-same-origin"
-            />
-            <div style={{ background: '#f3f4f6', padding: '10px 20px', display: 'flex', justifyContent: 'flex-end', borderRadius: '0 0 10px 10px' }}>
-              <button className="btn-ghost" onClick={() => setTestAlertPreviewHtml(null)} style={{ fontSize: 12 }}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {ncPreviewHtml && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1200,
-          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-          padding: '60px 20px', overflowY: 'auto',
-        }} onClick={() => setNcPreviewHtml(null)}>
-          <div style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: 780, boxShadow: '0 8px 40px rgba(0,0,0,0.3)' }}
-            onClick={e => e.stopPropagation()}>
-            <div style={{ background: '#1a2b3c', color: '#fff', padding: '12px 20px', borderRadius: '10px 10px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>Email preview — {ncPreviewHtml.title}</span>
-              <button onClick={() => setNcPreviewHtml(null)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px' }}>×</button>
-            </div>
-            <iframe
-              srcDoc={ncPreviewHtml.html}
-              title="New customer email preview"
-              style={{ width: '100%', height: 560, border: 'none', background: '#fff', display: 'block' }}
-              sandbox="allow-same-origin"
-            />
-            <div style={{ background: '#f3f4f6', padding: '10px 20px', display: 'flex', justifyContent: 'flex-end', borderRadius: '0 0 10px 10px' }}>
-              <button className="btn-ghost" onClick={() => setNcPreviewHtml(null)} style={{ fontSize: 12 }}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
     </section>
   );
 }
@@ -1851,6 +1391,367 @@ function Pill({ label, value, ok, warn, active }) {
       <div style={{ fontSize: 22, fontWeight: 700, color }}>{value ?? 0}</div>
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{label}</div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Customers  /customers
+// ---------------------------------------------------------------------------
+
+function CustomerActions() {
+  const [addProd, setAddProd] = useState({ stock_code: '', product_name: '', hazard_classification: '', un_number: '', maximum_qty: '', risk_assessment_required: false, hazchem: '', chemical_class: '', packing_group: '', primary_use: '', sds_expiry: '', sds_url: '', risk_url: '' });
+  const [addProdResult, setAddProdResult] = useState('');
+  const [addProdSaving, setAddProdSaving] = useState(false);
+  const [ncForm, setNcForm] = useState({ customer_name: '', email: '', accno: '', stockcodes_text: '', dry_run: true });
+  const [ncResult, setNcResult] = useState('');
+  const [ncSending, setNcSending] = useState(false);
+  const [previewData, setPreviewData] = useState(null);
+
+  async function handleAddProduct(e) {
+    e.preventDefault();
+    if (!addProd.stock_code.trim()) return;
+    setAddProdSaving(true); setAddProdResult('');
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/register/product`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...addProd, stock_code: addProd.stock_code.trim().toUpperCase() }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Failed');
+      setAddProdResult(`${data.status === 'created' ? 'Created' : 'Updated'}: ${data.stock_code}`);
+      setAddProd({ stock_code: '', product_name: '', hazard_classification: '', un_number: '', maximum_qty: '', risk_assessment_required: false, hazchem: '', chemical_class: '', packing_group: '', primary_use: '', sds_expiry: '', sds_url: '', risk_url: '' });
+    } catch (err) { setAddProdResult(`Error: ${err.message}`); }
+    finally { setAddProdSaving(false); }
+  }
+
+  async function handleNewCustomerSend(e) {
+    e.preventDefault();
+    if (!ncForm.customer_name || !ncForm.email || !ncForm.stockcodes_text) return;
+    const codes = ncForm.stockcodes_text.split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+    if (!codes.length) return;
+    setNcSending(true); setNcResult(''); setPreviewData(null);
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/send-new-customer`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer_name: ncForm.customer_name, email: ncForm.email, accno: ncForm.accno, stockcodes: codes, dry_run: ncForm.dry_run }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Failed');
+      if (data.html) setPreviewData(data);
+      setNcResult(`${ncForm.dry_run ? 'Dry run OK' : data.status} — ${data.docs} doc(s) to ${data.email}${data.saved_accno ? ` · saved as ${data.saved_accno}` : ''}`);
+    } catch (err) { setNcResult(`Error: ${err.message}`); }
+    finally { setNcSending(false); }
+  }
+
+  return (
+    <section className="workbench">
+      <div className="topbar">
+        <div>
+          <p className="eyebrow">Compliant Cleaning Supplies</p>
+          <h1>Customers</h1>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
+        {/* Add to Chemical Register */}
+        <div style={{ background: '#fff', border: '1px solid #e2eaef', borderRadius: 10, padding: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <FileSpreadsheet size={17} style={{ color: '#2C6B33' }} />
+            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Add to Chemical Register</h2>
+          </div>
+          <p style={{ fontSize: 12, color: '#607080', margin: '0 0 16px' }}>Add or update a single product in the master Chemical Register.</p>
+          <form onSubmit={handleAddProduct} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {[
+              ['Product Code *', 'stock_code', 'text', true],
+              ['Product Name', 'product_name', 'text', false],
+              ['Hazard Status', 'hazard_classification', 'text', false],
+              ['UN Number', 'un_number', 'text', false],
+              ['Maximum Qty', 'maximum_qty', 'text', false],
+              ['Hazchem', 'hazchem', 'text', false],
+              ['Class', 'chemical_class', 'text', false],
+              ['Packing Group', 'packing_group', 'text', false],
+              ['Primary Use', 'primary_use', 'text', false],
+              ['SDS Review Date', 'sds_expiry', 'text', false],
+              ['SDS URL', 'sds_url', 'url', false],
+              ['Risk URL', 'risk_url', 'url', false],
+            ].map(([label, key, type, req]) => (
+              <div key={key}>
+                <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>{label}</label>
+                <input type={type} required={req} value={addProd[key]}
+                  onChange={e => setAddProd(p => ({ ...p, [key]: e.target.value }))}
+                  style={{ width: '100%', padding: '5px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 12, boxSizing: 'border-box' }} />
+              </div>
+            ))}
+            <label style={{ fontSize: 11, color: '#445', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+              <input type="checkbox" checked={addProd.risk_assessment_required} onChange={e => setAddProd(p => ({ ...p, risk_assessment_required: e.target.checked }))} />
+              Risk Assessment Required
+            </label>
+            <button type="submit" className="primary" disabled={addProdSaving} style={{ marginTop: 4 }}>
+              {addProdSaving ? 'Saving…' : 'Save to Register'}
+            </button>
+            {addProdResult && <p style={{ fontSize: 11, color: addProdResult.startsWith('Error') ? '#c0392b' : '#2C6B33', margin: 0 }}>{addProdResult}</p>}
+          </form>
+        </div>
+
+        {/* New Customer Send */}
+        <div style={{ background: '#fff', border: '1px solid #e2eaef', borderRadius: 10, padding: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <Send size={17} style={{ color: '#5c7cfa' }} />
+            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>New Customer Send</h2>
+          </div>
+          <p style={{ fontSize: 12, color: '#607080', margin: '0 0 16px' }}>Send SDS pack to a customer not yet in the site mapping.</p>
+          <form onSubmit={handleNewCustomerSend} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div>
+              <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>Customer Name *</label>
+              <input required type="text" value={ncForm.customer_name} onChange={e => setNcForm(f => ({ ...f, customer_name: e.target.value }))}
+                style={{ width: '100%', padding: '6px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 13, boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>Account No (optional — used as site ID)</label>
+              <input type="text" value={ncForm.accno} onChange={e => setNcForm(f => ({ ...f, accno: e.target.value }))}
+                placeholder="e.g. 9999 (defaults to email if blank)"
+                style={{ width: '100%', padding: '6px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 13, boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>Email *</label>
+              <input required type="email" value={ncForm.email} onChange={e => setNcForm(f => ({ ...f, email: e.target.value }))}
+                style={{ width: '100%', padding: '6px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 13, boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>Product Codes (one per line or comma-separated)</label>
+              <textarea required rows={5} value={ncForm.stockcodes_text} onChange={e => setNcForm(f => ({ ...f, stockcodes_text: e.target.value }))}
+                placeholder={'AIRDRY5LK\nBATHGREEN5L\nALLPURP5L'}
+                style={{ width: '100%', padding: '6px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 13, boxSizing: 'border-box', resize: 'vertical' }} />
+            </div>
+            <label style={{ fontSize: 12, color: '#445', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+              <input type="checkbox" checked={ncForm.dry_run} onChange={e => setNcForm(f => ({ ...f, dry_run: e.target.checked }))} />
+              Dry run (preview only, no email sent)
+            </label>
+            <button type="submit" className="primary" disabled={ncSending}>
+              {ncSending ? 'Sending…' : ncForm.dry_run ? 'Preview' : 'Send'}
+            </button>
+            {ncResult && <p style={{ fontSize: 12, color: ncResult.startsWith('Error') ? '#c0392b' : '#2C6B33', margin: 0 }}>{ncResult}</p>}
+          </form>
+        </div>
+      </div>
+
+      {previewData && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1100, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 40, paddingBottom: 40, overflowY: 'auto' }} onClick={() => setPreviewData(null)}>
+          <div style={{ background: '#f3f4f6', borderRadius: 10, width: 700, maxWidth: '96vw', boxShadow: '0 12px 40px rgba(0,0,0,0.25)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+            <div style={{ background: '#1e2633', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>Email Preview — New Customer</span>
+              <button onClick={() => setPreviewData(null)} style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ background: '#fff', borderBottom: '1px solid #e2eaef', padding: '12px 20px', fontSize: 12, color: '#445', lineHeight: 1.8 }}>
+              <div><strong>From:</strong> Compliant Cleaning Supplies &lt;ccshub@ccsessentials.com.au&gt;</div>
+              <div><strong>To:</strong> {previewData.email}</div>
+              <div><strong>Subject:</strong> {previewData.subject}</div>
+              {previewData.register_url
+                ? <div style={{ marginTop: 6 }}><strong>Attachment:</strong> <a href={previewData.register_url} target="_blank" rel="noreferrer" style={{ color: '#2C6B33', textDecoration: 'underline' }}>Chemical Register — {previewData.site_name}.xlsx</a></div>
+                : previewData.register_error
+                  ? <div style={{ marginTop: 6, color: '#b45309' }}><strong>Attachment:</strong> not generated — {previewData.register_error}</div>
+                  : null}
+            </div>
+            <iframe srcDoc={previewData.html} title="Email preview" style={{ width: '100%', height: 560, border: 'none', background: '#fff', display: 'block' }} sandbox="allow-same-origin" />
+            <div style={{ background: '#f3f4f6', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: '#607080' }}>{previewData.docs} document(s) · {previewData.site_name}</span>
+              <button className="btn-ghost" onClick={() => setPreviewData(null)} style={{ fontSize: 12 }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Import & Tools  /tools
+// ---------------------------------------------------------------------------
+
+function ImportTools() {
+  const [mappingFile, setMappingFile] = useState(null);
+  const [sdsFile, setSdsFile] = useState(null);
+  const [riskFile, setRiskFile] = useState(null);
+  const [groupingFile, setGroupingFile] = useState(null);
+  const [registerFile, setRegisterFile] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
+  const [spPulling, setSpPulling] = useState(false);
+  const [spPullResult, setSpPullResult] = useState(null);
+  const [spPullError, setSpPullError] = useState('');
+  const [testAlertResult, setTestAlertResult] = useState('');
+  const [testAlertPreviewHtml, setTestAlertPreviewHtml] = useState(null);
+
+  async function handleImport(e) {
+    e.preventDefault();
+    if (!mappingFile && !sdsFile && !riskFile && !groupingFile && !registerFile) { setError('Select at least one file.'); return; }
+    setImporting(true); setError(''); setNotice('');
+    const form = new FormData();
+    if (mappingFile) form.append('mapping', mappingFile);
+    if (sdsFile) form.append('sds', sdsFile);
+    if (riskFile) form.append('risk', riskFile);
+    if (groupingFile) form.append('grouping', groupingFile);
+    if (registerFile) form.append('register', registerFile);
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/import`, { method: 'POST', headers: getAuthHeaders(), body: form });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Import failed');
+      const regNote = data.register ? `, ${data.register} register products` : '';
+      setNotice(`Imported: ${data.sites} sites, ${data.links} SDS/Risk links, ${data.groups} product groups${regNote}.`);
+    } catch (err) { setError(err.message); }
+    finally { setImporting(false); }
+  }
+
+  async function handleSpPull() {
+    setSpPulling(true); setSpPullError(''); setSpPullResult(null); setError(''); setNotice('');
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/import-from-sharepoint`, { method: 'POST', headers: getAuthHeaders() });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'SharePoint pull failed');
+      const regNote = data.register ? `, ${data.register} register products` : '';
+      setNotice(`SharePoint import: ${data.sites} sites, ${data.links} SDS/Risk links, ${data.groups} product groups${regNote}.`);
+      setSpPullResult(data.pulled_files || {});
+    } catch (err) { setSpPullError(err.message); }
+    finally { setSpPulling(false); }
+  }
+
+  async function triggerTestAlert(endpoint, label) {
+    setTestAlertResult(`Running ${label}…`); setTestAlertPreviewHtml(null);
+    try {
+      const r = await fetch(`${API_BASE}${endpoint}`, { method: 'POST', headers: getAuthHeaders() });
+      const text = await r.text();
+      let data;
+      try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
+      if (!r.ok) throw new Error(data.detail || 'Failed');
+      if (data.preview_html) {
+        setTestAlertPreviewHtml({ title: label, html: data.preview_html });
+        setTestAlertResult(`${label}: ${data.expiring_count ?? data.held_count ?? '—'} item(s) — preview ready`);
+      } else {
+        setTestAlertResult(`${label}: count=${data.new_count ?? '—'}, GHL=${data.ghl?.status || 'no email sent'}`);
+      }
+    } catch (err) { setTestAlertResult(`${label} error: ${err.message}`); }
+  }
+
+  const card = { background: '#fff', border: '1px solid #e2eaef', borderRadius: 10, padding: 24 };
+
+  return (
+    <section className="workbench">
+      <div className="topbar">
+        <div>
+          <p className="eyebrow">Compliant Cleaning Supplies</p>
+          <h1>Import &amp; Tools</h1>
+        </div>
+      </div>
+
+      {notice && <div className="notice ok" style={{ marginBottom: 16 }}><CheckCircle2 size={15} /><span>{notice}</span></div>}
+      {error && <div className="notice error" style={{ marginBottom: 16 }}><AlertCircle size={15} /><span>{error}</span></div>}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
+
+        {/* Import mapping files */}
+        <div style={card}>
+          <label style={{ fontWeight: 700, fontSize: 14, color: '#17202a', display: 'block', marginBottom: 6 }}>Import mapping files</label>
+          <p style={{ fontSize: 12, color: '#607080', margin: '0 0 14px' }}>Upload one or more files to update the site mapping database.</p>
+          <form onSubmit={handleImport} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {[
+                ['Customer–Product Code Mapping', e => setMappingFile(e.target.files?.[0] || null)],
+                ['SDS links', e => setSdsFile(e.target.files?.[0] || null)],
+                ['Risk links', e => setRiskFile(e.target.files?.[0] || null)],
+                ['Product grouping (optional)', e => setGroupingFile(e.target.files?.[0] || null)],
+                ['Chemical Register — Title Sheet (optional)', e => setRegisterFile(e.target.files?.[0] || null)],
+              ].map(([label, onChange]) => (
+                <div key={label}>
+                  <label style={{ fontSize: 12, color: '#445', display: 'block', marginBottom: 2 }}>{label}</label>
+                  <input type="file" accept=".xlsx" onChange={onChange} />
+                </div>
+              ))}
+            </div>
+            <button type="submit" className="primary" disabled={importing}>
+              <Upload size={16} style={{ marginRight: 6 }} />{importing ? 'Importing…' : 'Import'}
+            </button>
+          </form>
+        </div>
+
+        {/* Pull from SharePoint */}
+        <div style={card}>
+          <label style={{ fontWeight: 700, fontSize: 14, color: '#17202a', display: 'block', marginBottom: 6 }}>Pull from SharePoint</label>
+          <p style={{ fontSize: 12, color: '#607080', margin: '0 0 14px' }}>
+            Pulls latest file from each folder in <strong>SDS Share Folder</strong> on SharePoint and imports all 5 mapping files in one step. Requires Azure admin consent (Files.Read.All + Sites.Read.All).
+          </p>
+          <button type="button" className="primary" disabled={spPulling} onClick={handleSpPull} style={{ width: '100%', marginBottom: 12 }}>
+            <Upload size={16} style={{ marginRight: 6 }} />{spPulling ? 'Pulling from SharePoint…' : 'Pull from SharePoint'}
+          </button>
+          {spPullError && <div className="error-msg">{spPullError}</div>}
+          {spPullResult && (
+            <div style={{ fontSize: 12, display: 'grid', gap: 4, marginTop: 8 }}>
+              {Object.entries(spPullResult).map(([key, filename]) => (
+                <div key={key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span style={{ color: filename ? '#167245' : '#9a6500', fontWeight: 700 }}>{filename ? '✓' : '–'}</span>
+                  <span style={{ color: '#445', textTransform: 'capitalize' }}>{key.replace(/_/g, ' ')}</span>
+                  {filename
+                    ? <span style={{ color: '#667789', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{filename}</span>
+                    : <span style={{ color: '#9a6500' }}>no file in folder</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Site Report */}
+        <div style={card}>
+          <label style={{ fontWeight: 700, fontSize: 14, color: '#17202a', display: 'block', marginBottom: 6 }}>Site Report</label>
+          <p style={{ fontSize: 12, color: '#607080', margin: '0 0 14px' }}>
+            Download CSV — every site, what documents they'd receive, and why any are skipped.
+          </p>
+          <a href={`${API_BASE}/site-distribution/report.csv`} download className="primary"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', padding: '8px 14px', borderRadius: 6, fontSize: 13 }}>
+            <Download size={15} style={{ marginRight: 6 }} />Download report
+          </a>
+        </div>
+
+        {/* Test Alerts */}
+        <div style={card}>
+          <label style={{ fontWeight: 700, fontSize: 14, color: '#17202a', display: 'block', marginBottom: 6 }}>Test Alerts</label>
+          <p style={{ fontSize: 12, color: '#607080', margin: '0 0 14px' }}>
+            Fire each automated alert immediately. Sends to ccshub@ via GHL (skipped if GHL disabled).
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button className="btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 13 }}
+              onClick={() => triggerTestAlert('/site-distribution/test/detect-new-products', 'New products')}>
+              New product detection
+            </button>
+            <button className="btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 13 }}
+              onClick={() => triggerTestAlert('/site-distribution/test/sds-expiry-alerts', 'SDS expiry')}>
+              SDS expiry alerts
+            </button>
+            <button className="btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 13 }}
+              onClick={() => triggerTestAlert('/site-distribution/test/hold-list-notification', 'Hold list')}>
+              Hold list notification
+            </button>
+          </div>
+          {testAlertResult && <p style={{ fontSize: 12, color: '#445', marginTop: 10, wordBreak: 'break-word' }}>{testAlertResult}</p>}
+        </div>
+      </div>
+
+      {testAlertPreviewHtml && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 20px', overflowY: 'auto' }} onClick={() => setTestAlertPreviewHtml(null)}>
+          <div style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: 780, boxShadow: '0 8px 40px rgba(0,0,0,0.3)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ background: '#1a2b3c', color: '#fff', padding: '12px 20px', borderRadius: '10px 10px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Email preview — {testAlertPreviewHtml.title}</span>
+              <button onClick={() => setTestAlertPreviewHtml(null)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px' }}>×</button>
+            </div>
+            <iframe srcDoc={testAlertPreviewHtml.html} title="Alert email preview" style={{ width: '100%', height: 560, border: 'none', background: '#fff', display: 'block' }} sandbox="allow-same-origin" />
+            <div style={{ background: '#f3f4f6', padding: '10px 20px', display: 'flex', justifyContent: 'flex-end', borderRadius: '0 0 10px 10px' }}>
+              <button className="btn-ghost" onClick={() => setTestAlertPreviewHtml(null)} style={{ fontSize: 12 }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
