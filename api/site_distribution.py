@@ -605,6 +605,12 @@ def import_mapping(
     sites: list[dict] = []
     if mapping_bytes:
         sites = parse_mapping_excel(mapping_bytes)
+        # Deduplicate by accno (keep last occurrence) — duplicate accnos in one
+        # batch cause PG 21000 "ON CONFLICT DO UPDATE command cannot affect row a second time"
+        seen: dict[str, dict] = {}
+        for s in sites:
+            seen[s["accno"]] = s
+        sites = list(seen.values())
         _sb_post_batch("ccs_site_mapping", [{**s, "imported_at": now} for s in sites])
 
     links: list[dict] = []
