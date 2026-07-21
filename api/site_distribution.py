@@ -683,8 +683,8 @@ def list_sites(search: str = "", page: int = 1, page_size: int = 50) -> dict[str
 
     sites = _sb_get("ccs_site_mapping", params)
 
-    excl_set = {r["accno"] for r in _sb_get("ccs_site_exclusions", "select=accno")}
-    held_set = {r["accno"] for r in _sb_get("ccs_site_holds", "select=accno")}
+    excl_set = {r["accno"] for r in _sb_get_all("ccs_site_exclusions", "select=accno")}
+    held_set = {r["accno"] for r in _sb_get_all("ccs_site_holds", "select=accno")}
     for site in sites:
         site["excluded"] = site.get("accno") in excl_set
         site["held"] = site.get("accno") in held_set
@@ -694,10 +694,10 @@ def list_sites(search: str = "", page: int = 1, page_size: int = 50) -> dict[str
 
 def get_stats() -> dict[str, int]:
     try:
-        total = len(_sb_get("ccs_site_mapping", "select=accno"))
-        excl = len(_sb_get("ccs_site_exclusions", "select=accno"))
-        held = len(_sb_get("ccs_site_holds", "select=accno"))
-        links = len(_sb_get("ccs_sds_links", "select=stock_code"))
+        total = len(_sb_get_all("ccs_site_mapping", "select=accno"))
+        excl = len(_sb_get_all("ccs_site_exclusions", "select=accno"))
+        held = len(_sb_get_all("ccs_site_holds", "select=accno"))
+        links = len(_sb_get_all("ccs_sds_links", "select=stock_code"))
         return {
             "total_sites": total,
             "excluded_sites": excl,
