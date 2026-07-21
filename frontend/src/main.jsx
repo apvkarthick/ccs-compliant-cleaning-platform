@@ -745,23 +745,23 @@ function DocumentLibrary() {
       </div>
 
       {activeSection === 'ingest' && (
-        <form onSubmit={handleIngest} className="card" style={{ padding: 24, marginBottom: 16 }}>
+        <form onSubmit={handleIngest} className="card" style={{ padding: 24, marginBottom: 16, maxWidth: 560 }}>
           <h2 style={{ marginTop: 0, fontSize: 18 }}>Upload & Ingest</h2>
           <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
             Upload the Chemical Register Excel + all SDS/Risk Assessment PDFs. Files stored in DO Spaces under <code>ccs/{'{date}/'}</code>.
           </p>
-          <div className="field-row" style={{ marginBottom: 12 }}>
+          <div style={{ marginBottom: 12 }}>
             <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Customer ID (optional — auto-derived from register if blank)</label>
             <input className="inp" value={customerId} onChange={e => setCustomerId(e.target.value)} placeholder="compliant-cleaning" style={{ width: 280 }} />
           </div>
-          <div className="field-row" style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Chemical Register (.xlsx / .xlsm) *</label>
-            <input type="file" accept=".xlsx,.xlsm" onChange={e => setRegister(e.target.files[0])} required />
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>Chemical Register (.xlsx / .xlsm) *</label>
+            <input type="file" accept=".xlsx,.xlsm" onChange={e => setRegister(e.target.files[0])} required style={{ width: 'auto' }} />
           </div>
-          <div className="field-row" style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>SDS + Risk Assessment PDFs (select all, up to 440)</label>
-            <input type="file" accept=".pdf" multiple onChange={e => setPdfs(Array.from(e.target.files))} />
-            {pdfs.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>{pdfs.length} file{pdfs.length !== 1 ? 's' : ''} selected</span>}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>SDS + Risk Assessment PDFs (select all, up to 440)</label>
+            <input type="file" accept=".pdf" multiple onChange={e => setPdfs(Array.from(e.target.files))} style={{ width: 'auto' }} />
+            {pdfs.length > 0 && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{pdfs.length} file{pdfs.length !== 1 ? 's' : ''} selected</div>}
           </div>
           <button className="btn-primary" type="submit" disabled={ingesting || !register}>
             <Upload size={14} style={{ marginRight: 6 }} />{ingesting ? 'Uploading & matching…' : 'Ingest'}
