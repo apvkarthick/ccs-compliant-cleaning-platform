@@ -937,25 +937,6 @@ function SiteDistribution() {
   useEffect(() => { loadStats(); }, []);
   useEffect(() => { loadSites(); }, [page, search, statusFilter, lastSentFilter]);
 
-  // Poll task progress
-  useEffect(() => {
-    if (!taskId) return;
-    const interval = setInterval(async () => {
-      try {
-        const r = await fetch(`${API_BASE}/distribution/status/${taskId}`, { headers: getAuthHeaders() });
-        if (!r.ok) return;
-        const data = await r.json();
-        setTaskStatus(data);
-        if (data.state === 'SUCCESS' || data.state === 'FAILURE') {
-          clearInterval(interval);
-          setSending(false);
-          loadStats();
-        }
-      } catch { /* ignore */ }
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [taskId]);
-
   async function toggleExclude(site) {
     const accno = site.accno;
     const url = `${API_BASE}/site-distribution/exclude/${encodeURIComponent(accno)}`;
