@@ -745,6 +745,13 @@ function DocumentLibrary() {
       </div>
 
       {activeSection === 'ingest' && (
+        <>
+        <div style={{ background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: 8, padding: '14px 18px', marginBottom: 16, maxWidth: 560, fontSize: 13 }}>
+          <strong style={{ display: 'block', marginBottom: 6, color: '#1d4ed8' }}>What is Doc Library?</strong>
+          <p style={{ margin: '0 0 8px' }}>Doc Library ingests SDS and Risk Assessment PDFs in bulk — upload the Chemical Register Excel alongside all PDF files, and the system matches each PDF by filename to its product code, then stores it versioned in DO Spaces.</p>
+          <p style={{ margin: '0 0 8px' }}>Each product can have multiple SDS/Risk versions over time. The Status tab shows the current live file per product. You can roll back any product to a previous version.</p>
+          <p style={{ margin: 0, color: 'var(--muted)' }}><strong>Not the same as Sites → Import.</strong> The Sites tab import uploads the Chemical Register Title Sheet to populate product metadata (name, hazard class, UN number etc.) in Supabase for email distribution. This page is for uploading the actual PDF documents into the file library.</p>
+        </div>
         <form onSubmit={handleIngest} className="card" style={{ padding: 24, marginBottom: 16, maxWidth: 560 }}>
           <h2 style={{ marginTop: 0, fontSize: 18 }}>Upload & Ingest</h2>
           <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
@@ -798,6 +805,7 @@ function DocumentLibrary() {
             </div>
           )}
         </form>
+        </>
       )}
 
       {activeSection === 'status' && (
