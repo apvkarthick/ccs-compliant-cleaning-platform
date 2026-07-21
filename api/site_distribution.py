@@ -660,6 +660,7 @@ def import_mapping(
             "stock_code", "risk_assessment_required", "sds_expiry",
             "product_name", "hazard_classification", "primary_use",
             "signal_word", "un_number",
+            "maximum_qty", "hazchem", "chemical_class", "packing_group",
         )
         # Deduplicate by stock_code — Chemical Register may list the same code
         # more than once (e.g. different size rows). Last occurrence wins.
