@@ -932,7 +932,7 @@ function SiteDistribution() {
 
   // New customer send
   const [showNewCustomer, setShowNewCustomer] = useState(false);
-  const [ncForm, setNcForm] = useState({ customer_name: '', email: '', stockcodes_text: '', dry_run: true });
+  const [ncForm, setNcForm] = useState({ customer_name: '', email: '', accno: '', stockcodes_text: '', dry_run: true });
   const [ncResult, setNcResult] = useState('');
   const [ncSending, setNcSending] = useState(false);
   const [ncPreviewHtml, setNcPreviewHtml] = useState(null);
@@ -1201,12 +1201,13 @@ function SiteDistribution() {
       const r = await fetch(`${API_BASE}/site-distribution/send-new-customer`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customer_name: ncForm.customer_name, email: ncForm.email, stockcodes: codes, dry_run: ncForm.dry_run }),
+        body: JSON.stringify({ customer_name: ncForm.customer_name, email: ncForm.email, accno: ncForm.accno, stockcodes: codes, dry_run: ncForm.dry_run }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || 'Failed');
-      if (data.html) setNcPreviewHtml({ title: `New Customer — ${ncForm.customer_name}`, html: data.html });
-      setNcResult(`${ncForm.dry_run ? 'Dry run OK' : data.status} — ${data.docs} doc(s) to ${data.email}`);
+      if (data.html) setPreviewData(data);
+      if (!ncForm.dry_run && data.saved_accno) { loadSites(); loadStats(); }
+      setNcResult(`${ncForm.dry_run ? 'Dry run OK' : data.status} — ${data.docs} doc(s) to ${data.email}${data.saved_accno ? ` · saved as ${data.saved_accno}` : ''}`);
     } catch (err) {
       setNcResult(`Error: ${err.message}`);
     } finally {
@@ -1458,6 +1459,12 @@ function SiteDistribution() {
                 <div>
                   <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>Customer Name *</label>
                   <input required type="text" value={ncForm.customer_name} onChange={e => setNcForm(f => ({ ...f, customer_name: e.target.value }))}
+                    style={{ width: '100%', padding: '5px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 12, boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>Account No (optional — used as site ID)</label>
+                  <input type="text" value={ncForm.accno} onChange={e => setNcForm(f => ({ ...f, accno: e.target.value }))}
+                    placeholder="e.g. 9999 (defaults to email if blank)"
                     style={{ width: '100%', padding: '5px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 12, boxSizing: 'border-box' }} />
                 </div>
                 <div>

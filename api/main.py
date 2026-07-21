@@ -787,6 +787,7 @@ def add_register_product(
 class NewCustomerSendRequest(BaseModel):
     customer_name: str
     email: str
+    accno: str = ""
     stockcodes: list[str]
     dry_run: bool = True
 
@@ -798,9 +799,13 @@ def send_new_customer_endpoint(
 ) -> dict[str, Any]:
     """Send SDS pack to a brand new customer not yet in the site mapping."""
     from .distribution import _find_or_create_ghl_contact_id, _send_messages_via_ghl
+    from .site_distribution import _sb_post_batch
+    from datetime import datetime, timezone
 
     if not req.stockcodes:
         raise HTTPException(status_code=400, detail="stockcodes required")
+
+    effective_accno = req.accno.strip() or req.email
 
     sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
     docs = resolve_docs_for_site(req.stockcodes, sds_map, risk_map, group_fallback, risk_required_set, register_codes)
@@ -809,7 +814,7 @@ def send_new_customer_endpoint(
 
     public_base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
     tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
-    site = {"name": req.customer_name, "ho_name": req.customer_name, "accno": "", "stockcodes": req.stockcodes}
+    site = {"name": req.customer_name, "ho_name": req.customer_name, "accno": effective_accno, "stockcodes": req.stockcodes}
     msg = compose_site_email(
         site, docs, req.email,
         public_base_url=public_base,
@@ -817,13 +822,33 @@ def send_new_customer_endpoint(
     )
 
     if req.dry_run:
-        return {"status": "dry_run", "docs": len(docs), "email": req.email, "html": msg.get("html", "")}
+        return {
+            "status": "dry_run",
+            "docs": len(docs),
+            "email": req.email,
+            "html": msg.get("html", ""),
+            "subject": msg.get("subject", ""),
+            "register_url": msg.get("register_url", ""),
+            "register_error": msg.get("register_error", ""),
+            "site_name": req.customer_name,
+        }
+
+    # Save new customer to site mapping
+    _sb_post_batch("ccs_site_mapping", [{
+        "accno": effective_accno,
+        "name": req.customer_name,
+        "ho_name": req.customer_name,
+        "ho_accno": "",
+        "emails": [req.email],
+        "stockcodes": req.stockcodes,
+        "imported_at": datetime.now(timezone.utc).isoformat(),
+    }])
 
     contact_id = _find_or_create_ghl_contact_id({"email": req.email, "name": req.customer_name})
     if contact_id:
         msg["contact_id"] = contact_id
     result = _send_messages_via_ghl([msg])
-    return {"status": result.get("status", "ok"), "docs": len(docs), "email": req.email}
+    return {"status": result.get("status", "ok"), "docs": len(docs), "email": req.email, "saved_accno": effective_accno}
 
 
 @app.post("/site-distribution/test/detect-new-products")
