@@ -21,6 +21,10 @@ import urllib.error
 import base64
 
 
+def _encode_path(path: str) -> str:
+    return urllib.parse.quote(path, safe="/")
+
+
 # ── Load env ──────────────────────────────────────────────────────────────────
 
 def _load_env(path: str) -> None:
@@ -189,7 +193,7 @@ if SITE_ID:
 
 if DRIVE_ID:
     print(f"\n=== 6. List '{SDS_FOLDER}' subfolders ===")
-    folder_path = f"/drives/{DRIVE_ID}/root:/{SDS_FOLDER}:/children"
+    folder_path = f"/drives/{DRIVE_ID}/root:/{_encode_path(SDS_FOLDER)}:/children"
     result = _graph(TOKEN, folder_path)
     if "_http_error" in result:
         fail(f"HTTP {result['_http_error']}: {result['_body'][:300]}")
@@ -206,7 +210,7 @@ if DRIVE_ID:
 if DRIVE_ID:
     print(f"\n=== 7. Latest file in each import folder ===")
     for key, folder_name in IMPORT_FOLDERS.items():
-        folder_path = f"/drives/{DRIVE_ID}/root:/{SDS_FOLDER}/{folder_name}:/children"
+        folder_path = f"/drives/{DRIVE_ID}/root:/{_encode_path(SDS_FOLDER)}/{_encode_path(folder_name)}:/children"
         result = _graph(TOKEN, folder_path)
         if "_http_error" in result:
             fail(f"[{key}] HTTP {result['_http_error']}: {result['_body'][:200]}")

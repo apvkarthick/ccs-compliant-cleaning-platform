@@ -43,5 +43,12 @@ celery_app.conf.update(
             "task": "ccs.send_hold_list_notification",
             "schedule": crontab(hour=23, minute=15),
         },
+        # ── Auto SharePoint pull ─────────────────────────────────────────────
+        # Pulls latest import files from SharePoint and runs full import pipeline.
+        # Uncomment to activate. Schedule: daily at 20:00 UTC (6:00 AEST / 7:00 AEDT).
+        # "auto-sharepoint-pull": {
+        #     "task": "ccs.auto_sharepoint_pull",
+        #     "schedule": crontab(hour=20, minute=0),
+        # },
     },
 )

@@ -90,6 +90,42 @@ def send_hold_list_notification_task() -> dict:
     return {"held_count": len(held)}
 
 
+@celery_app.task(name="ccs.auto_sharepoint_pull")
+def auto_sharepoint_pull_task() -> dict:
+    """Beat task: pull latest import files from SharePoint and run full import pipeline.
+
+    Schedule entry exists in celery_app.py but is commented out — activate by
+    uncommenting the 'auto-sharepoint-pull' key in beat_schedule.
+    """
+    from .sharepoint import pull_all_import_files, SharePointError
+    from .site_distribution import import_mapping
+
+    try:
+        files = pull_all_import_files()
+    except SharePointError as e:
+        return {"ok": False, "error": f"SharePoint: {e}"}
+    except Exception as e:
+        return {"ok": False, "error": f"Unexpected: {e}"}
+
+    def _bytes(key: str) -> bytes | None:
+        entry = files.get(key)
+        return entry[1] if entry else None
+
+    pulled = {k: v[0] if v else None for k, v in files.items()}
+    try:
+        result = import_mapping(
+            mapping_bytes=_bytes("mapping"),
+            sds_bytes=_bytes("sds_links"),
+            risk_bytes=_bytes("risk_links"),
+            grouping_bytes=_bytes("stock_groups"),
+            register_bytes=_bytes("chemical_register"),
+        )
+    except Exception as e:
+        return {"ok": False, "pulled_files": pulled, "error": f"Import failed: {e}"}
+
+    return {"ok": True, "pulled_files": pulled, **result}
+
+
 @celery_app.task(name="ccs.ping")
 def ping_task() -> dict[str, str]:
     return {
