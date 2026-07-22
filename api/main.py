@@ -417,11 +417,13 @@ def import_from_sharepoint(_auth: dict = Depends(require_auth)) -> dict[str, Any
     except SharePointError as e:
         raise HTTPException(status_code=502, detail=f"SharePoint error: {e}")
 
+    sp_errors = files.pop("_errors", {})
+
     def _bytes(key: str) -> bytes | None:
         entry = files.get(key)
-        return entry[1] if entry else None
+        return entry[1] if isinstance(entry, tuple) else None
 
-    pulled = {k: v[0] if v else None for k, v in files.items()}
+    pulled = {k: v[0] if isinstance(v, tuple) else None for k, v in files.items()}
     result = import_mapping(
         mapping_bytes=_bytes("mapping"),
         sds_bytes=_bytes("sds_links"),
@@ -429,7 +431,7 @@ def import_from_sharepoint(_auth: dict = Depends(require_auth)) -> dict[str, Any
         grouping_bytes=_bytes("stock_groups"),
         register_bytes=_bytes("chemical_register"),
     )
-    return {**result, "pulled_files": pulled}
+    return {**result, "pulled_files": pulled, "sp_errors": sp_errors}
 
 
 @app.post("/site-distribution/exclude/{accno}")

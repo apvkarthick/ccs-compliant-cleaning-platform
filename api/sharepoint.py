@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import json
+import time
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -151,8 +152,21 @@ def pull_all_import_files() -> dict[str, tuple[str, bytes] | None]:
     drive_id = get_drive_id(token, site_id)
 
     result: dict[str, tuple[str, bytes] | None] = {}
+    pull_errors: dict[str, str] = {}
     for key, folder_name in IMPORT_FOLDERS.items():
-        result[key] = get_latest_file(token, drive_id, folder_name)
+        for attempt in range(3):
+            try:
+                result[key] = get_latest_file(token, drive_id, folder_name)
+                pull_errors.pop(key, None)
+                break
+            except SharePointError as e:
+                pull_errors[key] = str(e)
+                if attempt < 2:
+                    time.sleep(2)
+        else:
+            result[key] = None  # all retries exhausted — treat as missing file
+    if pull_errors:
+        result["_errors"] = pull_errors  # type: ignore[assignment]
     return result
 
 

@@ -111,11 +111,13 @@ def auto_sharepoint_pull_task() -> dict:
     except Exception as e:
         return {"ok": False, "error": f"Unexpected: {e}"}
 
+    sp_errors = files.pop("_errors", {})
+
     def _bytes(key: str) -> bytes | None:
         entry = files.get(key)
-        return entry[1] if entry else None
+        return entry[1] if isinstance(entry, tuple) else None
 
-    pulled = {k: v[0] if v else None for k, v in files.items()}
+    pulled = {k: v[0] if isinstance(v, tuple) else None for k, v in files.items()}
     try:
         result = import_mapping(
             mapping_bytes=_bytes("mapping"),
@@ -127,7 +129,7 @@ def auto_sharepoint_pull_task() -> dict:
     except Exception as e:
         return {"ok": False, "pulled_files": pulled, "error": f"Import failed: {e}"}
 
-    return {"ok": True, "pulled_files": pulled, **result}
+    return {"ok": True, "pulled_files": pulled, "sp_errors": sp_errors, **result}
 
 
 @celery_app.task(name="ccs.ping")
