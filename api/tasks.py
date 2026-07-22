@@ -78,6 +78,7 @@ def send_hold_list_notification_task() -> dict:
     from .site_distribution import (
         _is_first_weekday_of_month_aest,
         get_held_sites,
+        get_excluded_sites,
         _render_hold_list_email,
         send_internal_notification,
     )
@@ -85,9 +86,12 @@ def send_hold_list_notification_task() -> dict:
         return {"skipped": True, "reason": "not first weekday of month"}
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     held = get_held_sites()
-    html = _render_hold_list_email(held, today)
-    send_internal_notification(f"Monthly hold list — {len(held)} site(s) on hold ({today})", html)
-    return {"held_count": len(held)}
+    excluded = get_excluded_sites()
+    html = _render_hold_list_email(held, today, excluded)
+    send_internal_notification(
+        f"Monthly Hold & Exclusion List — {len(held)} on hold, {len(excluded)} excluded ({today})", html
+    )
+    return {"held_count": len(held), "excluded_count": len(excluded)}
 
 
 @celery_app.task(name="ccs.auto_sharepoint_pull")

@@ -1204,6 +1204,11 @@ def get_held_sites() -> list[dict[str, Any]]:
     return _sb_get("ccs_site_holds", "select=accno,name,held_at&order=held_at.asc")
 
 
+def get_excluded_sites() -> list[dict[str, Any]]:
+    """Return all sites permanently excluded from sends."""
+    return _sb_get("ccs_site_exclusions", "select=accno,name,excluded_at&order=excluded_at.asc")
+
+
 def send_internal_notification(subject: str, html_body: str) -> dict[str, Any]:
     """Send an internal notification email to ccshub@ccsessentials.com.au via GHL."""
     from .distribution import _find_or_create_ghl_contact_id, _send_messages_via_ghl
@@ -1273,17 +1278,33 @@ def _render_expiry_email(products: list[dict[str, Any]], today: str) -> str:
     return _internal_email_wrapper("SDS Expiry Alert", body, today)
 
 
-def _render_hold_list_email(sites: list[dict[str, Any]], today: str) -> str:
-    if not sites:
-        body = '<p class="empty">No sites currently on hold.</p>'
-    else:
+def _render_hold_list_email(held: list[dict[str, Any]], today: str, excluded: list[dict[str, Any]] | None = None) -> str:
+    excluded = excluded or []
+    if held:
         rows = "".join(
             f"<tr><td>{s.get('name','')}</td><td>{s.get('accno','')}</td>"
             f"<td>{(s.get('held_at') or '')[:10]}</td></tr>"
-            for s in sites
+            for s in held
         )
-        body = (
-            f"<p><strong>{len(sites)} site(s)</strong> currently on hold.</p>"
+        held_body = (
+            f"<p><strong>{len(held)} site(s)</strong> currently on hold (skipped in sends, not permanent).</p>"
             f"<table><tr><th>Site Name</th><th>Acc No</th><th>Held Since</th></tr>{rows}</table>"
         )
-    return _internal_email_wrapper("Weekly Hold List", body, today)
+    else:
+        held_body = '<p class="empty">No sites currently on hold.</p>'
+
+    if excluded:
+        rows = "".join(
+            f"<tr><td>{s.get('name','')}</td><td>{s.get('accno','')}</td>"
+            f"<td>{(s.get('excluded_at') or '')[:10]}</td></tr>"
+            for s in excluded
+        )
+        excl_body = (
+            f"<h3 style='margin:24px 0 8px;color:#b45309'>Permanently Excluded</h3>"
+            f"<p><strong>{len(excluded)} site(s)</strong> permanently excluded from all sends.</p>"
+            f"<table><tr><th>Site Name</th><th>Acc No</th><th>Excluded Since</th></tr>{rows}</table>"
+        )
+    else:
+        excl_body = '<h3 style="margin:24px 0 8px;color:#b45309">Permanently Excluded</h3><p class="empty">No sites permanently excluded.</p>'
+
+    return _internal_email_wrapper("Monthly Hold & Exclusion List", held_body + excl_body, today)

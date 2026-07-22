@@ -1710,8 +1710,8 @@ function ImportTools() {
               SDS expiry alerts
             </button>
             <button className="btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 13 }}
-              onClick={() => triggerTestAlert('/site-distribution/test/hold-list-notification', 'Hold list')}>
-              Hold list notification
+              onClick={() => triggerTestAlert('/site-distribution/test/hold-list-notification', 'Hold & Exclusion list')}>
+              Hold &amp; Exclusion list
             </button>
           </div>
           {testAlertResult && <p style={{ fontSize: 12, color: '#445', marginTop: 10, wordBreak: 'break-word' }}>{testAlertResult}</p>}

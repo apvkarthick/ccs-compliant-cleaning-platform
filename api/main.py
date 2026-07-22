@@ -889,12 +889,15 @@ def test_sds_expiry_alerts(_auth: dict = Depends(require_auth)) -> dict[str, Any
 def test_hold_list_notification(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
     """Test trigger: send hold list notification immediately."""
     from datetime import datetime, timezone
-    from .site_distribution import get_held_sites, _render_hold_list_email, send_internal_notification
+    from .site_distribution import get_held_sites, get_excluded_sites, _render_hold_list_email, send_internal_notification
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     held = get_held_sites()
-    html = _render_hold_list_email(held, today)
-    ghl_result = send_internal_notification(f"[TEST] Monthly hold list — {len(held)} site(s) ({today})", html)
-    return {"held_count": len(held), "sites": held[:20], "ghl": ghl_result, "preview_html": html}
+    excluded = get_excluded_sites()
+    html = _render_hold_list_email(held, today, excluded)
+    ghl_result = send_internal_notification(
+        f"[TEST] Monthly Hold & Exclusion List — {len(held)} on hold, {len(excluded)} excluded ({today})", html
+    )
+    return {"held_count": len(held), "excluded_count": len(excluded), "ghl": ghl_result, "preview_html": html}
 
 
 @app.get("/ccs-msds-track", response_class=HTMLResponse)
