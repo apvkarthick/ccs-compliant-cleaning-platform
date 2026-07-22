@@ -42,6 +42,7 @@ from .site_distribution import (
     send_manual,
     unhold_site,
     _sb_get,
+    _sb_get_all,
     _sb_url,
     _sb_headers,
 )
@@ -553,13 +554,13 @@ def send_site_distribution(
 def site_distribution_report(_auth: dict = Depends(require_auth)):
     """CSV preview: one row per product per site — Chemical Register data + SDS/Risk URLs."""
     import csv, io as _io
-    excl_set = {r["accno"] for r in _sb_get("ccs_site_exclusions", "select=accno")}
-    held_set = {r["accno"] for r in _sb_get("ccs_site_holds", "select=accno")}
-    all_sites = _sb_get("ccs_site_mapping", "select=*&order=name.asc")
+    excl_set = {r["accno"] for r in _sb_get_all("ccs_site_exclusions", "select=accno")}
+    held_set = {r["accno"] for r in _sb_get_all("ccs_site_holds", "select=accno")}
+    all_sites = _sb_get_all("ccs_site_mapping", "select=*&order=name.asc")
     sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
 
     # Load all product metadata in one query
-    all_links = _sb_get(
+    all_links = _sb_get_all(
         "ccs_sds_links",
         "select=stock_code,product_name,hazard_classification,primary_use,"
         "signal_word,un_number,risk_assessment_required,sds_expiry",
