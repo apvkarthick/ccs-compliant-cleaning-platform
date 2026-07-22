@@ -1975,6 +1975,7 @@ function NewProductQueue() {
   const [selected, setSelected] = useState({});   // {accno: Set<stock_code>}
   const [sending, setSending] = useState('');      // accno currently sending
   const [results, setResults] = useState({});      // {accno: string}
+  const [fullPack, setFullPack] = useState({});    // {accno: bool} — true=full site pack, false=new only
 
   async function loadQueue() {
     setLoading(true);
@@ -2016,7 +2017,7 @@ function NewProductQueue() {
       const r = await fetch(`${API_BASE}/site-distribution/new-products/send`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accno: site.accno, stockcodes: codes, email, dry_run: dryRun }),
+        body: JSON.stringify({ accno: site.accno, stockcodes: codes, email, dry_run: dryRun, full_pack: fullPack[site.accno] !== false }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || 'Failed');
@@ -2072,6 +2073,14 @@ function NewProductQueue() {
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <span style={{ fontSize: 11, color: '#607080' }}>{sel.size}/{codes.length} selected</span>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#607080', cursor: 'pointer', userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={fullPack[site.accno] !== false}
+                        onChange={e => setFullPack(p => ({ ...p, [site.accno]: e.target.checked }))}
+                      />
+                      Full pack
+                    </label>
                     <button
                       className="btn-ghost"
                       style={{ fontSize: 11, padding: '3px 8px' }}

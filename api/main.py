@@ -652,6 +652,7 @@ class NewProductSendRequest(BaseModel):
     stockcodes: list[str]
     email: str
     dry_run: bool = True
+    full_pack: bool = True
 
 
 @app.post("/site-distribution/new-products/send")
@@ -669,21 +670,30 @@ def send_new_products_endpoint(
 
     sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
 
-    # Send full site Chemical Register — new product email includes all products,
-    # not just the newly detected ones (full compliance pack + distinct subject).
-    full_stockcodes = site.get("stockcodes") or req.stockcodes
-    docs = resolve_docs_for_site(full_stockcodes, sds_map, risk_map, group_fallback, risk_required_set, register_codes)
+    use_codes = (site.get("stockcodes") or req.stockcodes) if req.full_pack else req.stockcodes
+    docs = resolve_docs_for_site(use_codes, sds_map, risk_map, group_fallback, risk_required_set, register_codes)
 
     public_base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
     tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
     site_name = site.get("name", req.accno)
+    new_codes_str = ", ".join(req.stockcodes)
+    if req.full_pack:
+        cover = (f"<strong>New products have been added to your Chemical Register.</strong> "
+                 f"New product code(s): <strong>{new_codes_str}</strong>. "
+                 f"This email includes the full SDS compliance pack.")
+        subject = f"New Product Compliance Notice — {site_name}"
+    else:
+        cover = (f"<strong>New product SDS documents for {site_name}.</strong> "
+                 f"New product code(s): <strong>{new_codes_str}</strong>.")
+        subject = f"New Product SDS — {site_name}"
     msg = compose_site_email(
-        {**site, "stockcodes": full_stockcodes},
+        {**site, "stockcodes": use_codes},
         docs,
         req.email,
         public_base_url=public_base,
         tracking_secret=tracking_secret,
-        subject=f"New Product Compliance Notice — {site_name}",
+        subject=subject,
+        cover_notice=cover,
     )
 
     ghl_result: dict[str, Any] = {"status": "dry_run"}

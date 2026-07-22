@@ -999,6 +999,7 @@ def compose_site_email(
     public_base_url: str = "",
     tracking_secret: str = "",
     subject: str = "",
+    cover_notice: str = "",
 ) -> dict[str, Any]:
     site_name = site.get("name", "")
     ho_name = site.get("ho_name", "") or site_name
@@ -1053,6 +1054,7 @@ def compose_site_email(
         documents=documents,
         tracking_pixel_url=pixel_url,
         logo_url=logo_url,
+        cover_notice=cover_notice,
     )
 
     # Generate per-site Chemical Register Excel and upload to DO Spaces

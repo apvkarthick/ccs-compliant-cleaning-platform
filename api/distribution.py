@@ -94,6 +94,7 @@ def _render_branded_html(
     documents: list[dict[str, Any]],
     tracking_pixel_url: str = "",
     logo_url: str = "",
+    cover_notice: str = "",
 ) -> str:
     """Branded HTML email template — table-based for email client compatibility."""
     product_cards: list[str] = []
@@ -181,7 +182,10 @@ def _render_branded_html(
         f'<p style="margin:0 0 22px;color:#17202a;font-size:15px;line-height:1.6;">'
         f'Your Safety Data Sheets and Risk Assessments for <strong>{safe_company}</strong> are ready. '
         f'Click each document link below to acknowledge receipt and access the file.</p>'
-        f'{products_html}'
+        + (f'<div style="background:#fff8e1;border-left:4px solid #f59e0b;border-radius:4px;'
+           f'padding:12px 16px;margin-bottom:20px;font-size:14px;color:#17202a;line-height:1.6;">'
+           f'{cover_notice}</div>' if cover_notice else '')
+        + f'{products_html}'
         '<p style="margin:20px 0 0;color:#607080;font-size:13px;line-height:1.6;">'
         'Questions? Contact us at '
         '<a href="mailto:info@compliantcs.com.au" style="color:#2C6B33;font-weight:bold;">info@compliantcs.com.au</a>'
