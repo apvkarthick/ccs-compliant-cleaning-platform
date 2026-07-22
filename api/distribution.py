@@ -176,6 +176,15 @@ def _render_branded_html(
         'box-shadow:0 2px 8px rgba(0,0,0,0.08);">'
         # Header
         f'<tr><td style="background:#2C6B33;padding:22px 32px;">{header_inner}</td></tr>'
+        # Cover section
+        '<tr><td style="background:#f5fbf6;padding:20px 32px 18px;border-bottom:2px solid #2C6B33;text-align:center;">'
+        '<div style="font-size:17px;font-weight:800;color:#2C6B33;letter-spacing:0.3px;'
+        'font-family:Arial,Helvetica,sans-serif;">Safety Data Sheet &amp; Risk Assessment</div>'
+        '<div style="font-size:14px;font-weight:600;color:#17202a;margin-top:3px;'
+        'font-family:Arial,Helvetica,sans-serif;">Compliance Pack</div>'
+        f'<div style="font-size:12px;color:#607080;margin-top:8px;font-family:Arial,Helvetica,sans-serif;">'
+        f'Prepared for: <strong style="color:#17202a;">{safe_name}</strong></div>'
+        '</td></tr>'
         # Body
         '<tr><td style="padding:28px 32px;">'
         f'<p style="margin:0 0 14px;color:#17202a;font-size:15px;line-height:1.6;">Hi <strong>{safe_name}</strong>,</p>'
