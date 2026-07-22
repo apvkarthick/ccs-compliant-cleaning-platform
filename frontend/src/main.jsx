@@ -1322,7 +1322,7 @@ function SiteDistribution() {
               <button onClick={() => setPreviewData(null)} style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
             </div>
             {/* Email headers */}
-            <div style={{ background: '#fff', borderBottom: '1px solid #e2eaef', padding: '12px 20px', fontSize: 12, color: '#445', lineHeight: 1.8 }}>
+            <div style={{ background: '#eef3f6', borderBottom: '1px solid #c8d8e4', padding: '12px 20px', fontSize: 12, color: '#445', lineHeight: 1.8 }}>
               <div><strong>From:</strong> Compliant Cleaning Supplies &lt;ccshub@ccsessentials.com.au&gt;</div>
               <div><strong>To:</strong> {previewData.email}</div>
               <div><strong>Subject:</strong> {previewData.subject}</div>
@@ -1421,7 +1421,7 @@ function CustomerActions() {
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || 'Failed');
       if (data.html) setPreviewData(data);
-      setNcResult(`${ncForm.dry_run ? 'Dry run OK' : data.status} — ${data.docs} doc(s) to ${data.email}${data.saved_accno ? ` · saved as ${data.saved_accno}` : ''}`);
+      setNcResult(`${ncForm.dry_run ? 'Preview only — site NOT saved to mapping. Uncheck dry run to send and save.' : `${data.status} — ${data.docs} doc(s) to ${data.email}${data.saved_accno ? ` · saved as ${data.saved_accno}` : ''}`}`);
     } catch (err) { setNcResult(`Error: ${err.message}`); }
     finally { setNcSending(false); }
   }
@@ -1522,10 +1522,10 @@ function CustomerActions() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1100, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 40, paddingBottom: 40, overflowY: 'auto' }} onClick={() => setPreviewData(null)}>
           <div style={{ background: '#f3f4f6', borderRadius: 10, width: 700, maxWidth: '96vw', boxShadow: '0 12px 40px rgba(0,0,0,0.25)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
             <div style={{ background: '#1e2633', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>Email Preview — New Customer</span>
+              <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>Email Preview — New Customer{previewData.site_name ? ` — ${previewData.site_name}` : ''}</span>
               <button onClick={() => setPreviewData(null)} style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
             </div>
-            <div style={{ background: '#fff', borderBottom: '1px solid #e2eaef', padding: '12px 20px', fontSize: 12, color: '#445', lineHeight: 1.8 }}>
+            <div style={{ background: '#eef3f6', borderBottom: '1px solid #c8d8e4', padding: '12px 20px', fontSize: 12, color: '#445', lineHeight: 1.8 }}>
               <div><strong>From:</strong> Compliant Cleaning Supplies &lt;ccshub@ccsessentials.com.au&gt;</div>
               <div><strong>To:</strong> {previewData.email}</div>
               <div><strong>Subject:</strong> {previewData.subject}</div>
