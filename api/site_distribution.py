@@ -806,6 +806,7 @@ def get_missing_docs() -> dict[str, list[dict]]:
     sds_map = {r["stock_code"]: r["sds_url"] for r in links if r.get("sds_url")}
     risk_map = {r["stock_code"]: r["risk_url"] for r in links if r.get("risk_url")}
     risk_required_set = {r["stock_code"] for r in links if r.get("risk_assessment_required")}
+    register_codes = {r["stock_code"] for r in links if r.get("product_name")}
 
     groups = _sb_get_all("ccs_stock_groups", "select=primary_code,related_codes")
     group_fallback: dict[str, str] = {}
@@ -820,6 +821,10 @@ def get_missing_docs() -> dict[str, list[dict]]:
 
     for code in sorted(all_codes):
         resolved = group_fallback.get(code, code)
+        # Only report codes that are in the Chemical Register (or resolve to one).
+        # Products not in the register don't require SDS/risk docs.
+        if code not in register_codes and resolved not in register_codes:
+            continue
         product_name = (link_map.get(code) or link_map.get(resolved) or {}).get("product_name") or ""
         if resolved not in sds_map:
             sds_missing.append({"code": code, "product_name": product_name})
