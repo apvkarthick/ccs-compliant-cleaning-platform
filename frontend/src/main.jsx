@@ -1944,9 +1944,12 @@ function ImportTools() {
             </button>
           </div>
         </div>
-        <p style={{ fontSize: 12, color: '#607080', margin: '0 0 16px' }}>
+        <p style={{ fontSize: 12, color: '#607080', margin: '0 0 12px' }}>
           These documents are required but not yet linked in the sheet. Add the PDF URLs to the spreadsheet before the next distribution run.
         </p>
+        <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#0369a1', lineHeight: 1.6 }}>
+          <strong>How this report works:</strong> Only products listed in the <strong>Chemical Register</strong> are checked — products on the customer purchase sheet that are not in the Chemical Register are excluded (they don't require SDS or risk assessment documents). Size variants are resolved to their primary product via the <strong>product grouping file</strong> before checking for linked documents.
+        </div>
 
         {missingLoading && !missingDocs && <p style={{ fontSize: 13, color: '#607080' }}>Loading…</p>}
 
