@@ -786,6 +786,49 @@ def get_import_status() -> dict[str, Any]:
     return result
 
 
+def get_missing_docs() -> dict[str, list[dict]]:
+    """Return stock codes used by active sites that are missing SDS or Risk Assessment URLs."""
+    excl_set = {r["accno"] for r in _sb_get_all("ccs_site_exclusions", "select=accno")}
+    all_sites = _sb_get_all("ccs_site_mapping", "select=accno,stockcodes")
+
+    all_codes: set[str] = set()
+    for site in all_sites:
+        if site.get("accno") in excl_set:
+            continue
+        raw = site.get("stockcodes") or ""
+        for c in (raw.split(",") if isinstance(raw, str) else (raw or [])):
+            c = c.strip()
+            if c:
+                all_codes.add(c)
+
+    links = _sb_get_all("ccs_sds_links", "select=stock_code,sds_url,risk_url,risk_assessment_required,product_name")
+    link_map: dict[str, dict] = {r["stock_code"]: r for r in links}
+    sds_map = {r["stock_code"]: r["sds_url"] for r in links if r.get("sds_url")}
+    risk_map = {r["stock_code"]: r["risk_url"] for r in links if r.get("risk_url")}
+    risk_required_set = {r["stock_code"] for r in links if r.get("risk_assessment_required")}
+
+    groups = _sb_get_all("ccs_stock_groups", "select=primary_code,related_codes")
+    group_fallback: dict[str, str] = {}
+    for g in groups:
+        primary = g.get("primary_code", "")
+        for related in g.get("related_codes") or []:
+            if related and related not in sds_map and related not in risk_map:
+                group_fallback[related] = primary
+
+    sds_missing: list[dict] = []
+    risk_missing: list[dict] = []
+
+    for code in sorted(all_codes):
+        resolved = group_fallback.get(code, code)
+        product_name = (link_map.get(code) or link_map.get(resolved) or {}).get("product_name") or ""
+        if resolved not in sds_map:
+            sds_missing.append({"code": code, "product_name": product_name})
+        if (code in risk_required_set or resolved in risk_required_set) and resolved not in risk_map:
+            risk_missing.append({"code": code, "product_name": product_name})
+
+    return {"sds_missing": sds_missing, "risk_missing": risk_missing}
+
+
 def clear_table_data(tables: list[str]) -> dict[str, str]:
     """Delete all rows from the specified tables."""
     _ALLOWED: dict[str, str] = {

@@ -1735,6 +1735,8 @@ function ImportTools() {
   const [spPullError, setSpPullError] = useState('');
   const [testAlertResult, setTestAlertResult] = useState('');
   const [testAlertPreviewHtml, setTestAlertPreviewHtml] = useState(null);
+  const [missingDocs, setMissingDocs] = useState(null);
+  const [missingLoading, setMissingLoading] = useState(false);
 
   async function handleImport(e) {
     e.preventDefault();
@@ -1784,6 +1786,31 @@ function ImportTools() {
         setTestAlertResult(`${label}: count=${data.new_count ?? '—'}, GHL=${data.ghl?.status || 'no email sent'}`);
       }
     } catch (err) { setTestAlertResult(`${label} error: ${err.message}`); }
+  }
+
+  async function loadMissingDocs() {
+    setMissingLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/missing-docs`, { headers: getAuthHeaders() });
+      if (r.ok) setMissingDocs(await r.json());
+    } catch { /* ignore */ }
+    finally { setMissingLoading(false); }
+  }
+
+  useEffect(() => { loadMissingDocs(); }, []);
+
+  function downloadMissingCsv() {
+    if (!missingDocs) return;
+    const rows = [
+      ['Type', 'Code', 'Product'],
+      ...missingDocs.sds_missing.map(r => ['SDS Missing', r.code, r.product_name]),
+      ...missingDocs.risk_missing.map(r => ['Risk Missing', r.code, r.product_name]),
+    ];
+    const csv = rows.map(r => r.map(v => `"${(v || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = 'missing_docs.csv';
+    a.click();
   }
 
   const card = { background: '#fff', border: '1px solid #e2eaef', borderRadius: 10, padding: 24 };
@@ -1886,6 +1913,87 @@ function ImportTools() {
           </div>
           {testAlertResult && <p style={{ fontSize: 12, color: '#445', marginTop: 10, wordBreak: 'break-word' }}>{testAlertResult}</p>}
         </div>
+      </div>
+
+      {/* Missing Documents Report */}
+      <div style={{ ...card, marginTop: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap', gap: 8 }}>
+          <div>
+            <p style={{ fontSize: 11, fontWeight: 700, color: '#607080', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>Missing Documents Report</p>
+            <p style={{ fontWeight: 700, fontSize: 16, color: '#17202a', margin: '2px 0 0' }}>PDFs to fill in the sheet</p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {missingDocs && (() => {
+              const total = missingDocs.sds_missing.length + missingDocs.risk_missing.length;
+              return total > 0 ? (
+                <span style={{ background: '#fee2e2', color: '#dc2626', fontWeight: 700, fontSize: 12, borderRadius: 20, padding: '3px 10px' }}>{total} issue{total !== 1 ? 's' : ''}</span>
+              ) : (
+                <span style={{ background: '#dcfce7', color: '#166534', fontWeight: 700, fontSize: 12, borderRadius: 20, padding: '3px 10px' }}>All linked</span>
+              );
+            })()}
+            <button className="btn-ghost" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }} onClick={downloadMissingCsv} disabled={!missingDocs}>
+              <Download size={13} /> Download CSV
+            </button>
+            <button className="btn-ghost" style={{ fontSize: 12 }} onClick={loadMissingDocs} disabled={missingLoading}>
+              {missingLoading ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </div>
+        </div>
+        <p style={{ fontSize: 12, color: '#607080', margin: '0 0 16px' }}>
+          These documents are required but not yet linked in the sheet. Add the PDF URLs to the spreadsheet before the next distribution run.
+        </p>
+
+        {missingLoading && !missingDocs && <p style={{ fontSize: 13, color: '#607080' }}>Loading…</p>}
+
+        {missingDocs && (() => {
+          const thStyle = { background: '#2C6B33', color: '#fff', padding: '8px 12px', fontSize: 12, fontWeight: 700, textAlign: 'left' };
+          const tdStyle = { padding: '8px 12px', fontSize: 13, borderBottom: '1px solid #f0f4f7' };
+          return (
+            <>
+              {missingDocs.sds_missing.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: '#607080', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                    SDS Missing <span style={{ background: '#dbeafe', color: '#1d4ed8', borderRadius: 20, padding: '1px 8px', fontWeight: 700 }}>{missingDocs.sds_missing.length}</span>
+                  </p>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #e2eaef', borderRadius: 8, overflow: 'hidden' }}>
+                    <thead><tr><th style={thStyle}>Code</th><th style={thStyle}>Product</th></tr></thead>
+                    <tbody>
+                      {missingDocs.sds_missing.map(r => (
+                        <tr key={r.code}>
+                          <td style={{ ...tdStyle, fontWeight: 700, color: '#17202a' }}>{r.code}</td>
+                          <td style={{ ...tdStyle, color: r.product_name ? '#c05621' : '#aab' }}>{r.product_name || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {missingDocs.risk_missing.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: '#607080', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                    Risk Assessment Missing <span style={{ background: '#dbeafe', color: '#1d4ed8', borderRadius: 20, padding: '1px 8px', fontWeight: 700 }}>{missingDocs.risk_missing.length}</span>
+                  </p>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #e2eaef', borderRadius: 8, overflow: 'hidden' }}>
+                    <thead><tr><th style={thStyle}>Code</th><th style={thStyle}>Product</th></tr></thead>
+                    <tbody>
+                      {missingDocs.risk_missing.map(r => (
+                        <tr key={r.code}>
+                          <td style={{ ...tdStyle, fontWeight: 700, color: '#17202a' }}>{r.code}</td>
+                          <td style={{ ...tdStyle, color: r.product_name ? '#c05621' : '#aab' }}>{r.product_name || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {missingDocs.sds_missing.length === 0 && missingDocs.risk_missing.length === 0 && (
+                <p style={{ fontSize: 13, color: '#166534' }}>All products have SDS and Risk Assessment links.</p>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {testAlertPreviewHtml && (
