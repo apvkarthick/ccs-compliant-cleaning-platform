@@ -269,6 +269,45 @@ def send_schedule_now(customer_id: str) -> dict[str, Any]:
     return {"task_id": task.id, "status": "queued", "total": len(contacts), "batch_id": batch_id, "dry_run": dry_run}
 
 
+class SiteScheduleRequest(BaseModel):
+    frequency: str  # weekly | biweekly | monthly | custom
+    custom_interval_days: int | None = None
+    dry_run: bool = True
+    start_from: str | None = None
+
+
+@app.get("/site-distribution/schedule")
+def get_sites_schedule(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    from .workbooks import get_schedule
+    schedule = get_schedule("ccs_sites")
+    if not schedule:
+        raise HTTPException(status_code=404, detail="No schedule found")
+    return schedule
+
+
+@app.post("/site-distribution/schedule")
+def save_sites_schedule(request: SiteScheduleRequest, _auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    from .workbooks import save_schedule
+    return save_schedule("ccs_sites", "CCS Sites", request.frequency, request.custom_interval_days, True, request.dry_run, request.start_from)
+
+
+@app.delete("/site-distribution/schedule")
+def disable_sites_schedule(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    from .workbooks import disable_schedule
+    return disable_schedule("ccs_sites")
+
+
+@app.post("/site-distribution/schedule/send-now")
+def send_sites_now(dry_run: bool = Query(default=True), _auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    from .workbooks import advance_schedule, get_schedule
+    batch_id = f"sendnow_sites_{uuid.uuid4().hex[:8]}"
+    task = site_distribution_task.delay(dry_run=dry_run, batch_id=batch_id)
+    schedule = get_schedule("ccs_sites")
+    if schedule:
+        advance_schedule("ccs_sites", schedule.get("frequency", "weekly"), schedule.get("custom_interval_days"))
+    return {"task_id": task.id, "status": "queued", "dry_run": dry_run}
+
+
 class StressTestRequest(BaseModel):
     preview: dict[str, Any]
     contact_count: int = 100

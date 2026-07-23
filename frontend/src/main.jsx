@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
-import { AlertCircle, BookOpen, CheckCircle2, Download, FileSpreadsheet, HelpCircle, Link2, LogOut, Mail, Pause, Play, Send, Upload, X } from 'lucide-react';
+import { AlertCircle, BookOpen, CheckCircle2, ChevronDown, Download, FileSpreadsheet, HelpCircle, Link2, LogOut, Mail, Pause, Play, Send, Upload, X } from 'lucide-react';
 import './styles.css';
 
 const supabase = createClient(
@@ -900,6 +900,18 @@ function SiteDistribution() {
   const [showHelp, setShowHelp] = useState(false);
   const [testEmail, setTestEmail] = useState('');
 
+  // Bulk send + schedule
+  const [siteSchedule, setSiteSchedule] = useState(null);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [schedFreq, setSchedFreq] = useState('weekly');
+  const [schedCustomDays, setSchedCustomDays] = useState(30);
+  const [schedDryRun, setSchedDryRun] = useState(true);
+  const [schedStartDate, setSchedStartDate] = useState('');
+  const [schedSaving, setSchedSaving] = useState(false);
+  const [bulkDryRun, setBulkDryRun] = useState(true);
+  const [bulkSending, setBulkSending] = useState(false);
+  const [bulkResult, setBulkResult] = useState('');
+
   // Manual send modal
   const [manualSite, setManualSite] = useState(null);
   const [manualEmail, setManualEmail] = useState('');
@@ -934,7 +946,68 @@ function SiteDistribution() {
     finally { setLoading(false); }
   }
 
-  useEffect(() => { loadStats(); }, []);
+  async function loadSiteSchedule() {
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/schedule`, { headers: getAuthHeaders() });
+      if (r.ok) {
+        const s = await r.json();
+        setSiteSchedule(s);
+        setSchedFreq(s.frequency || 'weekly');
+        if (s.custom_interval_days) setSchedCustomDays(s.custom_interval_days);
+        setSchedDryRun(!!s.dry_run);
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function saveSiteSchedule() {
+    setSchedSaving(true);
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/schedule`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          frequency: schedFreq,
+          custom_interval_days: schedFreq === 'custom' ? schedCustomDays : null,
+          dry_run: schedDryRun,
+          start_from: schedStartDate || null,
+        }),
+      });
+      if (r.ok) await loadSiteSchedule();
+    } catch { /* ignore */ }
+    finally { setSchedSaving(false); }
+  }
+
+  async function disableSiteSchedule() {
+    if (!confirm('Disable recurring schedule?')) return;
+    await fetch(`${API_BASE}/site-distribution/schedule`, { method: 'DELETE', headers: getAuthHeaders() });
+    await loadSiteSchedule();
+  }
+
+  async function sendSiteNow() {
+    const isDryRun = siteSchedule ? siteSchedule.dry_run : true;
+    if (!isDryRun && !confirm('Send live emails to all sites immediately?')) return;
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/schedule/send-now?dry_run=${isDryRun}`, { method: 'POST', headers: getAuthHeaders() });
+      const data = await r.json();
+      setBulkResult(data.dry_run ? 'Dry run queued' : 'Send queued');
+      await loadSiteSchedule();
+    } catch (err) { setBulkResult(`Error: ${err.message}`); }
+  }
+
+  async function handleBulkSend() {
+    if (!bulkDryRun && !confirm('Send live emails to all active sites now?')) return;
+    setBulkSending(true);
+    setBulkResult('');
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/send?dry_run=${bulkDryRun}`, { method: 'POST', headers: getAuthHeaders() });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Send failed');
+      setBulkResult(data.dry_run ? `Dry run queued (${data.batch_id})` : `Send queued (${data.batch_id})`);
+    } catch (err) { setBulkResult(`Error: ${err.message}`); }
+    finally { setBulkSending(false); }
+  }
+
+  useEffect(() => { loadStats(); loadSiteSchedule(); }, []);
   useEffect(() => { loadSites(); }, [page, search, statusFilter, lastSentFilter]);
 
   async function toggleExclude(site) {
@@ -1084,6 +1157,103 @@ function SiteDistribution() {
                   <li><strong>Import &amp; Tools</strong> — upload mapping files, pull from SharePoint, site report, test alerts</li>
                   <li><strong>Customers</strong> — add products to Chemical Register, send to new customers</li>
                 </ul>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Bulk Send & Schedule */}
+      <div style={{ border: '1px solid #e2eaef', borderRadius: 8, marginBottom: 12, background: '#fff', overflow: 'hidden' }}>
+        <div
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', cursor: 'pointer', userSelect: 'none' }}
+          onClick={() => setShowSchedule(s => !s)}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontWeight: 700, fontSize: 13, color: '#17202a' }}>Bulk Send &amp; Schedule</span>
+            {siteSchedule?.active && (
+              <span style={{ fontSize: 11, background: '#dcfce7', color: '#166534', borderRadius: 4, padding: '1px 6px', fontWeight: 600 }}>
+                Active · Next: {new Date(siteSchedule.next_send_at).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })}
+              </span>
+            )}
+          </div>
+          <ChevronDown size={14} style={{ transform: showSchedule ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', color: '#607080' }} />
+        </div>
+
+        {showSchedule && (
+          <div style={{ padding: '0 14px 14px', borderTop: '1px solid #e2eaef' }}>
+            {/* Bulk send now row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', borderBottom: '1px solid #f0f4f7', flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
+                <input type="checkbox" checked={bulkDryRun} onChange={e => setBulkDryRun(e.target.checked)} />
+                Dry run
+              </label>
+              <button className="primary" style={{ fontSize: 12, padding: '6px 14px' }} disabled={bulkSending} onClick={handleBulkSend}>
+                <Mail size={13} style={{ marginRight: 4 }} />{bulkSending ? 'Sending…' : bulkDryRun ? 'Test bulk send' : 'Send all sites now'}
+              </button>
+              {bulkResult && <span style={{ fontSize: 12, color: bulkResult.startsWith('Error') ? '#dc2626' : '#166534' }}>{bulkResult}</span>}
+            </div>
+
+            {/* Schedule */}
+            <div style={{ paddingTop: 12 }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#607080', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Recurring schedule</p>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+                {[['weekly','Weekly'],['biweekly','Every 2 weeks'],['monthly','Monthly (30 days)'],['custom','Custom interval']].map(([val, label]) => (
+                  <label key={val} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
+                    <input type="radio" name="sched-freq" value={val} checked={schedFreq === val} onChange={() => setSchedFreq(val)} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              {schedFreq === 'custom' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                  <label style={{ fontSize: 12 }}>Every</label>
+                  <input type="number" min="1" max="365" value={schedCustomDays} onChange={e => setSchedCustomDays(parseInt(e.target.value) || 1)}
+                    style={{ width: 64, padding: '4px 6px', border: '1px solid #d8e1e8', borderRadius: 4, fontSize: 12 }} />
+                  <label style={{ fontSize: 12 }}>days</label>
+                </div>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <label style={{ fontSize: 12, color: '#607080' }}>First send</label>
+                  <input type="date" value={schedStartDate} onChange={e => setSchedStartDate(e.target.value)}
+                    style={{ padding: '4px 6px', border: '1px solid #d8e1e8', borderRadius: 4, fontSize: 12 }} />
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={schedDryRun} onChange={e => setSchedDryRun(e.target.checked)} />
+                  Dry run
+                </label>
+              </div>
+
+              {siteSchedule && (
+                <div style={{ background: siteSchedule.active ? '#f0fdf4' : '#f8fafc', border: `1px solid ${siteSchedule.active ? '#86efac' : '#e2eaef'}`, borderRadius: 6, padding: '8px 12px', fontSize: 12, marginBottom: 10, color: '#17202a' }}>
+                  <strong>{siteSchedule.active ? '● Active' : '○ Inactive'}</strong>
+                  {' · '}
+                  {({'weekly':'Weekly','biweekly':'Every 2 weeks','monthly':'Monthly'})[siteSchedule.frequency] || `Every ${siteSchedule.custom_interval_days} days`}
+                  {' · '}
+                  {siteSchedule.dry_run ? 'Dry run' : 'Live sends'}
+                  {siteSchedule.next_send_at && (
+                    <div style={{ color: '#607080', marginTop: 2 }}>
+                      Next send: {new Date(siteSchedule.next_send_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button className="primary" style={{ fontSize: 12, padding: '6px 14px' }} disabled={schedSaving} onClick={saveSiteSchedule}>
+                  {schedSaving ? 'Saving…' : 'Save schedule'}
+                </button>
+                {siteSchedule?.active && (
+                  <>
+                    <button className="btn-ghost" style={{ fontSize: 12 }} onClick={sendSiteNow}>
+                      ⚡ Send now (override schedule)
+                    </button>
+                    <button className="btn-ghost" style={{ fontSize: 12, color: '#dc2626', borderColor: '#fca5a5' }} onClick={disableSiteSchedule}>
+                      Disable schedule
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>

@@ -19,19 +19,22 @@ def run_scheduled_distributions() -> dict:
     for schedule in due:
         customer_id = schedule.get("customer_id", "")
         try:
-            wb = load_workbook(customer_id)
-            if not wb or not wb.get("parsed_json"):
-                errors.append({"customer_id": customer_id, "error": "No saved workbook found"})
-                continue
-            parsed = wb["parsed_json"]
-            contacts = parsed.get("contacts", [])
-            if not contacts:
-                errors.append({"customer_id": customer_id, "error": "No contacts in workbook"})
-                continue
-            preview_slim = {k: v for k, v in parsed.items() if k != "contacts"}
             dry_run = schedule.get("dry_run", True)
             batch_id = f"sched_{customer_id}_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
-            bulk_distribute_task.delay(preview_slim, contacts, dry_run, batch_id)
+            if customer_id == "ccs_sites":
+                site_distribution_task.delay(dry_run=dry_run, batch_id=batch_id)
+            else:
+                wb = load_workbook(customer_id)
+                if not wb or not wb.get("parsed_json"):
+                    errors.append({"customer_id": customer_id, "error": "No saved workbook found"})
+                    continue
+                parsed = wb["parsed_json"]
+                contacts = parsed.get("contacts", [])
+                if not contacts:
+                    errors.append({"customer_id": customer_id, "error": "No contacts in workbook"})
+                    continue
+                preview_slim = {k: v for k, v in parsed.items() if k != "contacts"}
+                bulk_distribute_task.delay(preview_slim, contacts, dry_run, batch_id)
             advance_schedule(customer_id, schedule.get("frequency", "weekly"), schedule.get("custom_interval_days"))
             triggered += 1
         except Exception as exc:
