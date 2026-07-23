@@ -1737,6 +1737,9 @@ function ImportTools() {
   const [testAlertPreviewHtml, setTestAlertPreviewHtml] = useState(null);
   const [missingDocs, setMissingDocs] = useState(null);
   const [missingLoading, setMissingLoading] = useState(false);
+  const MISSING_PAGE = 50;
+  const [sdsShowAll, setSdsShowAll] = useState(false);
+  const [riskShowAll, setRiskShowAll] = useState(false);
 
   async function handleImport(e) {
     e.preventDefault();
@@ -1790,6 +1793,8 @@ function ImportTools() {
 
   async function loadMissingDocs() {
     setMissingLoading(true);
+    setSdsShowAll(false);
+    setRiskShowAll(false);
     try {
       const r = await fetch(`${API_BASE}/site-distribution/missing-docs`, { headers: getAuthHeaders() });
       if (r.ok) setMissingDocs(await r.json());
@@ -1958,7 +1963,7 @@ function ImportTools() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #e2eaef', borderRadius: 8, overflow: 'hidden' }}>
                     <thead><tr><th style={thStyle}>Code</th><th style={thStyle}>Product</th></tr></thead>
                     <tbody>
-                      {missingDocs.sds_missing.map(r => (
+                      {(sdsShowAll ? missingDocs.sds_missing : missingDocs.sds_missing.slice(0, MISSING_PAGE)).map(r => (
                         <tr key={r.code}>
                           <td style={{ ...tdStyle, fontWeight: 700, color: '#17202a' }}>{r.code}</td>
                           <td style={{ ...tdStyle, color: r.product_name ? '#c05621' : '#aab' }}>{r.product_name || '—'}</td>
@@ -1966,6 +1971,11 @@ function ImportTools() {
                       ))}
                     </tbody>
                   </table>
+                  {missingDocs.sds_missing.length > MISSING_PAGE && (
+                    <button className="btn-ghost" style={{ fontSize: 12, marginTop: 6 }} onClick={() => setSdsShowAll(s => !s)}>
+                      {sdsShowAll ? `Show first ${MISSING_PAGE}` : `Show all ${missingDocs.sds_missing.length}`}
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -1977,7 +1987,7 @@ function ImportTools() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #e2eaef', borderRadius: 8, overflow: 'hidden' }}>
                     <thead><tr><th style={thStyle}>Code</th><th style={thStyle}>Product</th></tr></thead>
                     <tbody>
-                      {missingDocs.risk_missing.map(r => (
+                      {(riskShowAll ? missingDocs.risk_missing : missingDocs.risk_missing.slice(0, MISSING_PAGE)).map(r => (
                         <tr key={r.code}>
                           <td style={{ ...tdStyle, fontWeight: 700, color: '#17202a' }}>{r.code}</td>
                           <td style={{ ...tdStyle, color: r.product_name ? '#c05621' : '#aab' }}>{r.product_name || '—'}</td>
@@ -1985,6 +1995,11 @@ function ImportTools() {
                       ))}
                     </tbody>
                   </table>
+                  {missingDocs.risk_missing.length > MISSING_PAGE && (
+                    <button className="btn-ghost" style={{ fontSize: 12, marginTop: 6 }} onClick={() => setRiskShowAll(s => !s)}>
+                      {riskShowAll ? `Show first ${MISSING_PAGE}` : `Show all ${missingDocs.risk_missing.length}`}
+                    </button>
+                  )}
                 </div>
               )}
 
