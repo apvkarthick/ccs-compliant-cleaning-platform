@@ -80,7 +80,7 @@ def parse_sds_links(sds_data: bytes | None = None, risk_data: bytes | None = Non
             if not url or url == "nan":
                 continue
             fname = url.split("/")[-1]
-            m = re.match(r"([A-Z0-9]+)_", fname)
+            m = re.match(r"([A-Z0-9]+)[_\-]", fname)
             if m:
                 sds_map[m.group(1)] = url
 
