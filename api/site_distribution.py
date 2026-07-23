@@ -1054,7 +1054,11 @@ def compose_site_email(
     accno = site.get("accno", "")
     contact_id = accno or email_addr
 
-    products_in_email = [{"code": d["code"], "name": d["code"]} for d in docs]
+    _names = fetch_product_metadata([d["code"] for d in docs])
+    products_in_email = [
+        {"code": d["code"], "name": (_names.get(d["code"]) or {}).get("product_name") or d["code"]}
+        for d in docs
+    ]
     documents: list[dict[str, str]] = []
 
     for d in docs:
