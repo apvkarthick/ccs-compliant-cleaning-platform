@@ -299,14 +299,18 @@ def disable_sites_schedule(_auth: dict = Depends(require_auth)) -> dict[str, Any
 
 
 @app.post("/site-distribution/schedule/send-now")
-def send_sites_now(dry_run: bool = Query(default=True), _auth: dict = Depends(require_auth)) -> dict[str, Any]:
+def send_sites_now(
+    dry_run: bool = Query(default=True),
+    skip_sent_since: str = Query(default=""),
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
     from .workbooks import advance_schedule, get_schedule
     batch_id = f"sendnow_sites_{uuid.uuid4().hex[:8]}"
-    task = site_distribution_task.delay(dry_run=dry_run, batch_id=batch_id)
+    task = site_distribution_task.delay(dry_run=dry_run, batch_id=batch_id, skip_sent_since=skip_sent_since)
     schedule = get_schedule("ccs_sites")
     if schedule:
         advance_schedule("ccs_sites", schedule.get("frequency", "weekly"), schedule.get("custom_interval_days"))
-    return {"task_id": task.id, "status": "queued", "dry_run": dry_run}
+    return {"task_id": task.id, "status": "queued", "dry_run": dry_run, "resume_mode": bool(skip_sent_since)}
 
 
 class StressTestRequest(BaseModel):
@@ -590,11 +594,12 @@ def send_manual_endpoint(
 @app.post("/site-distribution/send")
 def send_site_distribution(
     dry_run: bool = Query(default=True),
+    skip_sent_since: str = Query(default=""),
     _auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
     batch_id = str(uuid.uuid4()) if not dry_run else f"dry_{uuid.uuid4().hex[:8]}"
-    task = site_distribution_task.delay(dry_run=dry_run, batch_id=batch_id)
-    return {"task_id": task.id, "status": "queued", "batch_id": batch_id, "dry_run": dry_run}
+    task = site_distribution_task.delay(dry_run=dry_run, batch_id=batch_id, skip_sent_since=skip_sent_since)
+    return {"task_id": task.id, "status": "queued", "batch_id": batch_id, "dry_run": dry_run, "resume_mode": bool(skip_sent_since)}
 
 
 @app.get("/site-distribution/report.csv")

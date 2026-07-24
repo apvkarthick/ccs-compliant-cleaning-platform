@@ -145,12 +145,17 @@ def ping_task() -> dict[str, str]:
 
 
 @celery_app.task(bind=True, name="ccs.site_distribute", max_retries=2, time_limit=7200)
-def site_distribution_task(self, dry_run: bool = True, batch_id: str = "") -> dict:
-    """Send SDS/Risk compliance emails to all non-excluded sites from ccs_site_mapping."""
+def site_distribution_task(self, dry_run: bool = True, batch_id: str = "", skip_sent_since: str = "") -> dict:
+    """Send SDS/Risk compliance emails to all non-excluded sites from ccs_site_mapping.
+
+    skip_sent_since: ISO datetime string — skip sites with last_sent_at >= this value.
+    Used to resume a partial bulk send without re-sending already-sent sites.
+    """
     import os
     import time
 
     from .site_distribution import (
+        _update_last_sent_at,
         compose_site_email,
         load_lookup_maps,
         resolve_docs_for_site,
@@ -167,9 +172,13 @@ def site_distribution_task(self, dry_run: bool = True, batch_id: str = "") -> di
     all_sites = _sb_get_all("ccs_site_mapping", "select=*&order=name.asc")
     sites = [s for s in all_sites if s.get("accno") not in skip_set]
 
+    # Resume mode: skip sites already sent since skip_sent_since
+    if skip_sent_since:
+        sites = [s for s in sites if not s.get("last_sent_at") or s["last_sent_at"] < skip_sent_since]
+
     sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
 
-    summary: dict = {"sent": 0, "failed": 0, "skipped": 0, "dry_run": dry_run, "total": len(sites), "done": 0}
+    summary: dict = {"sent": 0, "failed": 0, "skipped": 0, "dry_run": dry_run, "total": len(sites), "done": 0, "resume_mode": bool(skip_sent_since)}
     self.update_state(state="PROGRESS", meta=dict(summary))
 
     for i, site in enumerate(sites):
@@ -198,6 +207,7 @@ def site_distribution_task(self, dry_run: bool = True, batch_id: str = "") -> di
                     ghl = _send_messages_via_ghl([msg])
                     if ghl.get("status") == "sent":
                         summary["sent"] += 1
+                        _update_last_sent_at(accno)
                     else:
                         summary["failed"] += 1
                     time.sleep(0.3)

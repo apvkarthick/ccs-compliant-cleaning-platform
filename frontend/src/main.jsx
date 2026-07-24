@@ -909,6 +909,7 @@ function SiteDistribution() {
   const [schedStartDate, setSchedStartDate] = useState('');
   const [schedSaving, setSchedSaving] = useState(false);
   const [bulkDryRun, setBulkDryRun] = useState(true);
+  const [bulkResume, setBulkResume] = useState(false);
   const [bulkSending, setBulkSending] = useState(false);
   const [bulkResult, setBulkResult] = useState('');
 
@@ -995,14 +996,19 @@ function SiteDistribution() {
   }
 
   async function handleBulkSend() {
-    if (!bulkDryRun && !confirm('Send live emails to all active sites now?')) return;
+    const resumeLabel = bulkResume ? ' (resume — skipping already sent today)' : '';
+    if (!bulkDryRun && !confirm(`Send live emails to all active sites now?${resumeLabel}`)) return;
     setBulkSending(true);
     setBulkResult('');
     try {
-      const r = await fetch(`${API_BASE}/site-distribution/send?dry_run=${bulkDryRun}`, { method: 'POST', headers: getAuthHeaders() });
+      const skipSince = bulkResume ? new Date().toISOString().slice(0, 10) + 'T00:00:00Z' : '';
+      const params = new URLSearchParams({ dry_run: bulkDryRun });
+      if (skipSince) params.set('skip_sent_since', skipSince);
+      const r = await fetch(`${API_BASE}/site-distribution/send?${params}`, { method: 'POST', headers: getAuthHeaders() });
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || 'Send failed');
-      setBulkResult(data.dry_run ? `Dry run queued (${data.batch_id})` : `Send queued (${data.batch_id})`);
+      const label = data.dry_run ? 'Dry run' : data.resume_mode ? 'Resume send' : 'Send';
+      setBulkResult(`${label} queued (${data.batch_id})`);
     } catch (err) { setBulkResult(`Error: ${err.message}`); }
     finally { setBulkSending(false); }
   }
@@ -1188,8 +1194,12 @@ function SiteDistribution() {
                 <input type="checkbox" checked={bulkDryRun} onChange={e => setBulkDryRun(e.target.checked)} />
                 Dry run
               </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer', color: bulkResume ? '#2C6B33' : '#607080' }} title="Skip sites already sent today — use to resume a failed bulk send">
+                <input type="checkbox" checked={bulkResume} onChange={e => setBulkResume(e.target.checked)} />
+                Resume (skip sent today)
+              </label>
               <button className="primary" style={{ fontSize: 12, padding: '6px 14px' }} disabled={bulkSending} onClick={handleBulkSend}>
-                <Mail size={13} style={{ marginRight: 4 }} />{bulkSending ? 'Sending…' : bulkDryRun ? 'Test bulk send' : 'Send all sites now'}
+                <Mail size={13} style={{ marginRight: 4 }} />{bulkSending ? 'Sending…' : bulkDryRun ? 'Test bulk send' : bulkResume ? 'Resume send' : 'Send all sites now'}
               </button>
               {bulkResult && <span style={{ fontSize: 12, color: bulkResult.startsWith('Error') ? '#dc2626' : '#166534' }}>{bulkResult}</span>}
             </div>
