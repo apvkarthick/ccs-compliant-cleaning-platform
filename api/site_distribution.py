@@ -786,6 +786,22 @@ def get_import_status() -> dict[str, Any]:
     return result
 
 
+def get_daily_send_status() -> dict:
+    """Return today's send count vs daily cap for domain warmup display."""
+    import os
+    from datetime import datetime, timezone
+    daily_cap = int(os.getenv("CCS_DAILY_EMAIL_CAP", "0") or 0)
+    today_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00")
+    all_sites = _sb_get_all("ccs_site_mapping", "select=last_sent_at")
+    sent_today = sum(1 for s in all_sites if (s.get("last_sent_at") or "") >= today_start)
+    return {
+        "daily_cap": daily_cap,
+        "sent_today": sent_today,
+        "remaining_today": max(0, daily_cap - sent_today) if daily_cap > 0 else None,
+        "cap_active": daily_cap > 0,
+    }
+
+
 def get_presend_check(skip_sent_since: str = "") -> dict:
     """Return a breakdown of what a bulk send would do — without sending."""
     import re
@@ -825,6 +841,26 @@ def get_presend_check(skip_sent_since: str = "") -> dict:
             continue
         will_send.append({**row, "emails": emails, "doc_count": len(docs)})
 
+    # Cap-aware schedule breakdown
+    import os, math
+    from datetime import datetime, timezone
+    daily_cap = int(os.getenv("CCS_DAILY_EMAIL_CAP", "0") or 0)
+    today_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00")
+    all_mapping = _sb_get_all("ccs_site_mapping", "select=last_sent_at")
+    sent_today = sum(1 for s in all_mapping if (s.get("last_sent_at") or "") >= today_start)
+    remaining_today = max(0, daily_cap - sent_today) if daily_cap > 0 else len(will_send)
+    total_will_send = len(will_send)
+    schedule: list[dict] = []
+    if daily_cap > 0 and total_will_send > 0:
+        day_1 = min(remaining_today, total_will_send)
+        rest = total_will_send - day_1
+        total_days = 1 + (math.ceil(rest / daily_cap) if rest > 0 else 0)
+        schedule = [{"day": 1, "count": day_1}]
+        for d in range(2, total_days + 1):
+            chunk = min(daily_cap, rest)
+            schedule.append({"day": d, "count": chunk})
+            rest -= chunk
+
     return {
         "will_send": will_send,
         "skip_excluded": skip_excluded,
@@ -833,12 +869,19 @@ def get_presend_check(skip_sent_since: str = "") -> dict:
         "skip_no_docs": skip_no_docs,
         "skip_already_sent": skip_already_sent,
         "totals": {
-            "will_send": len(will_send),
+            "will_send": total_will_send,
             "skip_excluded": len(skip_excluded),
             "skip_held": len(skip_held),
             "skip_no_email": len(skip_no_email),
             "skip_no_docs": len(skip_no_docs),
             "skip_already_sent": len(skip_already_sent),
+        },
+        "cap": {
+            "daily_cap": daily_cap,
+            "sent_today": sent_today,
+            "remaining_today": remaining_today,
+            "schedule": schedule,
+            "total_days": len(schedule) if schedule else 1,
         },
     }
 

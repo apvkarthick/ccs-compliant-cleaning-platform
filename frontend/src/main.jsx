@@ -917,6 +917,7 @@ function SiteDistribution() {
   const [bulkTaskId, setBulkTaskId] = useState('');
   const [bulkTaskResult, setBulkTaskResult] = useState(null);
   const [bulkPolling, setBulkPolling] = useState(false);
+  const [dailyStatus, setDailyStatus] = useState(null);
 
   // Manual send modal
   const [manualSite, setManualSite] = useState(null);
@@ -1050,7 +1051,12 @@ function SiteDistribution() {
     finally { setBulkSending(false); }
   }
 
-  useEffect(() => { loadStats(); loadSiteSchedule(); }, []);
+  useEffect(() => {
+    loadStats();
+    loadSiteSchedule();
+    fetch(`${API_BASE}/site-distribution/daily-status`, { headers: getAuthHeaders() })
+      .then(r => r.ok ? r.json() : null).then(d => { if (d) setDailyStatus(d); }).catch(() => {});
+  }, []);
   useEffect(() => { loadSites(); }, [page, search, statusFilter, lastSentFilter]);
 
   async function toggleExclude(site) {
@@ -1227,6 +1233,16 @@ function SiteDistribution() {
           <div style={{ padding: '0 14px 14px', borderTop: '1px solid #e2eaef' }}>
             {/* Bulk send now row */}
             <div style={{ padding: '12px 0', borderBottom: '1px solid #f0f4f7' }}>
+              {/* Domain warmup disclaimer */}
+              {dailyStatus?.cap_active && (
+                <div style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#713f12' }}>
+                  <strong>Domain Warmup Active</strong> — daily send cap: <strong>{dailyStatus.daily_cap}</strong> emails.
+                  {' '}Sent today: <strong>{dailyStatus.sent_today}</strong>.
+                  {' '}Remaining today: <strong>{dailyStatus.remaining_today}</strong>.
+                  {dailyStatus.remaining_today === 0 && ' Sends today exhausted — next batch scheduled for tomorrow.'}
+                  {' '}Excess sites auto-queue to next day(s) to protect domain reputation.
+                </div>
+              )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
                   <input type="checkbox" checked={bulkDryRun} onChange={e => setBulkDryRun(e.target.checked)} />
@@ -1274,6 +1290,19 @@ function SiteDistribution() {
                           {presendCheck.skip_no_docs.map(s => <div key={s.accno} style={{ padding: '2px 0', color: '#445' }}>{s.accno} — {s.name}</div>)}
                         </div>
                       </details>
+                    )}
+                    {presendCheck.cap?.schedule?.length > 1 && (
+                      <div style={{ marginTop: 8, padding: '8px 10px', background: '#fefce8', border: '1px solid #fde047', borderRadius: 5 }}>
+                        <strong style={{ color: '#713f12' }}>Send schedule (daily cap: {presendCheck.cap.daily_cap})</strong>
+                        <div style={{ marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {presendCheck.cap.schedule.map(d => (
+                            <span key={d.day} style={{ background: '#fff', border: '1px solid #fde047', borderRadius: 4, padding: '2px 8px', fontSize: 11, color: '#713f12' }}>
+                              Day {d.day}: {d.count} sites
+                            </span>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#92400e', marginTop: 4 }}>Total: {presendCheck.cap.schedule.length} days · Continuation tasks auto-scheduled 24h apart</div>
+                      </div>
                     )}
                   </div>
                 );

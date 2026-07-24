@@ -30,6 +30,7 @@ from .site_distribution import (
     exclude_site,
     get_import_history,
     get_import_status,
+    get_daily_send_status,
     get_invalid_emails,
     get_missing_docs,
     get_presend_check,
@@ -422,6 +423,11 @@ def site_distribution_presend_check(
     return get_presend_check(skip_sent_since=skip_sent_since)
 
 
+@app.get("/site-distribution/daily-status")
+def site_distribution_daily_status(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    return get_daily_send_status()
+
+
 @app.get("/site-distribution/sites")
 def site_distribution_list(
     search: str = Query(default=""),
@@ -610,10 +616,11 @@ def send_manual_endpoint(
 def send_site_distribution(
     dry_run: bool = Query(default=True),
     skip_sent_since: str = Query(default=""),
+    daily_cap: int = Query(default=0),
     _auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
     batch_id = str(uuid.uuid4()) if not dry_run else f"dry_{uuid.uuid4().hex[:8]}"
-    task = site_distribution_task.delay(dry_run=dry_run, batch_id=batch_id, skip_sent_since=skip_sent_since)
+    task = site_distribution_task.delay(dry_run=dry_run, batch_id=batch_id, skip_sent_since=skip_sent_since, daily_cap=daily_cap)
     return {"task_id": task.id, "status": "queued", "batch_id": batch_id, "dry_run": dry_run, "resume_mode": bool(skip_sent_since)}
 
 

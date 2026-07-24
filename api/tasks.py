@@ -145,14 +145,25 @@ def ping_task() -> dict[str, str]:
 
 
 @celery_app.task(bind=True, name="ccs.site_distribute", max_retries=2, time_limit=7200)
-def site_distribution_task(self, dry_run: bool = True, batch_id: str = "", skip_sent_since: str = "") -> dict:
+def site_distribution_task(
+    self,
+    dry_run: bool = True,
+    batch_id: str = "",
+    skip_sent_since: str = "",
+    daily_cap: int = 0,
+    batch_start: str = "",
+) -> dict:
     """Send SDS/Risk compliance emails to all non-excluded sites from ccs_site_mapping.
 
-    skip_sent_since: ISO datetime string — skip sites with last_sent_at >= this value.
-    Used to resume a partial bulk send without re-sending already-sent sites.
+    daily_cap: max emails to send today (0 = no cap). Reads CCS_DAILY_EMAIL_CAP env var
+               as default if not passed. Remaining sites auto-scheduled for next day.
+    batch_start: ISO datetime of the original bulk-send trigger — used as skip_sent_since
+                 for continuation tasks so already-sent sites are always excluded.
+    skip_sent_since: ISO datetime — skip sites with last_sent_at >= this value (resume mode).
     """
     import os
     import time
+    from datetime import datetime, timezone
 
     from .site_distribution import (
         _update_last_sent_at,
@@ -166,22 +177,58 @@ def site_distribution_task(self, dry_run: bool = True, batch_id: str = "", skip_
     public_base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
     tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
 
+    # Resolve daily cap: param > env var > 0 (uncapped)
+    if daily_cap <= 0:
+        daily_cap = int(os.getenv("CCS_DAILY_EMAIL_CAP", "0") or 0)
+
+    # batch_start is the anchor for "already sent in this campaign" — set once on first run
+    if not batch_start:
+        batch_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # skip_sent_since defaults to batch_start for continuation runs
+    effective_skip = skip_sent_since or batch_start
+
     excl_set = {r["accno"] for r in _sb_get_all("ccs_site_exclusions", "select=accno")}
     held_set = {r["accno"] for r in _sb_get_all("ccs_site_holds", "select=accno")}
     skip_set = excl_set | held_set
     all_sites = _sb_get_all("ccs_site_mapping", "select=*&order=name.asc")
     sites = [s for s in all_sites if s.get("accno") not in skip_set]
 
-    # Resume mode: skip sites already sent since skip_sent_since
-    if skip_sent_since:
+    # Exclude sites already sent in this campaign
+    sites = [s for s in sites if not s.get("last_sent_at") or s["last_sent_at"] < batch_start]
+
+    # Also apply manual resume filter if explicitly set
+    if skip_sent_since and skip_sent_since != batch_start:
         sites = [s for s in sites if not s.get("last_sent_at") or s["last_sent_at"] < skip_sent_since]
+
+    # Count emails already sent today (for cap enforcement)
+    today_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00")
+    sent_today_already = sum(
+        1 for s in all_sites
+        if (s.get("last_sent_at") or "") >= today_start
+    )
+
+    # Determine how many we can send right now
+    if daily_cap > 0:
+        remaining_today = max(0, daily_cap - sent_today_already)
+        sites_this_run = sites[:remaining_today]
+        sites_queued = sites[remaining_today:]
+    else:
+        sites_this_run = sites
+        sites_queued = []
 
     sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
 
-    summary: dict = {"sent": 0, "failed": 0, "skipped": 0, "dry_run": dry_run, "total": len(sites), "done": 0, "resume_mode": bool(skip_sent_since)}
+    summary: dict = {
+        "sent": 0, "failed": 0, "skipped": 0, "dry_run": dry_run,
+        "total": len(sites_this_run), "done": 0,
+        "queued_for_tomorrow": len(sites_queued),
+        "daily_cap": daily_cap, "sent_today_already": sent_today_already,
+        "batch_start": batch_start,
+    }
     self.update_state(state="PROGRESS", meta=dict(summary))
 
-    for i, site in enumerate(sites):
+    for i, site in enumerate(sites_this_run):
         accno = site.get("accno", "")
         try:
             stockcodes = site.get("stockcodes") or []
@@ -216,8 +263,21 @@ def site_distribution_task(self, dry_run: bool = True, batch_id: str = "", skip_
             summary.setdefault("exceptions", []).append({"accno": accno, "error": str(exc)})
 
         summary["done"] = i + 1
-        if (i + 1) % 25 == 0 or i == len(sites) - 1:
+        if (i + 1) % 25 == 0 or i == len(sites_this_run) - 1:
             self.update_state(state="PROGRESS", meta=dict(summary))
+
+    # Schedule continuation for tomorrow if sites remain and not a dry run
+    if sites_queued and not dry_run:
+        site_distribution_task.apply_async(
+            kwargs={
+                "dry_run": False,
+                "batch_id": batch_id,
+                "daily_cap": daily_cap,
+                "batch_start": batch_start,
+            },
+            countdown=86400,  # 24 hours
+        )
+        summary["continuation_scheduled"] = True
 
     return dict(summary)
 
