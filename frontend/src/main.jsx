@@ -1277,7 +1277,7 @@ function SiteDistribution() {
           type="email"
           value={testEmail}
           onChange={e => setTestEmail(e.target.value)}
-          placeholder="staff@example.com — pre-fills Send modal"
+          placeholder="staff@example.com"
           style={{ flex: 1, padding: '6px 10px', border: '1px solid #d8e1e8', borderRadius: 6, fontSize: 13 }}
         />
       </div>
@@ -1750,6 +1750,8 @@ function ImportTools() {
   const MISSING_PAGE = 50;
   const [sdsShowAll, setSdsShowAll] = useState(false);
   const [riskShowAll, setRiskShowAll] = useState(false);
+  const [invalidEmails, setInvalidEmails] = useState(null);
+  const [invalidEmailsLoading, setInvalidEmailsLoading] = useState(false);
 
   async function handleImport(e) {
     e.preventDefault();
@@ -1812,7 +1814,16 @@ function ImportTools() {
     finally { setMissingLoading(false); }
   }
 
-  useEffect(() => { loadMissingDocs(); }, []);
+  async function loadInvalidEmails() {
+    setInvalidEmailsLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/invalid-emails`, { headers: getAuthHeaders() });
+      if (r.ok) setInvalidEmails(await r.json());
+    } catch { /* ignore */ }
+    finally { setInvalidEmailsLoading(false); }
+  }
+
+  useEffect(() => { loadMissingDocs(); loadInvalidEmails(); }, []);
 
   function downloadMissingCsv() {
     if (!missingDocs) return;
@@ -2022,6 +2033,57 @@ function ImportTools() {
             </>
           );
         })()}
+      </div>
+
+      {/* Invalid Emails Report */}
+      <div style={{ ...card, marginTop: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div>
+            <p style={{ fontSize: 11, fontWeight: 700, color: '#607080', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>Invalid Email Report</p>
+            <p style={{ fontWeight: 700, fontSize: 16, color: '#17202a', margin: '2px 0 0' }}>Sites with missing or invalid emails</p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {invalidEmails && (
+              invalidEmails.length > 0
+                ? <span style={{ background: '#fee2e2', color: '#dc2626', fontWeight: 700, fontSize: 12, borderRadius: 20, padding: '3px 10px' }}>{invalidEmails.length} site{invalidEmails.length !== 1 ? 's' : ''}</span>
+                : <span style={{ background: '#dcfce7', color: '#166534', fontWeight: 700, fontSize: 12, borderRadius: 20, padding: '3px 10px' }}>All valid</span>
+            )}
+            <button className="btn-ghost" style={{ fontSize: 12 }} onClick={loadInvalidEmails} disabled={invalidEmailsLoading}>
+              {invalidEmailsLoading ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </div>
+        </div>
+        <p style={{ fontSize: 12, color: '#607080', margin: '0 0 12px' }}>
+          Sites below will be skipped during bulk send. Fix email addresses in the mapping file and re-import.
+        </p>
+        {invalidEmailsLoading && !invalidEmails && <p style={{ fontSize: 13, color: '#607080' }}>Loading…</p>}
+        {invalidEmails && invalidEmails.length > 0 && (() => {
+          const thStyle = { background: '#2C6B33', color: '#fff', padding: '8px 12px', fontSize: 12, fontWeight: 700, textAlign: 'left' };
+          const tdStyle = { padding: '8px 12px', fontSize: 13, borderBottom: '1px solid #f0f4f7' };
+          return (
+            <table style={{ width: '100%', borderCollapse: 'collapse', borderRadius: 6, overflow: 'hidden' }}>
+              <thead><tr>
+                <th style={thStyle}>Account</th>
+                <th style={thStyle}>Site Name</th>
+                <th style={thStyle}>Issue</th>
+                <th style={thStyle}>Email(s)</th>
+              </tr></thead>
+              <tbody>
+                {invalidEmails.map(r => (
+                  <tr key={r.accno}>
+                    <td style={{ ...tdStyle, fontWeight: 700, color: '#17202a' }}>{r.accno}</td>
+                    <td style={tdStyle}>{r.name}</td>
+                    <td style={{ ...tdStyle, color: '#dc2626', fontWeight: 600 }}>{r.issue}</td>
+                    <td style={{ ...tdStyle, color: '#607080', fontSize: 12 }}>{r.emails.join(', ') || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          );
+        })()}
+        {invalidEmails && invalidEmails.length === 0 && (
+          <p style={{ fontSize: 13, color: '#166534' }}>All active sites have valid email addresses.</p>
+        )}
       </div>
 
       {testAlertPreviewHtml && (

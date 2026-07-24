@@ -30,6 +30,7 @@ from .site_distribution import (
     exclude_site,
     get_import_history,
     get_import_status,
+    get_invalid_emails,
     get_missing_docs,
     get_stats,
     hold_site,
@@ -405,6 +406,11 @@ def site_distribution_stats(_auth: dict = Depends(require_auth)) -> dict[str, An
 @app.get("/site-distribution/missing-docs")
 def site_distribution_missing_docs(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
     return get_missing_docs()
+
+
+@app.get("/site-distribution/invalid-emails")
+def site_distribution_invalid_emails(_auth: dict = Depends(require_auth)) -> list[Any]:
+    return get_invalid_emails()
 
 
 @app.get("/site-distribution/sites")

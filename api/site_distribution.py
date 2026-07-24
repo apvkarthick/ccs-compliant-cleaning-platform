@@ -834,6 +834,26 @@ def get_missing_docs() -> dict[str, list[dict]]:
     return {"sds_missing": sds_missing, "risk_missing": risk_missing}
 
 
+def get_invalid_emails() -> list[dict]:
+    """Return sites with missing or malformed email addresses."""
+    import re
+    EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    excl_set = {r["accno"] for r in _sb_get_all("ccs_site_exclusions", "select=accno")}
+    sites = _sb_get_all("ccs_site_mapping", "select=accno,name,emails")
+    result = []
+    for s in sites:
+        if s.get("accno") in excl_set:
+            continue
+        emails = s.get("emails") or []
+        if not emails:
+            result.append({"accno": s.get("accno", ""), "name": s.get("name", ""), "issue": "no email", "emails": []})
+        else:
+            bad = [e for e in emails if not EMAIL_RE.match(e)]
+            if bad:
+                result.append({"accno": s.get("accno", ""), "name": s.get("name", ""), "issue": "invalid format", "emails": bad})
+    return result
+
+
 def clear_table_data(tables: list[str]) -> dict[str, str]:
     """Delete all rows from the specified tables."""
     _ALLOWED: dict[str, str] = {
