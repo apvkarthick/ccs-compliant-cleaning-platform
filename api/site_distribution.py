@@ -786,6 +786,63 @@ def get_import_status() -> dict[str, Any]:
     return result
 
 
+def get_presend_check(skip_sent_since: str = "") -> dict:
+    """Return a breakdown of what a bulk send would do — without sending."""
+    import re
+    EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    excl_set = {r["accno"] for r in _sb_get_all("ccs_site_exclusions", "select=accno")}
+    held_set = {r["accno"] for r in _sb_get_all("ccs_site_holds", "select=accno")}
+    all_sites = _sb_get_all("ccs_site_mapping", "select=accno,name,emails,stockcodes,last_sent_at")
+    sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
+
+    will_send: list[dict] = []
+    skip_excluded: list[dict] = []
+    skip_held: list[dict] = []
+    skip_no_email: list[dict] = []
+    skip_no_docs: list[dict] = []
+    skip_already_sent: list[dict] = []
+
+    for s in all_sites:
+        accno = s.get("accno", "")
+        name = s.get("name", "")
+        row = {"accno": accno, "name": name}
+        if accno in excl_set:
+            skip_excluded.append(row)
+            continue
+        if accno in held_set:
+            skip_held.append(row)
+            continue
+        if skip_sent_since and s.get("last_sent_at") and s["last_sent_at"] >= skip_sent_since:
+            skip_already_sent.append({**row, "last_sent_at": s["last_sent_at"]})
+            continue
+        emails = [e for e in (s.get("emails") or []) if e and EMAIL_RE.match(e)]
+        if not emails:
+            skip_no_email.append({**row, "raw_emails": s.get("emails") or []})
+            continue
+        docs = resolve_docs_for_site(s.get("stockcodes") or [], sds_map, risk_map, group_fallback, risk_required_set, register_codes)
+        if not docs:
+            skip_no_docs.append(row)
+            continue
+        will_send.append({**row, "emails": emails, "doc_count": len(docs)})
+
+    return {
+        "will_send": will_send,
+        "skip_excluded": skip_excluded,
+        "skip_held": skip_held,
+        "skip_no_email": skip_no_email,
+        "skip_no_docs": skip_no_docs,
+        "skip_already_sent": skip_already_sent,
+        "totals": {
+            "will_send": len(will_send),
+            "skip_excluded": len(skip_excluded),
+            "skip_held": len(skip_held),
+            "skip_no_email": len(skip_no_email),
+            "skip_no_docs": len(skip_no_docs),
+            "skip_already_sent": len(skip_already_sent),
+        },
+    }
+
+
 def get_missing_docs() -> dict[str, list[dict]]:
     """Return stock codes used by active sites that are missing SDS or Risk Assessment URLs."""
     excl_set = {r["accno"] for r in _sb_get_all("ccs_site_exclusions", "select=accno")}

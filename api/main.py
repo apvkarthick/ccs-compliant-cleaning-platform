@@ -32,6 +32,7 @@ from .site_distribution import (
     get_import_status,
     get_invalid_emails,
     get_missing_docs,
+    get_presend_check,
     get_stats,
     hold_site,
     import_mapping,
@@ -411,6 +412,14 @@ def site_distribution_missing_docs(_auth: dict = Depends(require_auth)) -> dict[
 @app.get("/site-distribution/invalid-emails")
 def site_distribution_invalid_emails(_auth: dict = Depends(require_auth)) -> list[Any]:
     return get_invalid_emails()
+
+
+@app.get("/site-distribution/presend-check")
+def site_distribution_presend_check(
+    skip_sent_since: str = Query(default=""),
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    return get_presend_check(skip_sent_since=skip_sent_since)
 
 
 @app.get("/site-distribution/sites")

@@ -912,6 +912,11 @@ function SiteDistribution() {
   const [bulkResume, setBulkResume] = useState(false);
   const [bulkSending, setBulkSending] = useState(false);
   const [bulkResult, setBulkResult] = useState('');
+  const [presendCheck, setPresendCheck] = useState(null);
+  const [presendLoading, setPresendLoading] = useState(false);
+  const [bulkTaskId, setBulkTaskId] = useState('');
+  const [bulkTaskResult, setBulkTaskResult] = useState(null);
+  const [bulkPolling, setBulkPolling] = useState(false);
 
   // Manual send modal
   const [manualSite, setManualSite] = useState(null);
@@ -995,11 +1000,41 @@ function SiteDistribution() {
     } catch (err) { setBulkResult(`Error: ${err.message}`); }
   }
 
+  async function handlePresendCheck() {
+    setPresendLoading(true);
+    setPresendCheck(null);
+    try {
+      const skipSince = bulkResume ? new Date().toISOString().slice(0, 10) + 'T00:00:00Z' : '';
+      const params = new URLSearchParams();
+      if (skipSince) params.set('skip_sent_since', skipSince);
+      const r = await fetch(`${API_BASE}/site-distribution/presend-check?${params}`, { headers: getAuthHeaders() });
+      if (r.ok) setPresendCheck(await r.json());
+    } catch { /* ignore */ }
+    finally { setPresendLoading(false); }
+  }
+
+  async function pollBulkTask(taskId) {
+    setBulkPolling(true);
+    setBulkTaskResult(null);
+    const interval = setInterval(async () => {
+      try {
+        const r = await fetch(`${API_BASE}/distribution/status/${taskId}`, { headers: getAuthHeaders() });
+        const data = await r.json();
+        if (data.state === 'SUCCESS' || data.state === 'FAILURE') {
+          clearInterval(interval);
+          setBulkPolling(false);
+          setBulkTaskResult(data.result || data.error || data);
+        }
+      } catch { clearInterval(interval); setBulkPolling(false); }
+    }, 3000);
+  }
+
   async function handleBulkSend() {
     const resumeLabel = bulkResume ? ' (resume — skipping already sent today)' : '';
     if (!bulkDryRun && !confirm(`Send live emails to all active sites now?${resumeLabel}`)) return;
     setBulkSending(true);
     setBulkResult('');
+    setBulkTaskResult(null);
     try {
       const skipSince = bulkResume ? new Date().toISOString().slice(0, 10) + 'T00:00:00Z' : '';
       const params = new URLSearchParams({ dry_run: bulkDryRun });
@@ -1009,6 +1044,8 @@ function SiteDistribution() {
       if (!r.ok) throw new Error(data.detail || 'Send failed');
       const label = data.dry_run ? 'Dry run' : data.resume_mode ? 'Resume send' : 'Send';
       setBulkResult(`${label} queued (${data.batch_id})`);
+      setBulkTaskId(data.task_id);
+      pollBulkTask(data.task_id);
     } catch (err) { setBulkResult(`Error: ${err.message}`); }
     finally { setBulkSending(false); }
   }
@@ -1189,19 +1226,86 @@ function SiteDistribution() {
         {showSchedule && (
           <div style={{ padding: '0 14px 14px', borderTop: '1px solid #e2eaef' }}>
             {/* Bulk send now row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', borderBottom: '1px solid #f0f4f7', flexWrap: 'wrap' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
-                <input type="checkbox" checked={bulkDryRun} onChange={e => setBulkDryRun(e.target.checked)} />
-                Dry run
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer', color: bulkResume ? '#2C6B33' : '#607080' }} title="Skip sites already sent today — use to resume a failed bulk send">
-                <input type="checkbox" checked={bulkResume} onChange={e => setBulkResume(e.target.checked)} />
-                Resume (skip sent today)
-              </label>
-              <button className="primary" style={{ fontSize: 12, padding: '6px 14px' }} disabled={bulkSending} onClick={handleBulkSend}>
-                <Mail size={13} style={{ marginRight: 4 }} />{bulkSending ? 'Sending…' : bulkDryRun ? 'Test bulk send' : bulkResume ? 'Resume send' : 'Send all sites now'}
-              </button>
-              {bulkResult && <span style={{ fontSize: 12, color: bulkResult.startsWith('Error') ? '#dc2626' : '#166534' }}>{bulkResult}</span>}
+            <div style={{ padding: '12px 0', borderBottom: '1px solid #f0f4f7' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={bulkDryRun} onChange={e => setBulkDryRun(e.target.checked)} />
+                  Dry run
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer', color: bulkResume ? '#2C6B33' : '#607080' }} title="Skip sites already sent today — use to resume a failed bulk send">
+                  <input type="checkbox" checked={bulkResume} onChange={e => setBulkResume(e.target.checked)} />
+                  Resume (skip sent today)
+                </label>
+                <button className="btn-ghost" style={{ fontSize: 12, padding: '5px 12px' }} disabled={presendLoading} onClick={handlePresendCheck}>
+                  {presendLoading ? 'Checking…' : 'Check before send'}
+                </button>
+                <button className="primary" style={{ fontSize: 12, padding: '6px 14px' }} disabled={bulkSending} onClick={handleBulkSend}>
+                  <Mail size={13} style={{ marginRight: 4 }} />{bulkSending ? 'Sending…' : bulkDryRun ? 'Test bulk send' : bulkResume ? 'Resume send' : 'Send all sites now'}
+                </button>
+                {bulkResult && <span style={{ fontSize: 12, color: bulkResult.startsWith('Error') ? '#dc2626' : '#166534' }}>{bulkResult}</span>}
+                {bulkPolling && <span style={{ fontSize: 12, color: '#607080' }}>Polling result…</span>}
+              </div>
+
+              {/* Pre-send check results */}
+              {presendCheck && (() => {
+                const t = presendCheck.totals;
+                return (
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2eaef', borderRadius: 6, padding: '10px 12px', fontSize: 12 }}>
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+                      <span style={{ background: '#dcfce7', color: '#166534', fontWeight: 700, borderRadius: 4, padding: '2px 8px' }}>{t.will_send} will send</span>
+                      {t.skip_no_email > 0 && <span style={{ background: '#fee2e2', color: '#dc2626', fontWeight: 700, borderRadius: 4, padding: '2px 8px' }}>{t.skip_no_email} no/invalid email</span>}
+                      {t.skip_no_docs > 0 && <span style={{ background: '#fef3c7', color: '#92400e', fontWeight: 700, borderRadius: 4, padding: '2px 8px' }}>{t.skip_no_docs} no docs</span>}
+                      {t.skip_held > 0 && <span style={{ background: '#f0f4f7', color: '#607080', fontWeight: 700, borderRadius: 4, padding: '2px 8px' }}>{t.skip_held} on hold</span>}
+                      {t.skip_excluded > 0 && <span style={{ background: '#f0f4f7', color: '#607080', fontWeight: 700, borderRadius: 4, padding: '2px 8px' }}>{t.skip_excluded} excluded</span>}
+                      {t.skip_already_sent > 0 && <span style={{ background: '#ede9fe', color: '#5b21b6', fontWeight: 700, borderRadius: 4, padding: '2px 8px' }}>{t.skip_already_sent} already sent today</span>}
+                    </div>
+                    {presendCheck.skip_no_email?.length > 0 && (
+                      <details style={{ marginTop: 4 }}>
+                        <summary style={{ cursor: 'pointer', color: '#dc2626', fontWeight: 600 }}>Sites missing email ({presendCheck.skip_no_email.length})</summary>
+                        <div style={{ marginTop: 6, maxHeight: 120, overflowY: 'auto' }}>
+                          {presendCheck.skip_no_email.map(s => <div key={s.accno} style={{ padding: '2px 0', color: '#445' }}>{s.accno} — {s.name}</div>)}
+                        </div>
+                      </details>
+                    )}
+                    {presendCheck.skip_no_docs?.length > 0 && (
+                      <details style={{ marginTop: 4 }}>
+                        <summary style={{ cursor: 'pointer', color: '#92400e', fontWeight: 600 }}>Sites with no matching docs ({presendCheck.skip_no_docs.length})</summary>
+                        <div style={{ marginTop: 6, maxHeight: 120, overflowY: 'auto' }}>
+                          {presendCheck.skip_no_docs.map(s => <div key={s.accno} style={{ padding: '2px 0', color: '#445' }}>{s.accno} — {s.name}</div>)}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Post-send task result */}
+              {bulkTaskResult && (() => {
+                const r = bulkTaskResult;
+                const exceptions = r.exceptions || [];
+                return (
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2eaef', borderRadius: 6, padding: '10px 12px', fontSize: 12, marginTop: 8 }}>
+                    <p style={{ fontWeight: 700, color: '#17202a', marginBottom: 6 }}>Send complete — {r.total} sites processed</p>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: exceptions.length ? 8 : 0 }}>
+                      <span style={{ color: '#166534' }}>{r.sent} sent</span>
+                      <span style={{ color: '#607080' }}>{r.skipped} skipped</span>
+                      {r.failed > 0 && <span style={{ color: '#dc2626', fontWeight: 700 }}>{r.failed} failed</span>}
+                    </div>
+                    {exceptions.length > 0 && (
+                      <details>
+                        <summary style={{ cursor: 'pointer', color: '#dc2626', fontWeight: 600 }}>Failed sites ({exceptions.length})</summary>
+                        <div style={{ marginTop: 6, maxHeight: 160, overflowY: 'auto' }}>
+                          {exceptions.map((e, i) => (
+                            <div key={i} style={{ padding: '3px 0', borderBottom: '1px solid #f0f4f7', color: '#445' }}>
+                              <strong>{e.accno}</strong> — {e.error}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Schedule */}
@@ -1752,6 +1856,8 @@ function ImportTools() {
   const [riskShowAll, setRiskShowAll] = useState(false);
   const [invalidEmails, setInvalidEmails] = useState(null);
   const [invalidEmailsLoading, setInvalidEmailsLoading] = useState(false);
+  const INVALID_PAGE = 50;
+  const [invalidShowAll, setInvalidShowAll] = useState(false);
 
   async function handleImport(e) {
     e.preventDefault();
@@ -2048,6 +2154,14 @@ function ImportTools() {
                 ? <span style={{ background: '#fee2e2', color: '#dc2626', fontWeight: 700, fontSize: 12, borderRadius: 20, padding: '3px 10px' }}>{invalidEmails.length} site{invalidEmails.length !== 1 ? 's' : ''}</span>
                 : <span style={{ background: '#dcfce7', color: '#166534', fontWeight: 700, fontSize: 12, borderRadius: 20, padding: '3px 10px' }}>All valid</span>
             )}
+            <button className="btn-ghost" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+              onClick={() => {
+                if (!invalidEmails || !invalidEmails.length) return;
+                const csv = [['Account', 'Site Name', 'Issue', 'Emails'], ...invalidEmails.map(r => [r.accno, r.name, r.issue, r.emails.join('; ')])].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+                const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv); a.download = 'invalid_emails.csv'; a.click();
+              }} disabled={!invalidEmails?.length}>
+              <Download size={13} /> CSV
+            </button>
             <button className="btn-ghost" style={{ fontSize: 12 }} onClick={loadInvalidEmails} disabled={invalidEmailsLoading}>
               {invalidEmailsLoading ? 'Refreshing…' : 'Refresh'}
             </button>
@@ -2060,25 +2174,33 @@ function ImportTools() {
         {invalidEmails && invalidEmails.length > 0 && (() => {
           const thStyle = { background: '#2C6B33', color: '#fff', padding: '8px 12px', fontSize: 12, fontWeight: 700, textAlign: 'left' };
           const tdStyle = { padding: '8px 12px', fontSize: 13, borderBottom: '1px solid #f0f4f7' };
+          const rows = invalidShowAll ? invalidEmails : invalidEmails.slice(0, INVALID_PAGE);
           return (
-            <table style={{ width: '100%', borderCollapse: 'collapse', borderRadius: 6, overflow: 'hidden' }}>
-              <thead><tr>
-                <th style={thStyle}>Account</th>
-                <th style={thStyle}>Site Name</th>
-                <th style={thStyle}>Issue</th>
-                <th style={thStyle}>Email(s)</th>
-              </tr></thead>
-              <tbody>
-                {invalidEmails.map(r => (
-                  <tr key={r.accno}>
-                    <td style={{ ...tdStyle, fontWeight: 700, color: '#17202a' }}>{r.accno}</td>
-                    <td style={tdStyle}>{r.name}</td>
-                    <td style={{ ...tdStyle, color: '#dc2626', fontWeight: 600 }}>{r.issue}</td>
-                    <td style={{ ...tdStyle, color: '#607080', fontSize: 12 }}>{r.emails.join(', ') || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <>
+              <table style={{ width: '100%', borderCollapse: 'collapse', borderRadius: 6, overflow: 'hidden' }}>
+                <thead><tr>
+                  <th style={thStyle}>Account</th>
+                  <th style={thStyle}>Site Name</th>
+                  <th style={thStyle}>Issue</th>
+                  <th style={thStyle}>Email(s)</th>
+                </tr></thead>
+                <tbody>
+                  {rows.map(r => (
+                    <tr key={r.accno}>
+                      <td style={{ ...tdStyle, fontWeight: 700, color: '#17202a' }}>{r.accno}</td>
+                      <td style={tdStyle}>{r.name}</td>
+                      <td style={{ ...tdStyle, color: '#dc2626', fontWeight: 600 }}>{r.issue}</td>
+                      <td style={{ ...tdStyle, color: '#607080', fontSize: 12 }}>{r.emails.join(', ') || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {invalidEmails.length > INVALID_PAGE && (
+                <button className="btn-ghost" style={{ fontSize: 12, marginTop: 6 }} onClick={() => setInvalidShowAll(s => !s)}>
+                  {invalidShowAll ? `Show first ${INVALID_PAGE}` : `Show all ${invalidEmails.length}`}
+                </button>
+              )}
+            </>
           );
         })()}
         {invalidEmails && invalidEmails.length === 0 && (
