@@ -1312,6 +1312,15 @@ function SiteDistribution() {
               {bulkTaskResult && (() => {
                 const r = bulkTaskResult;
                 const exceptions = r.exceptions || [];
+                function downloadFailuresCsv() {
+                  const rows = [['Account No', 'Site Name', 'Email', 'Error']];
+                  exceptions.forEach(e => rows.push([e.accno || '', e.name || '', e.email || '', e.error || '']));
+                  const csv = rows.map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+                  const a = document.createElement('a');
+                  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+                  a.download = 'send_failures.csv';
+                  a.click();
+                }
                 return (
                   <div style={{ background: '#f8fafc', border: '1px solid #e2eaef', borderRadius: 6, padding: '10px 12px', fontSize: 12, marginTop: 8 }}>
                     <p style={{ fontWeight: 700, color: '#17202a', marginBottom: 6 }}>Send complete — {r.total} sites processed</p>
@@ -1321,16 +1330,20 @@ function SiteDistribution() {
                       {r.failed > 0 && <span style={{ color: '#dc2626', fontWeight: 700 }}>{r.failed} failed</span>}
                     </div>
                     {exceptions.length > 0 && (
-                      <details>
-                        <summary style={{ cursor: 'pointer', color: '#dc2626', fontWeight: 600 }}>Failed sites ({exceptions.length})</summary>
-                        <div style={{ marginTop: 6, maxHeight: 160, overflowY: 'auto' }}>
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                          <span style={{ color: '#dc2626', fontWeight: 600 }}>Failed sites ({exceptions.length})</span>
+                          <button onClick={downloadFailuresCsv} style={{ fontSize: 11, padding: '2px 8px', border: '1px solid #e2eaef', borderRadius: 4, background: '#fff', cursor: 'pointer', color: '#445' }}>Download CSV</button>
+                        </div>
+                        <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #f0f4f7', borderRadius: 4 }}>
                           {exceptions.map((e, i) => (
-                            <div key={i} style={{ padding: '3px 0', borderBottom: '1px solid #f0f4f7', color: '#445' }}>
-                              <strong>{e.accno}</strong> — {e.error}
+                            <div key={i} style={{ padding: '5px 8px', borderBottom: '1px solid #f0f4f7' }}>
+                              <div style={{ color: '#17202a' }}><strong>{e.accno}</strong>{e.name ? ` — ${e.name}` : ''}{e.email ? <span style={{ color: '#607080' }}> &lt;{e.email}&gt;</span> : ''}</div>
+                              <div style={{ color: '#dc2626', marginTop: 1 }}>{e.error}</div>
                             </div>
                           ))}
                         </div>
-                      </details>
+                      </>
                     )}
                   </div>
                 );

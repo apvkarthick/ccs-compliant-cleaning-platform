@@ -741,11 +741,11 @@ def _mark_distribution_downloaded(document_id: str, contact_id: str) -> dict[str
 
 def _tag_ghl_contact(contact_id: str, tags: list[str]) -> dict[str, Any]:
     if not contact_id or "@" in contact_id:
-        return {"status": "skipped", "reason": "GHL contact id required"}
+        return {"status": "skipped", "reason": "CRM contact ID required"}
     token = os.getenv("GHL_ACCESS_TOKEN") or os.getenv("GHL_API_KEY")
     base_url = os.getenv("GHL_BASE_URL", "https://services.leadconnectorhq.com").rstrip("/")
     if not token:
-        return {"status": "skipped", "reason": "GHL_ACCESS_TOKEN required"}
+        return {"status": "skipped", "reason": "CRM credentials not configured"}
     return _post_json(f"{base_url}/contacts/{contact_id}/tags", {"tags": tags}, _ghl_headers(token))
 
 

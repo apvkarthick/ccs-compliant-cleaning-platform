@@ -256,11 +256,22 @@ def site_distribution_task(
                         summary["sent"] += 1
                         _update_last_sent_at(accno)
                     else:
+                        reason = ghl.get("reason", "")
                         summary["failed"] += 1
+                        summary.setdefault("exceptions", []).append({
+                            "accno": accno,
+                            "name": site.get("name", ""),
+                            "email": email_addr,
+                            "error": reason or "Send failed — CRM did not accept the message",
+                        })
                     time.sleep(0.3)
         except Exception as exc:
             summary["failed"] += 1
-            summary.setdefault("exceptions", []).append({"accno": accno, "error": str(exc)})
+            summary.setdefault("exceptions", []).append({
+                "accno": accno,
+                "name": site.get("name", ""),
+                "error": str(exc),
+            })
 
         summary["done"] = i + 1
         if (i + 1) % 25 == 0 or i == len(sites_this_run) - 1:
@@ -326,7 +337,7 @@ def bulk_distribute_task(self, preview: dict, contacts: list, dry_run: bool = Tr
                     summary["failed"] += 1
                     summary.setdefault("ghl_errors", []).append({
                         "email": contact.get("email"),
-                        "errors": [{"reason": ghl_result.get("reason", "GHL skipped — check GHL_ACCESS_TOKEN and GHL_LOCATION_ID env vars on the worker")}],
+                        "errors": [{"reason": ghl_result.get("reason", "CRM send skipped — credentials not configured on server")}],
                     })
                 else:
                     ghl_errors = [r for r in (ghl_result.get("results") or []) if r.get("status") == "error"]
