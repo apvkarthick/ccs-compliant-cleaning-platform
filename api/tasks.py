@@ -9,6 +9,7 @@ def run_scheduled_distributions() -> dict:
     from datetime import datetime, timezone
 
     from .workbooks import advance_schedule, get_due_schedules, load_workbook
+    from .site_distribution import notify_admin_failure
 
     due = get_due_schedules()
     if not due:
@@ -39,6 +40,13 @@ def run_scheduled_distributions() -> dict:
             triggered += 1
         except Exception as exc:
             errors.append({"customer_id": customer_id, "error": str(exc)})
+
+    if errors:
+        lines = "\n".join(f"  customer_id={e['customer_id']}: {e['error']}" for e in errors)
+        notify_admin_failure(
+            f"Scheduler failure — {len(errors)} schedule(s) failed",
+            f"The following scheduled distributions failed to trigger:\n\n{lines}",
+        )
 
     return {"triggered": triggered, "errors": errors}
 
@@ -105,16 +113,30 @@ def auto_sharepoint_pull_task() -> dict:
     uncommenting the 'auto-sharepoint-pull' key in beat_schedule.
     """
     from .sharepoint import pull_all_import_files, SharePointError
-    from .site_distribution import import_mapping
+    from .site_distribution import import_mapping, notify_admin_failure
 
     try:
         files = pull_all_import_files()
     except SharePointError as e:
+        notify_admin_failure(
+            "SharePoint pull failed — authentication/API error",
+            f"SharePoint pull could not complete:\n\n{e}",
+        )
         return {"ok": False, "error": f"SharePoint: {e}"}
     except Exception as e:
+        notify_admin_failure(
+            "SharePoint pull failed — unexpected error",
+            f"Unexpected error during SharePoint pull:\n\n{e}",
+        )
         return {"ok": False, "error": f"Unexpected: {e}"}
 
     sp_errors = files.pop("_errors", {})
+    if sp_errors:
+        lines = "\n".join(f"  {k}: {v}" for k, v in sp_errors.items())
+        notify_admin_failure(
+            f"SharePoint pull — {len(sp_errors)} file(s) failed",
+            f"The following import files could not be fetched from SharePoint (after 3 retries):\n\n{lines}",
+        )
 
     def _bytes(key: str) -> bytes | None:
         entry = files.get(key)
@@ -130,6 +152,10 @@ def auto_sharepoint_pull_task() -> dict:
             register_bytes=_bytes("chemical_register"),
         )
     except Exception as e:
+        notify_admin_failure(
+            "SharePoint import pipeline failed",
+            f"Files pulled from SharePoint but import/grouping failed:\n\n{e}\n\nPulled files: {pulled}",
+        )
         return {"ok": False, "pulled_files": pulled, "error": f"Import failed: {e}"}
 
     return {"ok": True, "pulled_files": pulled, "sp_errors": sp_errors, **result}
@@ -169,6 +195,7 @@ def site_distribution_task(
         _update_last_sent_at,
         compose_site_email,
         load_lookup_maps,
+        notify_admin_failure,
         resolve_docs_for_site,
         _sb_get_all,
     )
@@ -290,6 +317,17 @@ def site_distribution_task(
         )
         summary["continuation_scheduled"] = True
 
+    failures = summary.get("exceptions", [])
+    if failures and not dry_run:
+        lines = "\n".join(
+            f"  accno={f.get('accno','')} name={f.get('name','')} email={f.get('email','')} — {f.get('error','')}"
+            for f in failures
+        )
+        notify_admin_failure(
+            f"Mail send failures — {len(failures)} site(s) failed (batch {batch_id})",
+            f"The following sites failed during bulk send:\n\n{lines}",
+        )
+
     return dict(summary)
 
 
@@ -298,6 +336,7 @@ def bulk_distribute_task(self, preview: dict, contacts: list, dry_run: bool = Tr
     import os
     import time
 
+    from .site_distribution import notify_admin_failure
     from .distribution import (
         _ensure_documents_in_supabase,
         _log_events_to_supabase,
@@ -369,5 +408,19 @@ def bulk_distribute_task(self, preview: dict, contacts: list, dry_run: bool = Tr
         summary["done"] = i + 1
         if (i + 1) % 50 == 0 or i == total - 1:
             self.update_state(state="PROGRESS", meta=dict(summary))
+
+    all_failures = summary.get("exceptions", []) + [
+        {"email": e.get("email"), "error": str(e.get("errors", ""))}
+        for e in summary.get("ghl_errors", [])
+    ]
+    if all_failures and not dry_run:
+        lines = "\n".join(
+            f"  email={f.get('email','')} — {f.get('error','')}"
+            for f in all_failures
+        )
+        notify_admin_failure(
+            f"Mail send failures — {len(all_failures)} contact(s) failed (batch {batch_id})",
+            f"The following contacts failed during bulk distribute:\n\n{lines}",
+        )
 
     return dict(summary)

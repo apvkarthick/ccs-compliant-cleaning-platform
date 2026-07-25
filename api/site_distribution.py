@@ -1272,6 +1272,45 @@ def _now() -> str:
 
 _INTERNAL_EMAIL = "ccshub@ccsessentials.com.au"
 _INTERNAL_NAME = "CCS Hub Internal"
+_ADMIN_NOTIFY_EMAIL = "apvkarthick@gmail.com"
+
+
+def notify_admin_failure(subject: str, body: str) -> None:
+    """Send a plain-text failure alert to the admin email via SMTP.
+
+    Reads env vars: NOTIFY_SMTP_HOST, NOTIFY_SMTP_PORT (default 587),
+                    NOTIFY_SMTP_USER, NOTIFY_SMTP_PASS, NOTIFY_FROM_EMAIL.
+    Logs to stderr if SMTP not configured so failures are never fully silent.
+    """
+    import logging
+    import smtplib
+    from email.mime.text import MIMEText
+
+    host = os.getenv("NOTIFY_SMTP_HOST", "")
+    if not host:
+        logging.getLogger(__name__).error(
+            "[admin-notify] SMTP not configured — %s: %s", subject, body[:300]
+        )
+        return
+
+    port = int(os.getenv("NOTIFY_SMTP_PORT", "587"))
+    user = os.getenv("NOTIFY_SMTP_USER", "")
+    password = os.getenv("NOTIFY_SMTP_PASS", "")
+    from_addr = os.getenv("NOTIFY_FROM_EMAIL", user) or user
+
+    msg = MIMEText(body, "plain")
+    msg["Subject"] = f"[CCS Platform] {subject}"
+    msg["From"] = from_addr
+    msg["To"] = _ADMIN_NOTIFY_EMAIL
+
+    try:
+        with smtplib.SMTP(host, port, timeout=10) as smtp:
+            smtp.starttls()
+            if user and password:
+                smtp.login(user, password)
+            smtp.sendmail(from_addr, [_ADMIN_NOTIFY_EMAIL], msg.as_string())
+    except Exception as exc:
+        logging.getLogger(__name__).error("[admin-notify] SMTP send failed: %s", exc)
 
 
 def _is_first_weekday_of_month_aest() -> bool:
