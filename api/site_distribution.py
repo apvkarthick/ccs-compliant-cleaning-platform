@@ -467,13 +467,15 @@ def upload_register_to_spaces(xlsx_bytes: bytes, accno: str, date_str: str) -> s
         aws_access_key_id=os.getenv("DO_SPACES_KEY", ""),
         aws_secret_access_key=os.getenv("DO_SPACES_SECRET", ""),
     )
-    key = f"ccs/registers/{date_str}/{accno}_chemical_register_{date_str}.xlsx"
+    filename = f"{accno}_chemical_register_{date_str}.xlsx"
+    key = f"ccs/registers/{date_str}/{filename}"
     s3.put_object(
         Bucket=bucket,
         Key=key,
         Body=xlsx_bytes,
         ACL="public-read",
         ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ContentDisposition=f'attachment; filename="{filename}"',
     )
     return f"https://{bucket}.{region}.digitaloceanspaces.com/{key}"
 
