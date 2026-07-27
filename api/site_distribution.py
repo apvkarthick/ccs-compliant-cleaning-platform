@@ -349,9 +349,9 @@ def generate_chemical_register_excel(
         cell.font = Font(bold=True, size=10, color="334455")
         cell.alignment = Alignment(horizontal="left", vertical="center")
 
-    def _value_cell(cell, text):
+    def _value_cell(cell, text, bold=False, size=10):
         cell.value = text
-        cell.font = Font(size=10, color="223344")
+        cell.font = Font(bold=bold, size=size, color="223344")
         cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
     # ── Row 1: CHEMICAL REGISTER title ──────────────────────────────────────
@@ -386,13 +386,18 @@ def generate_chemical_register_excel(
     ws.row_dimensions[5].height = 20
 
     # ── Row 6: LOCATION / DATE / PREPARED BY values ──────────────────────────
+    from datetime import datetime as _dt
+    try:
+        date_display = _dt.strptime(today, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except ValueError:
+        date_display = today
     ws.merge_cells("A6:B6")
-    _value_cell(ws["A6"], site_name)
+    _value_cell(ws["A6"], site_name, bold=True, size=12)
     ws.merge_cells("C6:E6")
-    _value_cell(ws["C6"], today)
+    _value_cell(ws["C6"], date_display, bold=True, size=12)
     ws.merge_cells("F6:K6")
-    _value_cell(ws["F6"], _PREPARED_BY)
-    ws.row_dimensions[6].height = 20
+    _value_cell(ws["F6"], _PREPARED_BY, bold=True, size=12)
+    ws.row_dimensions[6].height = 24
 
     # ── Rows 7-10: spacers ────────────────────────────────────────────────────
     for r in range(7, 11):
@@ -439,7 +444,8 @@ def generate_chemical_register_excel(
         for col_idx, val in enumerate(row_vals, start=1):
             cell = ws.cell(row=row_idx, column=col_idx, value=val)
             cell.font = Font(size=10)
-            cell.alignment = Alignment(vertical="center", wrap_text=False)
+            halign = "center" if col_idx >= 3 else "left"
+            cell.alignment = Alignment(horizontal=halign, vertical="center", wrap_text=False)
             cell.border = border
             if bg:
                 cell.fill = bg
