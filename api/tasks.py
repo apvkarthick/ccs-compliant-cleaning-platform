@@ -6,10 +6,14 @@ from .celery_app import celery_app
 @celery_app.task(name="ccs.run_scheduled_distributions")
 def run_scheduled_distributions() -> dict:
     """Celery Beat task: find due schedules, trigger bulk sends, advance next_send_at."""
+    import os
     from datetime import datetime, timezone
 
     from .workbooks import advance_schedule, get_due_schedules, load_workbook
     from .site_distribution import notify_admin_failure
+
+    if os.getenv("CCS_BULK_SEND_DISABLED") == "1":
+        return {"triggered": 0, "errors": [], "skipped": True, "reason": "CCS_BULK_SEND_DISABLED=1"}
 
     due = get_due_schedules()
     if not due:
