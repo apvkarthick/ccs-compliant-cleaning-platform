@@ -305,6 +305,15 @@ def fetch_product_metadata(stock_codes: list[str]) -> dict[str, dict]:
 _PREPARED_BY = "Matthew King Compliant Cleaning Supplies & Systems PTY LTD  Ph 1300 314 491"
 
 
+def _fmt_date_au(iso: str) -> str:
+    """Convert YYYY-MM-DD to DD/MM/YYYY. Returns original string if not parseable."""
+    from datetime import datetime as _dt2
+    try:
+        return _dt2.strptime(iso.split(" ")[0], "%Y-%m-%d").strftime("%d/%m/%Y")
+    except (ValueError, AttributeError):
+        return iso
+
+
 def generate_chemical_register_excel(
     site_name: str,
     accno: str,
@@ -439,7 +448,7 @@ def generate_chemical_register_excel(
             m.get("chemical_class") or "",
             m.get("packing_group") or "",
             m.get("primary_use") or "",
-            m.get("sds_expiry") or "",
+            _fmt_date_au(m.get("sds_expiry") or ""),
         ]
         for col_idx, val in enumerate(row_vals, start=1):
             cell = ws.cell(row=row_idx, column=col_idx, value=val)
