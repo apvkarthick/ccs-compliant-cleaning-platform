@@ -58,9 +58,26 @@ def run_scheduled_distributions() -> dict:
 @celery_app.task(name="ccs.detect_new_products")
 def detect_new_products_task() -> dict:
     """Daily beat task: detect and record new product–site pairs.
-    No email sent — CCS team reviews and actions via /new-products page."""
-    from .site_distribution import detect_and_record_new_products
-    return detect_and_record_new_products()
+    On first working day of month (AEST 9:30am), also sends a summary email."""
+    from datetime import datetime, timezone
+    from .site_distribution import (
+        detect_and_record_new_products,
+        _is_first_weekday_of_month_aest,
+        _render_new_products_email,
+        send_internal_notification,
+    )
+    result = detect_and_record_new_products()
+    if not result["first_run"] and _is_first_weekday_of_month_aest():
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        html = _render_new_products_email(result["by_site"], today)
+        ghl = send_internal_notification(
+            f"Monthly new-products report — {result['new_count']} new pair(s) detected ({today})", html
+        )
+        result["email_sent"] = True
+        result["ghl"] = ghl
+    else:
+        result["email_sent"] = False
+    return result
 
 
 @celery_app.task(name="ccs.send_sds_expiry_alerts")

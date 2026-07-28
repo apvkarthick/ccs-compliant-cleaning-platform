@@ -949,40 +949,42 @@ def send_new_customer_endpoint(
     return {"status": result.get("status", "ok"), "docs": len(docs), "email": req.email, "saved_accno": effective_accno}
 
 
+class ReportTriggerRequest(BaseModel):
+    email: str | None = None
+
+
 @app.post("/site-distribution/test/detect-new-products")
-def test_detect_new_products(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
-    """Test trigger: run new-product detection immediately."""
+def test_detect_new_products(req: ReportTriggerRequest = ReportTriggerRequest(), _auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    """Trigger new-product detection and send report to req.email (or CCS_REPORT_EMAIL / default)."""
     from datetime import datetime, timezone
     from .site_distribution import detect_and_record_new_products, _render_new_products_email, send_internal_notification
     try:
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         result = detect_and_record_new_products()
-        ghl_result = None
-        if result["new_count"] > 0 and not result["first_run"]:
-            html = _render_new_products_email(result["by_site"], today)
-            ghl_result = send_internal_notification(f"[TEST] New products detected — {today}", html)
+        html = _render_new_products_email(result["by_site"], today)
+        ghl_result = send_internal_notification(f"New products report — {today}", html, to_email=req.email or None)
         return {**result, "ghl": ghl_result}
     except Exception as exc:
         return JSONResponse(status_code=500, content={"detail": str(exc)})
 
 
 @app.post("/site-distribution/test/sds-expiry-alerts")
-def test_sds_expiry_alerts(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
-    """Test trigger: check SDS expiry window and send alert if any found."""
+def test_sds_expiry_alerts(req: ReportTriggerRequest = ReportTriggerRequest(), _auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    """Trigger SDS expiry report and send to req.email (or CCS_REPORT_EMAIL / default)."""
     from datetime import datetime, timezone
     from .site_distribution import get_expiring_sds, _render_expiry_email, send_internal_notification
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     expiring = get_expiring_sds(days_ahead=60)
     html = _render_expiry_email(expiring, today)
-    ghl_result = None
-    if expiring:
-        ghl_result = send_internal_notification(f"[TEST] SDS expiry alert — {len(expiring)} product(s) ({today})", html)
+    ghl_result = send_internal_notification(
+        f"SDS expiry alert — {len(expiring)} product(s) ({today})", html, to_email=req.email or None
+    )
     return {"expiring_count": len(expiring), "products": expiring[:20], "ghl": ghl_result, "preview_html": html}
 
 
 @app.post("/site-distribution/test/hold-list-notification")
-def test_hold_list_notification(_auth: dict = Depends(require_auth)) -> dict[str, Any]:
-    """Test trigger: send hold list notification immediately."""
+def test_hold_list_notification(req: ReportTriggerRequest = ReportTriggerRequest(), _auth: dict = Depends(require_auth)) -> dict[str, Any]:
+    """Trigger hold list report and send to req.email (or CCS_REPORT_EMAIL / default)."""
     from datetime import datetime, timezone
     from .site_distribution import get_held_sites, get_excluded_sites, _render_hold_list_email, send_internal_notification
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -990,7 +992,7 @@ def test_hold_list_notification(_auth: dict = Depends(require_auth)) -> dict[str
     excluded = get_excluded_sites()
     html = _render_hold_list_email(held, today, excluded)
     ghl_result = send_internal_notification(
-        f"[TEST] Monthly Hold & Exclusion List — {len(held)} on hold, {len(excluded)} excluded ({today})", html
+        f"Monthly Hold & Exclusion List — {len(held)} on hold, {len(excluded)} excluded ({today})", html, to_email=req.email or None
     )
     return {"held_count": len(held), "excluded_count": len(excluded), "ghl": ghl_result, "preview_html": html}
 

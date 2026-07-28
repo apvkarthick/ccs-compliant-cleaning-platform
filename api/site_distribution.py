@@ -1488,13 +1488,17 @@ def get_excluded_sites() -> list[dict[str, Any]]:
     return _sb_get("ccs_site_exclusions", "select=accno,name,excluded_at&order=excluded_at.asc")
 
 
-def send_internal_notification(subject: str, html_body: str) -> dict[str, Any]:
-    """Send an internal notification email to ccshub@ccsessentials.com.au via GHL."""
+def send_internal_notification(subject: str, html_body: str, to_email: str | None = None) -> dict[str, Any]:
+    """Send an internal notification email via GHL.
+    Recipient: to_email arg > CCS_REPORT_EMAIL env var > _INTERNAL_EMAIL default."""
+    import os
     from .distribution import _find_or_create_ghl_contact_id, _send_messages_via_ghl
-    contact_id = _find_or_create_ghl_contact_id({"email": _INTERNAL_EMAIL, "name": _INTERNAL_NAME}) or _INTERNAL_EMAIL
+    email = to_email or os.getenv("CCS_REPORT_EMAIL") or _INTERNAL_EMAIL
+    name = _INTERNAL_NAME if email == _INTERNAL_EMAIL else email.split("@")[0]
+    contact_id = _find_or_create_ghl_contact_id({"email": email, "name": name}) or email
     msg: dict[str, Any] = {
-        "to": _INTERNAL_EMAIL,
-        "name": _INTERNAL_NAME,
+        "to": email,
+        "name": name,
         "contact_id": contact_id,
         "subject": subject,
         "html": html_body,

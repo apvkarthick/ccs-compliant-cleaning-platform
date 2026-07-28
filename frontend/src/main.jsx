@@ -2287,6 +2287,9 @@ function DataManagement() {
   const [clearConfirm, setClearConfirm] = useState(false);  // 'all' | table key | false
   const [clearing, setClearing] = useState(false);
   const [clearResult, setClearResult] = useState('');
+  const [reportEmail, setReportEmail] = useState('');
+  const [reportSending, setReportSending] = useState(null);  // 'sds' | 'hold' | 'newproducts'
+  const [reportResults, setReportResults] = useState({});   // { sds: string, hold: string, newproducts: string }
 
   async function loadAll() {
     setLoading(true);
@@ -2333,6 +2336,36 @@ function DataManagement() {
 
   const th = { fontSize: 11, fontWeight: 700, color: '#667789', textTransform: 'uppercase', letterSpacing: 0.5, padding: '8px 12px', borderBottom: '2px solid #e2eaef', textAlign: 'left', whiteSpace: 'nowrap' };
   const td = { fontSize: 13, padding: '10px 12px', borderBottom: '1px solid #f0f4f8', verticalAlign: 'middle' };
+
+  async function sendReport(type) {
+    const endpoints = {
+      sds: 'site-distribution/test/sds-expiry-alerts',
+      hold: 'site-distribution/test/hold-list-notification',
+      newproducts: 'site-distribution/test/detect-new-products',
+    };
+    const labels = { sds: 'SDS Expiry', hold: 'Hold List', newproducts: 'New Products' };
+    setReportSending(type);
+    setReportResults(r => ({ ...r, [type]: '' }));
+    try {
+      const res = await fetch(`${API_BASE}/${endpoints[type]}`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(reportEmail ? { email: reportEmail } : {}),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setReportResults(r => ({ ...r, [type]: `Error: ${data.detail || res.status}` }));
+      } else {
+        const count = data.expiring_count ?? data.held_count ?? data.new_count ?? '?';
+        const dest = reportEmail || 'default address';
+        setReportResults(r => ({ ...r, [type]: `${labels[type]} sent to ${dest} (${count} item${count !== 1 ? 's' : ''})` }));
+      }
+    } catch (err) {
+      setReportResults(r => ({ ...r, [type]: `Error: ${err.message}` }));
+    } finally {
+      setReportSending(null);
+    }
+  }
 
   return (
     <section className="workbench">
@@ -2469,6 +2502,57 @@ function DataManagement() {
               </table>
             </div>
           )}
+        </div>
+
+        {/* Monthly Reports */}
+        <div style={{ background: '#fff', border: '1px solid #e2eaef', borderRadius: 8, padding: 20, marginBottom: 32 }}>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: '#17202a', marginBottom: 4 }}>Monthly reports</h2>
+          <p style={{ fontSize: 12, color: '#607080', marginBottom: 14 }}>
+            These run automatically on the first working day of each month at 9am AEST.
+            Trigger manually here and optionally override the recipient email.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <input
+              type="email"
+              placeholder="Send to (leave blank for default)"
+              value={reportEmail}
+              onChange={e => setReportEmail(e.target.value)}
+              style={{ flex: 1, maxWidth: 320, border: '1px solid #d1d9e0', borderRadius: 6, padding: '7px 10px', fontSize: 13, color: '#17202a' }}
+            />
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+            {[
+              { key: 'sds', label: 'SDS Expiry Report', desc: 'Products expiring within 60 days' },
+              { key: 'hold', label: 'Hold List Report', desc: 'Sites currently on hold' },
+              { key: 'newproducts', label: 'New Products Report', desc: 'New product–site pairs this cycle' },
+            ].map(({ key, label, desc }) => (
+              <div key={key} style={{ minWidth: 200, flex: '1 1 200px' }}>
+                <button
+                  onClick={() => sendReport(key)}
+                  disabled={!!reportSending}
+                  style={{
+                    width: '100%', background: reportSending === key ? '#f0f4f8' : '#edf8f5',
+                    border: '1px solid #b2dfdb', borderRadius: 7, padding: '10px 14px',
+                    fontSize: 13, fontWeight: 700, color: '#0f5a53', cursor: reportSending ? 'not-allowed' : 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  {reportSending === key ? 'Sending…' : label}
+                  <div style={{ fontSize: 11, fontWeight: 400, color: '#607080', marginTop: 2 }}>{desc}</div>
+                </button>
+                {reportResults[key] && (
+                  <div style={{
+                    marginTop: 4, fontSize: 11, padding: '4px 8px', borderRadius: 5,
+                    background: reportResults[key].startsWith('Error') ? '#fef2f2' : '#f0fdf4',
+                    color: reportResults[key].startsWith('Error') ? '#991b1b' : '#166534',
+                    border: `1px solid ${reportResults[key].startsWith('Error') ? '#fca5a5' : '#86efac'}`,
+                  }}>
+                    {reportResults[key]}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Clear all */}
