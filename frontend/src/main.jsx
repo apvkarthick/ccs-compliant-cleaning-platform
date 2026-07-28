@@ -2287,7 +2287,7 @@ function DataManagement() {
   const [clearConfirm, setClearConfirm] = useState(false);  // 'all' | table key | false
   const [clearing, setClearing] = useState(false);
   const [clearResult, setClearResult] = useState('');
-  const [reportEmail, setReportEmail] = useState('');
+  const [reportEmails, setReportEmails] = useState({ sds: '', hold: '', newproducts: '' });
   const [reportSending, setReportSending] = useState(null);  // 'sds' | 'hold' | 'newproducts'
   const [reportResults, setReportResults] = useState({});   // { sds: string, hold: string, newproducts: string }
 
@@ -2347,18 +2347,19 @@ function DataManagement() {
     setReportSending(type);
     setReportResults(r => ({ ...r, [type]: '' }));
     try {
+      const email = reportEmails[type] || '';
       const res = await fetch(`${API_BASE}/${endpoints[type]}`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(reportEmail ? { email: reportEmail } : {}),
+        body: JSON.stringify(email ? { email } : {}),
       });
       const data = await res.json();
       if (!res.ok) {
         setReportResults(r => ({ ...r, [type]: `Error: ${data.detail || res.status}` }));
       } else {
         const count = data.expiring_count ?? data.held_count ?? data.new_count ?? '?';
-        const dest = reportEmail || 'default address';
-        setReportResults(r => ({ ...r, [type]: `${labels[type]} sent to ${dest} (${count} item${count !== 1 ? 's' : ''})` }));
+        const dest = email || 'ccshub@ccsessentials.com.au';
+        setReportResults(r => ({ ...r, [type]: `Sent to ${dest} · ${count} item${count !== 1 ? 's' : ''}` }));
       }
     } catch (err) {
       setReportResults(r => ({ ...r, [type]: `Error: ${err.message}` }));
@@ -2504,55 +2505,91 @@ function DataManagement() {
           )}
         </div>
 
-        {/* Monthly Reports */}
-        <div style={{ background: '#fff', border: '1px solid #e2eaef', borderRadius: 8, padding: 20, marginBottom: 32 }}>
-          <h2 style={{ fontSize: 14, fontWeight: 700, color: '#17202a', marginBottom: 4 }}>Monthly reports</h2>
-          <p style={{ fontSize: 12, color: '#607080', marginBottom: 14 }}>
-            These run automatically on the first working day of each month at 9am AEST.
-            Trigger manually here and optionally override the recipient email.
-          </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-            <input
-              type="email"
-              placeholder="Send to (leave blank for default)"
-              value={reportEmail}
-              onChange={e => setReportEmail(e.target.value)}
-              style={{ flex: 1, maxWidth: 320, border: '1px solid #d1d9e0', borderRadius: 6, padding: '7px 10px', fontSize: 13, color: '#17202a' }}
-            />
+        {/* Test Alerts */}
+        <div style={{ background: '#fff', border: '1px solid #e2eaef', borderRadius: 8, overflow: 'hidden', marginBottom: 32 }}>
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid #e2eaef', background: '#f8fafc' }}>
+            <h2 style={{ fontSize: 14, fontWeight: 700, color: '#17202a', margin: 0 }}>Test Alerts</h2>
+            <p style={{ fontSize: 12, color: '#607080', margin: '4px 0 0' }}>
+              Fire each automated alert immediately. Sends to ccshub@ccsessentials.com.au via GHL (skipped if GHL not configured).
+            </p>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-            {[
-              { key: 'sds', label: 'SDS Expiry Report', desc: 'Products expiring within 60 days' },
-              { key: 'hold', label: 'Hold List Report', desc: 'Sites currently on hold' },
-              { key: 'newproducts', label: 'New Products Report', desc: 'New product–site pairs this cycle' },
-            ].map(({ key, label, desc }) => (
-              <div key={key} style={{ minWidth: 200, flex: '1 1 200px' }}>
-                <button
-                  onClick={() => sendReport(key)}
-                  disabled={!!reportSending}
-                  style={{
-                    width: '100%', background: reportSending === key ? '#f0f4f8' : '#edf8f5',
-                    border: '1px solid #b2dfdb', borderRadius: 7, padding: '10px 14px',
-                    fontSize: 13, fontWeight: 700, color: '#0f5a53', cursor: reportSending ? 'not-allowed' : 'pointer',
-                    textAlign: 'left',
-                  }}
-                >
-                  {reportSending === key ? 'Sending…' : label}
-                  <div style={{ fontSize: 11, fontWeight: 400, color: '#607080', marginTop: 2 }}>{desc}</div>
-                </button>
-                {reportResults[key] && (
-                  <div style={{
-                    marginTop: 4, fontSize: 11, padding: '4px 8px', borderRadius: 5,
-                    background: reportResults[key].startsWith('Error') ? '#fef2f2' : '#f0fdf4',
-                    color: reportResults[key].startsWith('Error') ? '#991b1b' : '#166534',
-                    border: `1px solid ${reportResults[key].startsWith('Error') ? '#fca5a5' : '#86efac'}`,
-                  }}>
-                    {reportResults[key]}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead style={{ background: '#f8fafc' }}>
+              <tr>
+                <th style={th}>Alert</th>
+                <th style={th}>Schedule</th>
+                <th style={th}>Description</th>
+                <th style={th}>Override email</th>
+                <th style={{ ...th, textAlign: 'center' }}>Send now</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* Daily */}
+              {[
+                {
+                  key: 'newproducts', badge: 'Daily', schedule: '5am AEST',
+                  label: 'New Products', desc: 'Sites with product codes added since last send',
+                },
+              ].map(({ key, badge, schedule, label, desc }) => (
+                <tr key={key}>
+                  <td style={td}>
+                    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#e0f2fe', color: '#075985', marginRight: 6 }}>{badge}</span>
+                    <span style={{ fontWeight: 600 }}>{label}</span>
+                  </td>
+                  <td style={{ ...td, color: '#607080', fontSize: 12 }}>{schedule}</td>
+                  <td style={{ ...td, fontSize: 12, color: '#607080' }}>{desc}</td>
+                  <td style={td}>
+                    <input type="email" placeholder="ccshub@ (default)" value={reportEmails[key]}
+                      onChange={e => setReportEmails(r => ({ ...r, [key]: e.target.value }))}
+                      style={{ width: '100%', minWidth: 160, border: '1px solid #d1d9e0', borderRadius: 5, padding: '5px 8px', fontSize: 12, color: '#17202a' }} />
+                  </td>
+                  <td style={{ ...td, textAlign: 'center' }}>
+                    <button onClick={() => sendReport(key)} disabled={!!reportSending}
+                      style={{ background: reportSending === key ? '#f0f4f8' : '#2C6B33', color: reportSending === key ? '#607080' : '#fff', border: 'none', borderRadius: 5, padding: '5px 14px', fontSize: 12, fontWeight: 600, cursor: reportSending ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+                      {reportSending === key ? 'Sending…' : 'Send now'}
+                    </button>
+                    {reportResults[key] && (
+                      <div style={{ marginTop: 4, fontSize: 11, color: reportResults[key].startsWith('Error') ? '#991b1b' : '#166534' }}>{reportResults[key]}</div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {/* Monthly */}
+              {[
+                {
+                  key: 'sds', badge: 'Monthly', schedule: '1st working day 9am AEST',
+                  label: 'SDS Expiry', desc: 'Products with SDS expiring within 60 days',
+                },
+                {
+                  key: 'hold', badge: 'Monthly', schedule: '1st working day 9:15am AEST',
+                  label: 'Hold List', desc: 'Sites currently on hold',
+                },
+              ].map(({ key, badge, schedule, label, desc }) => (
+                <tr key={key}>
+                  <td style={td}>
+                    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#fef3c7', color: '#92400e', marginRight: 6 }}>{badge}</span>
+                    <span style={{ fontWeight: 600 }}>{label}</span>
+                  </td>
+                  <td style={{ ...td, color: '#607080', fontSize: 12 }}>{schedule}</td>
+                  <td style={{ ...td, fontSize: 12, color: '#607080' }}>{desc}</td>
+                  <td style={td}>
+                    <input type="email" placeholder="ccshub@ (default)" value={reportEmails[key]}
+                      onChange={e => setReportEmails(r => ({ ...r, [key]: e.target.value }))}
+                      style={{ width: '100%', minWidth: 160, border: '1px solid #d1d9e0', borderRadius: 5, padding: '5px 8px', fontSize: 12, color: '#17202a' }} />
+                  </td>
+                  <td style={{ ...td, textAlign: 'center' }}>
+                    <button onClick={() => sendReport(key)} disabled={!!reportSending}
+                      style={{ background: reportSending === key ? '#f0f4f8' : '#2C6B33', color: reportSending === key ? '#607080' : '#fff', border: 'none', borderRadius: 5, padding: '5px 14px', fontSize: 12, fontWeight: 600, cursor: reportSending ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+                      {reportSending === key ? 'Sending…' : 'Send now'}
+                    </button>
+                    {reportResults[key] && (
+                      <div style={{ marginTop: 4, fontSize: 11, color: reportResults[key].startsWith('Error') ? '#991b1b' : '#166534' }}>{reportResults[key]}</div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
 
         {/* Clear all */}
@@ -2596,6 +2633,7 @@ function NewProductQueue() {
   const [queue, setQueue] = useState([]);
   const [loading, setLoading] = useState(true);
   const [testEmail, setTestEmail] = useState('');
+  const [search, setSearch] = useState('');
   const [selected, setSelected] = useState({});   // {accno: Set<stock_code>}
   const [sending, setSending] = useState('');      // accno currently sending
   const [results, setResults] = useState({});      // {accno: string}
@@ -2660,12 +2698,12 @@ function NewProductQueue() {
           <h1>New Product Queue</h1>
         </div>
         <div style={{ fontSize: 13, color: '#607080' }}>
-          Sites with product codes added since last send · Detected daily 5pm AEST
+          Sites with product codes added since last send · Detected daily 5am AEST
         </div>
       </div>
 
       <div style={{ maxWidth: 860, margin: '0 auto', padding: '0 0 40px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, padding: '12px 16px', background: '#f0f4ff', borderRadius: 8, border: '1px solid #c9d8ff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, padding: '12px 16px', background: '#f0f4ff', borderRadius: 8, border: '1px solid #c9d8ff' }}>
           <label style={{ fontSize: 13, fontWeight: 600, color: '#334', whiteSpace: 'nowrap' }}>Test / override email</label>
           <input
             type="email"
@@ -2676,14 +2714,38 @@ function NewProductQueue() {
           />
         </div>
 
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by site name or account number…"
+            style={{ flex: 1, padding: '7px 10px', border: '1px solid #d1d9e0', borderRadius: 6, fontSize: 13, color: '#17202a', background: '#fff' }}
+          />
+          {search && (
+            <button onClick={() => setSearch('')} style={{ background: 'none', border: 'none', color: '#607080', fontSize: 13, cursor: 'pointer', padding: '4px 8px' }}>Clear</button>
+          )}
+        </div>
+
         {loading ? (
           <p style={{ color: '#607080', fontSize: 14 }}>Loading…</p>
         ) : queue.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 40, color: '#607080', fontSize: 14 }}>
             No pending new products. Queue is empty — all detected products have been actioned.
           </div>
-        ) : (
-          queue.map(site => {
+        ) : (() => {
+          const q = search
+            ? queue.filter(s =>
+                s.name.toLowerCase().includes(search.toLowerCase()) ||
+                s.accno.toLowerCase().includes(search.toLowerCase())
+              )
+            : queue;
+          if (q.length === 0) return (
+            <div style={{ textAlign: 'center', padding: 40, color: '#607080', fontSize: 14 }}>
+              No results for "{search}".
+            </div>
+          );
+          return q.map(site => {
             const codes = site.products.map(p => p.stock_code);
             const sel = selected[site.accno] || new Set();
             const allChecked = codes.every(c => sel.has(c));
@@ -2742,8 +2804,8 @@ function NewProductQueue() {
                 </div>
               </div>
             );
-          })
-        )}
+          });
+        })()}
       </div>
     </section>
   );

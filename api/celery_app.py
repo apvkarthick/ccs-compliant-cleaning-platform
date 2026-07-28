@@ -28,11 +28,11 @@ celery_app.conf.update(
             "task": "ccs.run_scheduled_distributions",
             "schedule": crontab(hour=6, minute=0),
         },
-        # Daily at 23:30 UTC (9:30am AEST / 10:30am AEDT) — detect new product–site pairs
+        # Daily at 19:00 UTC (5:00am AEST / 6:00am AEDT) — detect new product–site pairs
         # Task self-guards: monthly email only fires on first weekday of month
         "detect-new-products": {
             "task": "ccs.detect_new_products",
-            "schedule": crontab(hour=23, minute=30),
+            "schedule": crontab(hour=19, minute=0),
         },
         # Daily at 23:00 UTC (9am AEST) — task self-guards: only sends on first weekday of month
         "send-sds-expiry-alerts": {
