@@ -1762,7 +1762,7 @@ function CustomerActions() {
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || 'Failed');
-      if (data.status === 'skipped') { setNcResult('No documents found for the entered product codes.'); return; }
+      if (data.status === 'skipped') { setNcResult('No SDS documents found for those product codes. Ensure SDS data has been imported for these codes first.'); return; }
       if (data.html) setPreviewData(data);
       setNcResult(`${ncForm.dry_run ? 'Preview only — site NOT saved to mapping. Uncheck dry run to send and save.' : `${data.status} — ${data.docs} doc(s) to ${data.email}${data.saved_accno ? ` · saved as ${data.saved_accno}` : ''}`}`);
     } catch (err) { setNcResult(`Error: ${err.message}`); }

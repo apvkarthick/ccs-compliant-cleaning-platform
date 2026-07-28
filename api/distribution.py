@@ -150,23 +150,24 @@ def _render_branded_html(
         'Safety Document Pack</div>'
     )
     if safe_logo_url and safe_logo_url_2:
+        # logo-1: 1682x970 → 56x32; logo-2: 1438x333 → 120x28 (proportional, no distortion)
         header_inner = (
-            '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
-            f'<td width="72" valign="middle" style="padding-right:12px;">'
-            f'<img src="{safe_logo_url}" width="64" height="64" '
-            f'style="display:block;border-radius:50%;border:2px solid #ffffff;" alt="CCS Logo" /></td>'
+            '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+            f'<td width="68" valign="middle" style="padding-right:12px;">'
+            f'<img src="{safe_logo_url}" width="56" height="32" border="0" '
+            f'style="display:block;" alt="CCS Logo" /></td>'
             f'<td valign="middle">{wordmark}</td>'
-            f'<td width="72" valign="middle" style="padding-left:12px;">'
-            f'<img src="{safe_logo_url_2}" width="64" height="64" '
-            f'style="display:block;border-radius:50%;border:2px solid #ffffff;" alt="CCS Logo 2" /></td>'
+            f'<td width="136" valign="middle" style="padding-left:12px;">'
+            f'<img src="{safe_logo_url_2}" width="120" height="28" border="0" '
+            f'style="display:block;" alt="CCS Logo 2" /></td>'
             '</tr></table>'
         )
     elif safe_logo_url:
         header_inner = (
-            '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
-            f'<td width="72" valign="middle" style="padding-right:16px;">'
-            f'<img src="{safe_logo_url}" width="64" height="64" '
-            f'style="display:block;border-radius:50%;border:2px solid #ffffff;" alt="CCS Logo" /></td>'
+            '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+            f'<td width="68" valign="middle" style="padding-right:16px;">'
+            f'<img src="{safe_logo_url}" width="56" height="32" border="0" '
+            f'style="display:block;" alt="CCS Logo" /></td>'
             f'<td valign="middle">{wordmark}</td>'
             '</tr></table>'
         )
