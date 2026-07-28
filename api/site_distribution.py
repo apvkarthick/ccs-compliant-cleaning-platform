@@ -432,8 +432,8 @@ def generate_chemical_register_excel(
     ws.row_dimensions[11].height = 22
 
     # ── Rows 12+: data (filtered + sorted) ────────────────────────────────────
-    thin = Side(style="thin", color="D0DCE8")
-    border = Border(bottom=thin)
+    thin = Side(style="thin", color="8FAFC0")
+    border = Border(top=thin, bottom=thin, left=thin, right=thin)
     for row_idx, code in enumerate(filtered_codes, start=12):
         m = metadata.get(code, {})
         bg = PatternFill("solid", fgColor=LIGHT) if row_idx % 2 == 0 else None
@@ -725,7 +725,7 @@ def list_sites(search: str = "", page: int = 1, page_size: int = 50, status: str
     params = f"select=*&order=name.asc&limit={page_size}&offset={offset}"
     if search:
         enc = quote(search.replace("%", ""), safe="")
-        params += f"&or=(name.ilike.*{enc}*,ho_name.ilike.*{enc}*)"
+        params += f"&or=(name.ilike.*{enc}*,ho_name.ilike.*{enc}*,accno.ilike.*{enc}*)"
 
     # Status filter — push to PostgREST via in()/not.in()
     if status == "hold" and held_set:
@@ -1175,6 +1175,51 @@ def resolve_docs_for_site(
 # Email composition
 # ---------------------------------------------------------------------------
 
+_BULK_BODY_INTRO = (
+    '<p style="margin:0 0 14px;color:#17202a;font-size:15px;line-height:1.6;">'
+    'You are receiving this email because you purchase chemicals from us. We&#8217;re providing you with the '
+    'latest Safety Data Sheet (SDS) and Risk Assessment to help keep your Chemical Register up to date and '
+    'maintain compliance.</p>'
+    '<p style="margin:0 0 14px;color:#17202a;font-size:15px;line-height:1.6;">'
+    'Maintaining an up-to-date Chemical Register with current Safety Data Sheets (SDS) and Risk Assessments '
+    'is a legal requirement.</p>'
+    '<p style="margin:0 0 8px;color:#2C6B33;font-size:15px;font-weight:700;line-height:1.6;">What you need to do</p>'
+    '<p style="margin:0 0 8px;color:#17202a;font-size:15px;line-height:1.6;">'
+    'The list below includes the chemical products your site has purchased from us during the past 12 months. '
+    'Please follow these instructions to update your chemical compliance records:</p>'
+    '<ol style="margin:0 0 20px;padding-left:22px;color:#17202a;font-size:15px;line-height:1.6;">'
+    '<li style="margin-bottom:6px;"><strong>Download the documents</strong> &#8212; Click each relevant box to '
+    'download and print the latest SDS and Risk Assessment.</li>'
+    '<li style="margin-bottom:6px;"><strong>Keep the same order</strong> &#8212; Print the documents in the order '
+    'shown below so they match the product listing in the Chemical Register.</li>'
+    '<li style="margin-bottom:6px;"><strong>Always update the register</strong> &#8212; Download and use the latest '
+    'Chemical Register&#8212;even if you are only updating a small number of SDS or Risk Assessments.</li>'
+    '</ol>'
+)
+
+_NEW_PRODUCT_BODY_INTRO = (
+    '<p style="margin:0 0 14px;color:#17202a;font-size:15px;line-height:1.6;">'
+    'You are receiving this email because you recently purchased a chemical product from us that you have not '
+    'previously used. We&#8217;re providing you with the latest Safety Data Sheet (SDS) and Risk Assessment to '
+    'help keep your Chemical Register up to date and maintain compliance.</p>'
+    '<p style="margin:0 0 14px;color:#17202a;font-size:15px;line-height:1.6;">'
+    'Maintaining an up-to-date Chemical Register with current Safety Data Sheets (SDS) and Risk Assessments '
+    'is a legal requirement.</p>'
+    '<p style="margin:0 0 8px;color:#2C6B33;font-size:15px;font-weight:700;line-height:1.6;">What you need to do</p>'
+    '<p style="margin:0 0 8px;color:#17202a;font-size:15px;line-height:1.6;">'
+    'The list below includes the chemical products your site has purchased from us during the past 12 months. '
+    'Please follow these instructions to update your chemical compliance records:</p>'
+    '<ol style="margin:0 0 20px;padding-left:22px;color:#17202a;font-size:15px;line-height:1.6;">'
+    '<li style="margin-bottom:6px;"><strong>Download the documents</strong> &#8212; Click each relevant box to '
+    'download and print the latest SDS and Risk Assessment.</li>'
+    '<li style="margin-bottom:6px;"><strong>Keep the same order</strong> &#8212; Print the documents in the order '
+    'shown below so they match the product listing in the Chemical Register.</li>'
+    '<li style="margin-bottom:6px;"><strong>Always update the register</strong> &#8212; Download and use the latest '
+    'Chemical Register&#8212;even if you are only updating a small number of SDS or Risk Assessments.</li>'
+    '</ol>'
+)
+
+
 def compose_site_email(
     site: dict[str, Any],
     docs: list[dict[str, str]],
@@ -1185,6 +1230,7 @@ def compose_site_email(
     tracking_secret: str = "",
     subject: str = "",
     cover_notice: str = "",
+    body_intro: str = "",
 ) -> dict[str, Any]:
     site_name = site.get("name", "")
     ho_name = site.get("ho_name", "") or site_name
@@ -1234,7 +1280,8 @@ def compose_site_email(
             batch_id=batch_id,
         )
 
-    logo_url = f"{public_base_url}/api/assets/ccs_logo.png" if public_base_url else ""
+    logo_url = f"{public_base_url}/api/assets/cleaninglogo-1.jpg" if public_base_url else ""
+    logo_url_2 = f"{public_base_url}/api/assets/cleaninglogo-2.jpg" if public_base_url else ""
 
     html_body = _render_branded_html(
         contact_name=site_name,
@@ -1243,7 +1290,9 @@ def compose_site_email(
         documents=documents,
         tracking_pixel_url=pixel_url,
         logo_url=logo_url,
+        logo_url_2=logo_url_2,
         cover_notice=cover_notice,
+        body_intro=body_intro or _BULK_BODY_INTRO,
     )
 
     # Generate per-site Chemical Register Excel and upload to DO Spaces
@@ -1263,7 +1312,7 @@ def compose_site_email(
         "name": site_name,
         "contact_id": contact_id,
         "accno": accno,
-        "subject": subject or f"Your SDS Compliance Pack — {site_name}",
+        "subject": subject or "Your Latest Chemical Register, SDS and Risk Assessments links provided",
         "html": html_body,
         "documents": documents,
     }

@@ -94,7 +94,9 @@ def _render_branded_html(
     documents: list[dict[str, Any]],
     tracking_pixel_url: str = "",
     logo_url: str = "",
+    logo_url_2: str = "",
     cover_notice: str = "",
+    body_intro: str = "",
 ) -> str:
     """Branded HTML email template — table-based for email client compatibility."""
     product_cards: list[str] = []
@@ -139,29 +141,37 @@ def _render_branded_html(
     safe_name = html.escape(contact_name or "there")
     safe_company = html.escape(company or "your site")
     safe_logo_url = html.escape(logo_url, quote=True) if logo_url else ""
+    safe_logo_url_2 = html.escape(logo_url_2, quote=True) if logo_url_2 else ""
 
-    # Header: logo + wordmark side by side when logo URL is provided
-    if safe_logo_url:
+    wordmark = (
+        '<div style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.5px;'
+        'font-family:Arial,Helvetica,sans-serif;text-align:center;">COMPLIANT CLEANING SUPPLIES</div>'
+        '<div style="color:#a8d5b5;font-size:13px;margin-top:4px;font-family:Arial,Helvetica,sans-serif;text-align:center;">'
+        'Safety Document Pack</div>'
+    )
+    if safe_logo_url and safe_logo_url_2:
+        header_inner = (
+            '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
+            f'<td width="72" valign="middle" style="padding-right:12px;">'
+            f'<img src="{safe_logo_url}" width="64" height="64" '
+            f'style="display:block;border-radius:50%;border:2px solid rgba(255,255,255,0.25);" alt="CCS Logo" /></td>'
+            f'<td valign="middle">{wordmark}</td>'
+            f'<td width="72" valign="middle" style="padding-left:12px;">'
+            f'<img src="{safe_logo_url_2}" width="64" height="64" '
+            f'style="display:block;border-radius:50%;border:2px solid rgba(255,255,255,0.25);" alt="CCS Logo 2" /></td>'
+            '</tr></table>'
+        )
+    elif safe_logo_url:
         header_inner = (
             '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
             f'<td width="72" valign="middle" style="padding-right:16px;">'
             f'<img src="{safe_logo_url}" width="64" height="64" '
-            f'style="display:block;border-radius:50%;border:2px solid rgba(255,255,255,0.25);" alt="CCS Logo" />'
-            f'</td>'
-            '<td valign="middle">'
-            '<div style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.5px;'
-            'font-family:Arial,Helvetica,sans-serif;">COMPLIANT CLEANING SUPPLIES</div>'
-            '<div style="color:#a8d5b5;font-size:13px;margin-top:4px;font-family:Arial,Helvetica,sans-serif;">'
-            'Safety Document Pack</div>'
-            '</td></tr></table>'
+            f'style="display:block;border-radius:50%;border:2px solid rgba(255,255,255,0.25);" alt="CCS Logo" /></td>'
+            f'<td valign="middle">{wordmark}</td>'
+            '</tr></table>'
         )
     else:
-        header_inner = (
-            '<div style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.5px;'
-            'font-family:Arial,Helvetica,sans-serif;">COMPLIANT CLEANING SUPPLIES</div>'
-            '<div style="color:#a8d5b5;font-size:13px;margin-top:4px;font-family:Arial,Helvetica,sans-serif;">'
-            'Safety Document Pack</div>'
-        )
+        header_inner = wordmark
 
     return (
         '<!DOCTYPE html><html><head>'
@@ -188,15 +198,17 @@ def _render_branded_html(
         # Body
         '<tr><td style="padding:28px 32px;">'
         f'<p style="margin:0 0 14px;color:#17202a;font-size:15px;line-height:1.6;">Hi <strong>{safe_name}</strong>,</p>'
-        f'<p style="margin:0 0 22px;color:#17202a;font-size:15px;line-height:1.6;">'
-        f'Your Safety Data Sheets and Risk Assessments for <strong>{safe_company}</strong> are ready. '
-        f'Click each document link below to acknowledge receipt and access the file.</p>'
+        + (body_intro if body_intro else
+           f'<p style="margin:0 0 22px;color:#17202a;font-size:15px;line-height:1.6;">'
+           f'Your Safety Data Sheets and Risk Assessments for <strong>{safe_company}</strong> are ready. '
+           f'Click each document link below to acknowledge receipt and access the file.</p>')
         + (f'<div style="background:#fff8e1;border-left:4px solid #f59e0b;border-radius:4px;'
            f'padding:12px 16px;margin-bottom:20px;font-size:14px;color:#17202a;line-height:1.6;">'
            f'{cover_notice}</div>' if cover_notice else '')
         + f'{products_html}'
         '<p style="margin:20px 0 0;color:#607080;font-size:13px;line-height:1.6;">'
-        'Questions? Contact us at '
+        'Need help? If you need assistance accessing your documents or updating your Chemical Register, '
+        'please contact our team at '
         '<a href="mailto:info@compliantcs.com.au" style="color:#2C6B33;font-weight:bold;">info@compliantcs.com.au</a>'
         ' or call <strong>1300 314 491</strong>.</p>'
         '</td></tr>'
@@ -251,7 +263,8 @@ def _compose_message(
             batch_id=batch_id,
         )
 
-    logo_url = f"{_base}/api/assets/ccs_logo.png" if _base else ""
+    logo_url = f"{_base}/api/assets/cleaninglogo-1.jpg" if _base else ""
+    logo_url_2 = f"{_base}/api/assets/cleaninglogo-2.jpg" if _base else ""
     email_html = _render_branded_html(
         contact_name=contact["name"],
         company=customer.get("company", ""),
@@ -259,6 +272,7 @@ def _compose_message(
         documents=documents,
         tracking_pixel_url=pixel_url,
         logo_url=logo_url,
+        logo_url_2=logo_url_2,
     )
 
     return {

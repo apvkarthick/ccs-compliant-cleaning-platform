@@ -5,6 +5,7 @@ import os
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import jwt
 from dotenv import load_dotenv
@@ -724,12 +725,28 @@ def get_new_products_queue(_auth: dict = Depends(require_auth)) -> list[dict[str
     return get_new_product_queue()
 
 
+@app.get("/site-distribution/products/search")
+def search_products(q: str = "", limit: int = 20, _auth: dict = Depends(require_auth)) -> list[dict[str, Any]]:
+    """Search product codes for autosuggest (queries ccs_sds_links by stock_code)."""
+    if len(q) < 2:
+        return []
+    enc = quote(q.upper().replace("%", ""), safe="")
+    rows = _sb_get("ccs_sds_links", f"select=stock_code,product_name&stock_code=ilike.*{enc}*&limit={limit}&order=stock_code.asc")
+    seen: set[str] = set()
+    results = []
+    for r in rows:
+        code = r.get("stock_code", "")
+        if code and code not in seen:
+            seen.add(code)
+            results.append({"code": code, "name": r.get("product_name") or ""})
+    return results
+
+
 class NewProductSendRequest(BaseModel):
     accno: str
     stockcodes: list[str]
     email: str
     dry_run: bool = True
-    full_pack: bool = True
 
 
 @app.post("/site-distribution/new-products/send")
@@ -737,8 +754,9 @@ def send_new_products_endpoint(
     req: NewProductSendRequest,
     _auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
-    """Send SDS pack for selected new products, then mark them as notified."""
+    """Send new-product email: SDS/risk links for new products only, full Chemical Register attached."""
     from .distribution import _find_or_create_ghl_contact_id, _send_messages_via_ghl
+    from .site_distribution import _NEW_PRODUCT_BODY_INTRO
 
     sites = _sb_get("ccs_site_mapping", f"select=*&accno=eq.{req.accno}")
     if not sites:
@@ -747,30 +765,20 @@ def send_new_products_endpoint(
 
     sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
 
-    use_codes = (site.get("stockcodes") or req.stockcodes) if req.full_pack else req.stockcodes
-    docs = resolve_docs_for_site(use_codes, sds_map, risk_map, group_fallback, risk_required_set, register_codes)
+    # Email body links = new products only; Chemical Register (Excel) = full site stockcodes via site dict
+    docs = resolve_docs_for_site(req.stockcodes, sds_map, risk_map, group_fallback, risk_required_set, register_codes)
 
     public_base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
     tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
     site_name = site.get("name", req.accno)
-    new_codes_str = ", ".join(req.stockcodes)
-    if req.full_pack:
-        cover = (f"<strong>New products have been added to your Chemical Register.</strong> "
-                 f"New product code(s): <strong>{new_codes_str}</strong>. "
-                 f"This email includes the full SDS compliance pack.")
-        subject = f"New Product Compliance Notice — {site_name}"
-    else:
-        cover = (f"<strong>New product SDS documents for {site_name}.</strong> "
-                 f"New product code(s): <strong>{new_codes_str}</strong>.")
-        subject = f"New Product SDS — {site_name}"
     msg = compose_site_email(
-        {**site, "stockcodes": use_codes},
+        site,
         docs,
         req.email,
         public_base_url=public_base,
         tracking_secret=tracking_secret,
-        subject=subject,
-        cover_notice=cover,
+        subject="New Chemical Purchased – Register Update Required",
+        body_intro=_NEW_PRODUCT_BODY_INTRO,
     )
 
     ghl_result: dict[str, Any] = {"status": "dry_run"}

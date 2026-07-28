@@ -1517,7 +1517,7 @@ function SiteDistribution() {
                         style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', color: site.excluded ? '#d35400' : '#2C6B33', border: `1px solid ${site.excluded ? '#d35400' : '#2C6B33'}` }}
                         onClick={() => toggleExclude(site)}
                       >
-                        {site.excluded ? 'Excl' : 'Active'}
+                        {site.excluded ? 'Inactive' : 'Active'}
                       </button>
                       <button
                         className="btn-ghost"
@@ -1712,6 +1712,8 @@ function CustomerActions() {
   const [ncForm, setNcForm] = useState({ customer_name: '', email: '', accno: '', stockcodes_text: '', dry_run: true });
   const [ncResult, setNcResult] = useState('');
   const [ncSending, setNcSending] = useState(false);
+  const [ncSugInput, setNcSugInput] = useState('');
+  const [ncSuggestions, setNcSuggestions] = useState([]);
   const [previewData, setPreviewData] = useState(null);
 
   async function handleAddProduct(e) {
@@ -1730,6 +1732,28 @@ function CustomerActions() {
       setAddProd({ stock_code: '', product_name: '', hazard_classification: '', un_number: '', maximum_qty: '', risk_assessment_required: false, hazchem: '', chemical_class: '', packing_group: '', primary_use: '', sds_expiry: '', sds_url: '', risk_url: '' });
     } catch (err) { setAddProdResult(`Error: ${err.message}`); }
     finally { setAddProdSaving(false); }
+  }
+
+  async function fetchNcSuggestions(q) {
+    if (q.length < 2) { setNcSuggestions([]); return; }
+    try {
+      const r = await fetch(`/api/site-distribution/products/search?q=${encodeURIComponent(q)}&limit=10`, { headers: getAuthHeaders() });
+      if (r.ok) setNcSuggestions(await r.json());
+    } catch { setNcSuggestions([]); }
+  }
+
+  function ncAddCode(code) {
+    const existing = ncForm.stockcodes_text ? ncForm.stockcodes_text.split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(Boolean) : [];
+    if (!existing.includes(code.toUpperCase())) {
+      setNcForm(f => ({ ...f, stockcodes_text: [...existing, code.toUpperCase()].join('\n') }));
+    }
+    setNcSugInput('');
+    setNcSuggestions([]);
+  }
+
+  function ncRemoveCode(code) {
+    const codes = ncForm.stockcodes_text.split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(c => c && c !== code);
+    setNcForm(f => ({ ...f, stockcodes_text: codes.join('\n') }));
   }
 
   async function handleNewCustomerSend(e) {
@@ -1761,47 +1785,7 @@ function CustomerActions() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
-        {/* Add to Chemical Register */}
-        <div style={{ background: '#fff', border: '1px solid #e2eaef', borderRadius: 10, padding: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <FileSpreadsheet size={17} style={{ color: '#2C6B33' }} />
-            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Add to Chemical Register</h2>
-          </div>
-          <p style={{ fontSize: 12, color: '#607080', margin: '0 0 16px' }}>Add or update a single product in the master Chemical Register.</p>
-          <form onSubmit={handleAddProduct} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {[
-              ['Product Code *', 'stock_code', 'text', true],
-              ['Product Name', 'product_name', 'text', false],
-              ['Hazard Status', 'hazard_classification', 'text', false],
-              ['UN Number', 'un_number', 'text', false],
-              ['Maximum Qty', 'maximum_qty', 'text', false],
-              ['Hazchem', 'hazchem', 'text', false],
-              ['Class', 'chemical_class', 'text', false],
-              ['Packing Group', 'packing_group', 'text', false],
-              ['Primary Use', 'primary_use', 'text', false],
-              ['SDS Review Date', 'sds_expiry', 'text', false],
-              ['SDS URL', 'sds_url', 'url', false],
-              ['Risk URL', 'risk_url', 'url', false],
-            ].map(([label, key, type, req]) => (
-              <div key={key}>
-                <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>{label}</label>
-                <input type={type} required={req} value={addProd[key]}
-                  onChange={e => setAddProd(p => ({ ...p, [key]: e.target.value }))}
-                  style={{ width: '100%', padding: '5px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 12, boxSizing: 'border-box' }} />
-              </div>
-            ))}
-            <label style={{ fontSize: 11, color: '#445', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-              <input type="checkbox" checked={addProd.risk_assessment_required} onChange={e => setAddProd(p => ({ ...p, risk_assessment_required: e.target.checked }))} />
-              Risk Assessment Required
-            </label>
-            <button type="submit" className="primary" disabled={addProdSaving} style={{ marginTop: 4 }}>
-              {addProdSaving ? 'Saving…' : 'Save to Register'}
-            </button>
-            {addProdResult && <p style={{ fontSize: 11, color: addProdResult.startsWith('Error') ? '#c0392b' : '#2C6B33', margin: 0 }}>{addProdResult}</p>}
-          </form>
-        </div>
-
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 24, alignItems: 'start', maxWidth: 560 }}>
         {/* New Customer Send */}
         <div style={{ background: '#fff', border: '1px solid #e2eaef', borderRadius: 10, padding: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -1827,10 +1811,45 @@ function CustomerActions() {
                 style={{ width: '100%', padding: '6px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 13, boxSizing: 'border-box' }} />
             </div>
             <div>
-              <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 2 }}>Product Codes (one per line or comma-separated)</label>
-              <textarea required rows={5} value={ncForm.stockcodes_text} onChange={e => setNcForm(f => ({ ...f, stockcodes_text: e.target.value }))}
-                placeholder={'AIRDRY5LK\nBATHGREEN5L\nALLPURP5L'}
-                style={{ width: '100%', padding: '6px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 13, boxSizing: 'border-box', resize: 'vertical' }} />
+              <label style={{ fontSize: 11, color: '#445', display: 'block', marginBottom: 4 }}>Product Codes *</label>
+              {/* Tag display */}
+              {ncForm.stockcodes_text && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+                  {ncForm.stockcodes_text.split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(Boolean).map(code => (
+                    <span key={code} style={{ background: '#e8f5e9', color: '#2C6B33', border: '1px solid #a5d6a7', borderRadius: 4, padding: '2px 6px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {code}
+                      <button type="button" onClick={() => ncRemoveCode(code)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#607080', padding: 0, lineHeight: 1, fontSize: 13 }}>×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* Autosuggest input */}
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  value={ncSugInput}
+                  onChange={e => { setNcSugInput(e.target.value); fetchNcSuggestions(e.target.value); }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); if (ncSugInput.trim()) ncAddCode(ncSugInput.trim()); }
+                    if (e.key === 'Escape') setNcSuggestions([]);
+                  }}
+                  placeholder="Type to search product codes…"
+                  style={{ width: '100%', padding: '6px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 13, boxSizing: 'border-box' }}
+                />
+                {ncSuggestions.length > 0 && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #d8e1e8', borderRadius: 5, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 200, maxHeight: 200, overflowY: 'auto' }}>
+                    {ncSuggestions.map(s => (
+                      <div key={s.code} onMouseDown={() => ncAddCode(s.code)}
+                        style={{ padding: '7px 12px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid #f0f4f7' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#f0fdf4'}
+                        onMouseLeave={e => e.currentTarget.style.background = ''}>
+                        <strong>{s.code}</strong>{s.name ? ` — ${s.name}` : ''}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <p style={{ margin: '3px 0 0', fontSize: 11, color: '#99aabb' }}>Search and click to add codes. Press Enter to add typed code directly.</p>
             </div>
             <label style={{ fontSize: 12, color: '#445', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
               <input type="checkbox" checked={ncForm.dry_run} onChange={e => setNcForm(f => ({ ...f, dry_run: e.target.checked }))} />
