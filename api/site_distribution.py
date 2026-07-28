@@ -930,7 +930,7 @@ def get_missing_docs() -> dict[str, list[dict]]:
     for g in groups:
         primary = g.get("primary_code", "")
         for related in g.get("related_codes") or []:
-            if related and related not in sds_map and related not in risk_map:
+            if related:
                 group_fallback[related] = primary
 
     sds_missing: list[dict] = []
@@ -1125,7 +1125,7 @@ def load_lookup_maps() -> tuple[dict[str, str], dict[str, str], dict[str, str], 
     for g in groups:
         primary = g.get("primary_code", "")
         for related in g.get("related_codes") or []:
-            if related and related not in sds_map and related not in risk_map:
+            if related:
                 group_fallback[related] = primary
 
     return sds_map, risk_map, group_fallback, risk_required_set, register_codes
@@ -1154,16 +1154,16 @@ def resolve_docs_for_site(
             if code not in register_codes and primary_fallback not in register_codes:
                 continue
 
-        sds_url = sds_map.get(code, "")
+        primary = group_fallback.get(code, "")
+        sds_url = sds_map.get(code, "") or (sds_map.get(primary, "") if primary else "")
+        risk_required = (
+            risk_required_set is None
+            or code in risk_required_set
+            or (primary and primary in risk_required_set)
+        )
         risk_url = ""
-        if risk_required_set is None or code in risk_required_set:
-            risk_url = risk_map.get(code, "")
-        if not sds_url and not risk_url:
-            primary = group_fallback.get(code, "")
-            if primary:
-                sds_url = sds_map.get(primary, "")
-                if risk_required_set is None or code in risk_required_set:
-                    risk_url = risk_map.get(primary, "")
+        if risk_required:
+            risk_url = risk_map.get(code, "") or (risk_map.get(primary, "") if primary else "")
         if sds_url or risk_url:
             docs.append({"code": code, "sds_url": sds_url, "risk_url": risk_url})
 
