@@ -1163,9 +1163,6 @@ function SiteDistribution() {
             <button onClick={() => { setStatusFilter('hold'); setPage(1); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
               <Pill label="On Hold" value={stats.held_sites} warn={stats.held_sites > 0} active={statusFilter === 'hold'} />
             </button>
-            <button onClick={() => { setStatusFilter('excluded'); setPage(1); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
-              <Pill label="Excluded" value={stats.excluded_sites} warn={stats.excluded_sites > 0} active={statusFilter === 'excluded'} />
-            </button>
             <Pill label="SDS links" value={stats.sds_links} ok={stats.sds_links > 0} />
           </div>
         )}
@@ -1186,9 +1183,8 @@ function SiteDistribution() {
                 <strong style={{ color: '#2C6B33' }}>Status bar (top right)</strong>
                 <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
                   <li><strong>Total sites</strong> — all imported from mapping file</li>
-                  <li><strong>Active</strong> — sites that will receive emails (not held, not excluded)</li>
-                  <li><strong>On Hold</strong> — temporarily paused; skipped in sends</li>
-                  <li><strong>Excluded</strong> — permanently removed from all sends</li>
+                  <li><strong>Active</strong> — sites that will receive emails (not on hold)</li>
+                  <li><strong>On Hold</strong> — paused; skipped in all sends until unholded</li>
                 </ul>
               </div>
               <div>
@@ -1432,7 +1428,7 @@ function SiteDistribution() {
 
       {/* Filter bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-        {[['all','All'],['active','Active'],['hold','On Hold'],['excluded','Excluded']].map(([val, label]) => (
+        {[['all','All'],['active','Active'],['hold','On Hold']].map(([val, label]) => (
           <button key={val} onClick={() => { setStatusFilter(val); setPage(1); }}
             style={{ padding: '5px 12px', borderRadius: 20, border: '1px solid', fontSize: 12, fontWeight: 600, cursor: 'pointer',
               background: statusFilter === val ? '#0f766e' : '#f4f7f9',
@@ -1485,7 +1481,7 @@ function SiteDistribution() {
             </thead>
             <tbody>
               {sites.map(site => (
-                <tr key={site.accno} style={{ opacity: site.excluded ? 0.4 : site.held ? 0.65 : 1 }}>
+                <tr key={site.accno} style={{ opacity: site.held ? 0.65 : 1 }}>
                   <td>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{site.name}</div>
                     <div style={{ fontSize: 11, color: '#607080' }}>#{site.accno}</div>
@@ -1511,13 +1507,6 @@ function SiteDistribution() {
                         onClick={() => toggleHold(site)}
                       >
                         {site.held ? <><Play size={10} style={{ marginRight: 2 }} />Unhold</> : <><Pause size={10} style={{ marginRight: 2 }} />Hold</>}
-                      </button>
-                      <button
-                        className="btn-ghost"
-                        style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', color: site.excluded ? '#d35400' : '#2C6B33', border: `1px solid ${site.excluded ? '#d35400' : '#2C6B33'}` }}
-                        onClick={() => toggleExclude(site)}
-                      >
-                        {site.excluded ? 'Inactive' : 'Active'}
                       </button>
                       <button
                         className="btn-ghost"
