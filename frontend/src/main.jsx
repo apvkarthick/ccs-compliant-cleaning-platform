@@ -1089,7 +1089,7 @@ function SiteDistribution() {
 
   function openManualSend(site) {
     setManualSite(site);
-    setManualEmail(testEmail || (site.emails || [])[0] || '');
+    setManualEmail(testEmail || (site.emails || []).join(', ') || '');
     setManualCodes(new Set(site.stockcodes || []));
     setManualResult('');
     setManualSending(false);
@@ -1107,13 +1107,15 @@ function SiteDistribution() {
         body: JSON.stringify({
           accno: manualSite.accno,
           stockcodes: [...manualCodes],
-          email: manualEmail,
+          emails: manualEmail.split(/[,;\s]+/).map(e => e.trim()).filter(e => e.includes('@')),
           dry_run: manualDryRun,
         }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || 'Send failed');
-      setManualResult(`${data.status === 'dry_run' ? 'Dry run OK' : 'Sent'} — ${data.docs} document(s) to ${data.email}`);
+      const emailDisplay = data.sent_to ? data.sent_to.join(', ') : data.email;
+      const docCount = data.sent_to ? (data.results[0]?.docs ?? '?') : data.docs;
+      setManualResult(`${data.status === 'dry_run' ? 'Dry run OK' : 'Sent'} — ${docCount} document(s) to ${emailDisplay}`);
     } catch (err) {
       setManualResult(`Error: ${err.message}`);
     } finally {
@@ -1132,7 +1134,7 @@ function SiteDistribution() {
         body: JSON.stringify({
           accno: manualSite.accno,
           stockcodes: [...manualCodes],
-          email: manualEmail || 'preview@example.com',
+          email: manualEmail.split(/[,;\s]+/).find(e => e.includes('@')) || 'preview@example.com',
         }),
       });
       const data = await r.json();
@@ -1552,13 +1554,14 @@ function SiteDistribution() {
 
             <form onSubmit={handleManualSend}>
               <label style={{ fontSize: 12, fontWeight: 600, color: '#445', display: 'block', marginBottom: 4 }}>
-                Recipient email
+                Recipient email(s)
               </label>
               <input
-                type="email"
+                type="text"
                 value={manualEmail}
                 onChange={e => setManualEmail(e.target.value)}
                 required
+                placeholder="email1@example.com, email2@example.com"
                 style={{ width: '100%', padding: '7px 10px', border: '1px solid #d8e1e8', borderRadius: 6, fontSize: 13, boxSizing: 'border-box', marginBottom: 14 }}
               />
 
@@ -1747,9 +1750,9 @@ function CustomerActions() {
 
   async function handleNewCustomerSend(e) {
     e.preventDefault();
-    if (!ncForm.customer_name || !ncForm.email || !ncForm.stockcodes_text) return;
-    const codes = ncForm.stockcodes_text.split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
-    if (!codes.length) return;
+    if (!ncForm.customer_name || !ncForm.email) return;
+    const codes = (ncForm.stockcodes_text || '').split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+    if (!codes.length) { setNcResult('Add at least one product code.'); return; }
     setNcSending(true); setNcResult(''); setPreviewData(null);
     try {
       const r = await fetch(`${API_BASE}/site-distribution/send-new-customer`, {
@@ -1759,6 +1762,7 @@ function CustomerActions() {
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || 'Failed');
+      if (data.status === 'skipped') { setNcResult('No documents found for the entered product codes.'); return; }
       if (data.html) setPreviewData(data);
       setNcResult(`${ncForm.dry_run ? 'Preview only — site NOT saved to mapping. Uncheck dry run to send and save.' : `${data.status} — ${data.docs} doc(s) to ${data.email}${data.saved_accno ? ` · saved as ${data.saved_accno}` : ''}`}`);
     } catch (err) { setNcResult(`Error: ${err.message}`); }

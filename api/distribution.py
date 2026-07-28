@@ -154,11 +154,11 @@ def _render_branded_html(
             '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
             f'<td width="72" valign="middle" style="padding-right:12px;">'
             f'<img src="{safe_logo_url}" width="64" height="64" '
-            f'style="display:block;border-radius:50%;border:2px solid rgba(255,255,255,0.25);" alt="CCS Logo" /></td>'
+            f'style="display:block;border-radius:50%;border:2px solid #ffffff;" alt="CCS Logo" /></td>'
             f'<td valign="middle">{wordmark}</td>'
             f'<td width="72" valign="middle" style="padding-left:12px;">'
             f'<img src="{safe_logo_url_2}" width="64" height="64" '
-            f'style="display:block;border-radius:50%;border:2px solid rgba(255,255,255,0.25);" alt="CCS Logo 2" /></td>'
+            f'style="display:block;border-radius:50%;border:2px solid #ffffff;" alt="CCS Logo 2" /></td>'
             '</tr></table>'
         )
     elif safe_logo_url:
@@ -166,7 +166,7 @@ def _render_branded_html(
             '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
             f'<td width="72" valign="middle" style="padding-right:16px;">'
             f'<img src="{safe_logo_url}" width="64" height="64" '
-            f'style="display:block;border-radius:50%;border:2px solid rgba(255,255,255,0.25);" alt="CCS Logo" /></td>'
+            f'style="display:block;border-radius:50%;border:2px solid #ffffff;" alt="CCS Logo" /></td>'
             f'<td valign="middle">{wordmark}</td>'
             '</tr></table>'
         )

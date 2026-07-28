@@ -595,7 +595,8 @@ def preview_email_endpoint(
 class ManualSendRequest(BaseModel):
     accno: str
     stockcodes: list[str] = Field(default_factory=list)
-    email: str
+    email: str = ""
+    emails: list[str] = Field(default_factory=list)
     dry_run: bool = False
 
 
@@ -604,16 +605,15 @@ def send_manual_endpoint(
     body: ManualSendRequest,
     _auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
+    targets = body.emails or ([body.email] if body.email else [])
+    if not targets:
+        raise HTTPException(status_code=400, detail="at least one email required")
     public_base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
     tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
-    return send_manual(
-        body.accno,
-        body.stockcodes,
-        body.email,
-        body.dry_run,
-        public_base_url=public_base,
-        tracking_secret=tracking_secret,
-    )
+    if len(targets) == 1:
+        return send_manual(body.accno, body.stockcodes, targets[0], body.dry_run, public_base_url=public_base, tracking_secret=tracking_secret)
+    results = [send_manual(body.accno, body.stockcodes, e, body.dry_run, public_base_url=public_base, tracking_secret=tracking_secret) for e in targets]
+    return {"sent_to": targets, "results": results, "status": "ok" if all(r.get("status") != "error" for r in results) else "partial"}
 
 
 @app.post("/site-distribution/send")
