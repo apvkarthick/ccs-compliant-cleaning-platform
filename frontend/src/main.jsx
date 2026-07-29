@@ -925,6 +925,7 @@ function SiteDistribution() {
   const [manualCodes, setManualCodes] = useState(new Set());
   const [manualDryRun, setManualDryRun] = useState(false);
   const [manualEmailType, setManualEmailType] = useState('bulk');
+  const [manualNewCodes, setManualNewCodes] = useState(null); // null = not yet fetched
   const [manualSending, setManualSending] = useState(false);
   const [manualResult, setManualResult] = useState('');
 
@@ -1093,8 +1094,28 @@ function SiteDistribution() {
     setManualEmail(testEmail || (site.emails || []).join(', ') || '');
     setManualCodes(new Set(site.stockcodes || []));
     setManualEmailType('bulk');
+    setManualNewCodes(null);
     setManualResult('');
     setManualSending(false);
+  }
+
+  async function switchToNewProduct(site) {
+    setManualEmailType('new_product');
+    if (manualNewCodes !== null) {
+      setManualCodes(new Set(manualNewCodes));
+      return;
+    }
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/new-products`, { headers: getAuthHeaders() });
+      const queue = await r.json();
+      const entry = queue.find(s => s.accno === site.accno);
+      const codes = entry ? entry.products.map(p => p.stock_code) : [];
+      setManualNewCodes(codes);
+      setManualCodes(new Set(codes));
+    } catch {
+      setManualNewCodes([]);
+      setManualCodes(new Set());
+    }
   }
 
   async function handleManualSend(e) {
@@ -1607,9 +1628,8 @@ function SiteDistribution() {
                   }}>
                     <input type="radio" name="email-type" value={val} checked={manualEmailType === val}
                       onChange={() => {
-                        setManualEmailType(val);
-                        if (val === 'new_product') setManualCodes(new Set());
-                        else setManualCodes(new Set(manualSite?.stockcodes || []));
+                        if (val === 'new_product') switchToNewProduct(manualSite);
+                        else { setManualEmailType('bulk'); setManualCodes(new Set(manualSite?.stockcodes || [])); }
                       }} style={{ display: 'none' }} />
                     {label}
                   </label>
@@ -1617,8 +1637,8 @@ function SiteDistribution() {
               </div>
 
               {manualEmailType === 'new_product' && (
-                <div style={{ fontSize: 11, color: '#2C6B33', background: '#f0f9f1', border: '1px solid #c6e8cc', borderRadius: 5, padding: '5px 10px', marginBottom: 14 }}>
-                  Select only the new products above — email will use the new product intro and subject.
+                <div style={{ fontSize: 11, color: manualNewCodes !== null && manualNewCodes.length === 0 ? '#b45309' : '#2C6B33', background: manualNewCodes !== null && manualNewCodes.length === 0 ? '#fff8e1' : '#f0f9f1', border: `1px solid ${manualNewCodes !== null && manualNewCodes.length === 0 ? '#f59e0b' : '#c6e8cc'}`, borderRadius: 5, padding: '5px 10px', marginBottom: 14 }}>
+                  {manualNewCodes === null ? 'Loading new products…' : manualNewCodes.length === 0 ? 'No unnotified new products detected for this site.' : `${manualNewCodes.length} new product(s) auto-selected from queue.`}
                 </div>
               )}
 
