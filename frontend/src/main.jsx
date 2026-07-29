@@ -2275,6 +2275,7 @@ function DataManagement() {
   const [importing, setImporting] = useState(false);
   const [importNotice, setImportNotice] = useState('');
   const [importError, setImportError] = useState('');
+  const [importFormKey, setImportFormKey] = useState(0);
 
   async function loadAll() {
     setLoading(true);
@@ -2338,6 +2339,8 @@ function DataManagement() {
       if (!r.ok) throw new Error(data.detail || 'Import failed');
       const regNote = data.register ? `, ${data.register} register products` : '';
       setImportNotice(`Imported: ${data.sites} sites, ${data.links} SDS/Risk links, ${data.groups} product groups${regNote}.`);
+      setMappingFile(null); setSdsFile(null); setRiskFile(null); setGroupingFile(null); setRegisterFile(null);
+      setImportFormKey(k => k + 1);
       loadAll();
     } catch (err) { setImportError(err.message); }
     finally { setImporting(false); }
@@ -2364,7 +2367,7 @@ function DataManagement() {
           <div style={{ background: '#fff', border: '1px solid #e2eaef', borderRadius: 10, padding: 24 }}>
             <label style={{ fontWeight: 700, fontSize: 14, color: '#17202a', display: 'block', marginBottom: 6 }}>Import mapping files</label>
             <p style={{ fontSize: 12, color: '#607080', margin: '0 0 14px' }}>Upload one or more files to update the site mapping database.</p>
-            <form onSubmit={handleImport} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <form key={importFormKey} onSubmit={handleImport} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {[
                   ['Customer–Product Code Mapping', e => setMappingFile(e.target.files?.[0] || null)],
