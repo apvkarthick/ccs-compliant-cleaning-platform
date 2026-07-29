@@ -904,13 +904,15 @@ def get_presend_check(skip_sent_since: str = "") -> dict:
 
 
 def get_missing_docs() -> dict[str, list[dict]]:
-    """Return stock codes used by active sites that are missing SDS or Risk Assessment URLs."""
+    """Return stock codes used by active (non-held) sites that are missing SDS or Risk Assessment URLs."""
     excl_set = {r["accno"] for r in _sb_get_all("ccs_site_exclusions", "select=accno")}
+    held_set = {r["accno"] for r in _sb_get_all("ccs_site_holds", "select=accno")}
+    skip_set = excl_set | held_set
     all_sites = _sb_get_all("ccs_site_mapping", "select=accno,stockcodes")
 
     all_codes: set[str] = set()
     for site in all_sites:
-        if site.get("accno") in excl_set:
+        if site.get("accno") in skip_set:
             continue
         raw = site.get("stockcodes") or ""
         for c in (raw.split(",") if isinstance(raw, str) else (raw or [])):
@@ -940,15 +942,19 @@ def get_missing_docs() -> dict[str, list[dict]]:
     risk_missing: list[dict] = []
 
     for code in sorted(all_codes):
-        resolved = group_fallback.get(code, code)
+        primary = group_fallback.get(code, "")
         # Only report codes that are in the Chemical Register (or resolve to one).
         # Products not in the register don't require SDS/risk docs.
-        if code not in register_codes and resolved not in register_codes:
+        if code not in register_codes and (not primary or primary not in register_codes):
             continue
-        product_name = (link_map.get(code) or link_map.get(resolved) or {}).get("product_name") or ""
-        if resolved not in sds_map:
+        product_name = (link_map.get(code) or (link_map.get(primary) if primary else None) or {}).get("product_name") or ""
+        # Mirror resolve_docs_for_site: check code first, then fallback primary
+        sds_found = code in sds_map or (primary and primary in sds_map)
+        if not sds_found:
             sds_missing.append({"code": code, "product_name": product_name})
-        if (code in risk_required_set or resolved in risk_required_set) and resolved not in risk_map:
+        risk_required = code in risk_required_set or (primary and primary in risk_required_set)
+        risk_found = code in risk_map or (primary and primary in risk_map)
+        if risk_required and not risk_found:
             risk_missing.append({"code": code, "product_name": product_name})
 
     return {"sds_missing": sds_missing, "risk_missing": risk_missing}
