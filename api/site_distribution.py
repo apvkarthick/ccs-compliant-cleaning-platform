@@ -1083,6 +1083,7 @@ def send_manual(
     *,
     public_base_url: str = "",
     tracking_secret: str = "",
+    email_type: str = "bulk",
 ) -> dict[str, Any]:
     """Send SDS/Risk email for a specific site with selected products."""
     sites = _sb_get("ccs_site_mapping", f"select=*&accno=eq.{quote(accno, safe='')}")
@@ -1099,12 +1100,17 @@ def send_manual(
     if not docs:
         return {"status": "skipped", "reason": "no SDS/Risk documents found for selected products"}
 
+    subject = "New Chemical Purchased – Register Update Required" if email_type == "new_product" else ""
+    intro = _NEW_PRODUCT_BODY_INTRO if email_type == "new_product" else ""
+
     batch_id = f"manual_{accno}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
     msg = compose_site_email(
         site, docs, email,
         batch_id=batch_id,
         public_base_url=public_base_url,
         tracking_secret=tracking_secret,
+        subject=subject,
+        body_intro=intro,
     )
 
     if dry_run:

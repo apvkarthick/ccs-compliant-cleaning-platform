@@ -598,6 +598,7 @@ class ManualSendRequest(BaseModel):
     email: str = ""
     emails: list[str] = Field(default_factory=list)
     dry_run: bool = False
+    email_type: str = "bulk"
 
 
 @app.post("/site-distribution/send-manual")
@@ -610,9 +611,10 @@ def send_manual_endpoint(
         raise HTTPException(status_code=400, detail="at least one email required")
     public_base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
     tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
+    kwargs = dict(public_base_url=public_base, tracking_secret=tracking_secret, email_type=body.email_type)
     if len(targets) == 1:
-        return send_manual(body.accno, body.stockcodes, targets[0], body.dry_run, public_base_url=public_base, tracking_secret=tracking_secret)
-    results = [send_manual(body.accno, body.stockcodes, e, body.dry_run, public_base_url=public_base, tracking_secret=tracking_secret) for e in targets]
+        return send_manual(body.accno, body.stockcodes, targets[0], body.dry_run, **kwargs)
+    results = [send_manual(body.accno, body.stockcodes, e, body.dry_run, **kwargs) for e in targets]
     return {"sent_to": targets, "results": results, "status": "ok" if all(r.get("status") != "error" for r in results) else "partial"}
 
 

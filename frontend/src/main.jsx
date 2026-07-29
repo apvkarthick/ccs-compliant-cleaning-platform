@@ -924,6 +924,7 @@ function SiteDistribution() {
   const [manualEmail, setManualEmail] = useState('');
   const [manualCodes, setManualCodes] = useState(new Set());
   const [manualDryRun, setManualDryRun] = useState(false);
+  const [manualEmailType, setManualEmailType] = useState('bulk');
   const [manualSending, setManualSending] = useState(false);
   const [manualResult, setManualResult] = useState('');
 
@@ -1091,6 +1092,7 @@ function SiteDistribution() {
     setManualSite(site);
     setManualEmail(testEmail || (site.emails || []).join(', ') || '');
     setManualCodes(new Set(site.stockcodes || []));
+    setManualEmailType('bulk');
     setManualResult('');
     setManualSending(false);
   }
@@ -1109,6 +1111,7 @@ function SiteDistribution() {
           stockcodes: [...manualCodes],
           emails: manualEmail.split(/[,;\s]+/).map(e => e.trim()).filter(e => e.includes('@')),
           dry_run: manualDryRun,
+          email_type: manualEmailType,
         }),
       });
       const data = await r.json();
@@ -1588,6 +1591,25 @@ function SiteDistribution() {
                 {(manualSite.stockcodes || []).length === 0 && (
                   <div style={{ padding: '8px 12px', color: '#607080', fontSize: 12 }}>No products on record for this site.</div>
                 )}
+              </div>
+
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#445', display: 'block', marginBottom: 6 }}>
+                Email type
+              </label>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                {[['bulk', 'Compliance update'], ['new_product', 'New product notification']].map(([val, label]) => (
+                  <label key={val} style={{
+                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    padding: '6px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 500,
+                    border: `1.5px solid ${manualEmailType === val ? '#2C6B33' : '#d8e1e8'}`,
+                    background: manualEmailType === val ? '#f0f9f1' : '#fff',
+                    color: manualEmailType === val ? '#2C6B33' : '#445',
+                  }}>
+                    <input type="radio" name="email-type" value={val} checked={manualEmailType === val}
+                      onChange={() => setManualEmailType(val)} style={{ display: 'none' }} />
+                    {label}
+                  </label>
+                ))}
               </div>
 
               <div className="toggle-row" style={{ marginBottom: 14 }}>
