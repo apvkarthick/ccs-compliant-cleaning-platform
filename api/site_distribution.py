@@ -651,6 +651,20 @@ def import_mapping(
         for s in sites:
             seen[s["accno"]] = s
         sites = list(seen.values())
+
+        # Purge stale email-keyed records created by New Customer Send (no accno given).
+        # When a real accno arrives via SP import, the email-used-as-accno record would
+        # otherwise survive as a duplicate. Delete any existing record whose accno matches
+        # one of the incoming sites' email addresses.
+        all_incoming_emails: set[str] = {
+            em for s in sites for em in (s.get("emails") or []) if em
+        }
+        if all_incoming_emails:
+            existing_accnos = _sb_get_all("ccs_site_mapping", "select=accno")
+            for row in existing_accnos:
+                if row.get("accno") in all_incoming_emails:
+                    _sb_delete("ccs_site_mapping", f"accno=eq.{quote(row['accno'], safe='')}")
+
         _sb_post_batch("ccs_site_mapping", [{**s, "imported_at": now} for s in sites])
 
     links: list[dict] = []
