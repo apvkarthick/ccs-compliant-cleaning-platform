@@ -1415,14 +1415,14 @@ function SiteDistribution() {
       </div>
 
       {/* Test contact inline */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, padding: '10px 14px', background: '#f8fafc', border: '1px solid #e2eaef', borderRadius: 8 }}>
-        <label style={{ fontSize: 12, fontWeight: 700, color: '#445', whiteSpace: 'nowrap' }}>Test contact</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <label style={{ fontSize: 11, fontWeight: 700, color: '#607080', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Test email</label>
         <input
           type="email"
           value={testEmail}
           onChange={e => setTestEmail(e.target.value)}
           placeholder="staff@example.com"
-          style={{ flex: 1, padding: '6px 10px', border: '1px solid #d8e1e8', borderRadius: 6, fontSize: 13 }}
+          style={{ width: 220, padding: '5px 10px', border: '1px solid #d8e1e8', borderRadius: 6, fontSize: 13 }}
         />
       </div>
 
@@ -1459,7 +1459,7 @@ function SiteDistribution() {
           placeholder="Search sites…"
           value={search}
           onChange={e => { setSearch(e.target.value); setPage(1); }}
-          style={{ flex: 1, padding: '7px 12px', border: '1px solid #d8e1e8', borderRadius: 6, fontSize: '0.875rem' }}
+          style={{ flex: 1, padding: '9px 14px', border: '2px solid #2C6B33', borderRadius: 8, fontSize: '0.925rem', fontWeight: 500, color: '#17202a', background: '#f9fefb', outline: 'none' }}
         />
         <span style={{ fontSize: 12, color: '#607080', whiteSpace: 'nowrap' }}>Page {page}</span>
         <button className="btn-ghost" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>‹</button>
@@ -2630,14 +2630,14 @@ function NewProductQueue() {
       </div>
 
       <div style={{ maxWidth: 860, margin: '0 auto', padding: '0 0 40px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, padding: '12px 16px', background: '#f0f4ff', borderRadius: 8, border: '1px solid #c9d8ff' }}>
-          <label style={{ fontSize: 13, fontWeight: 600, color: '#334', whiteSpace: 'nowrap' }}>Test / override email</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: '#607080', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Test email</label>
           <input
             type="email"
             value={testEmail}
             onChange={e => setTestEmail(e.target.value)}
-            placeholder="staff@example.com (blank = use site email)"
-            style={{ flex: 1, padding: '7px 10px', border: '1px solid #c9d8ff', borderRadius: 6, fontSize: 13 }}
+            placeholder="staff@example.com"
+            style={{ width: 220, padding: '5px 10px', border: '1px solid #d1d9e0', borderRadius: 6, fontSize: 13 }}
           />
         </div>
 
