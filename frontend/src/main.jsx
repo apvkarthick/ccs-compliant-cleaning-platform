@@ -2620,6 +2620,7 @@ function NewProductQueue() {
   const [sending, setSending] = useState('');      // accno currently sending
   const [results, setResults] = useState({});      // {accno: string}
   const [fullPack, setFullPack] = useState({});    // {accno: bool} — true=full site pack, false=new only
+  const [emailType, setEmailType] = useState({});  // {accno: 'new_product'|'bulk'}
 
   async function loadQueue() {
     setLoading(true);
@@ -2661,7 +2662,7 @@ function NewProductQueue() {
       const r = await fetch(`${API_BASE}/site-distribution/new-products/send`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accno: site.accno, stockcodes: codes, email, dry_run: dryRun, full_pack: fullPack[site.accno] !== false }),
+        body: JSON.stringify({ accno: site.accno, stockcodes: codes, email, dry_run: dryRun, full_pack: fullPack[site.accno] !== false, email_type: emailType[site.accno] || 'new_product' }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || 'Failed');
@@ -2739,8 +2740,20 @@ function NewProductQueue() {
                     <span style={{ fontSize: 11, color: '#607080', marginLeft: 8 }}>#{site.accno}</span>
                     <span style={{ fontSize: 11, color: '#607080', marginLeft: 8 }}>{site.emails?.join('; ')}</span>
                   </div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 11, color: '#607080' }}>{sel.size}/{codes.length} selected</span>
+                    {/* Email type pill selector */}
+                    {[['new_product', 'New Product'], ['bulk', 'Compliance']].map(([val, lbl]) => {
+                      const active = (emailType[site.accno] || 'new_product') === val;
+                      return (
+                        <button key={val} onClick={() => setEmailType(p => ({ ...p, [site.accno]: val }))}
+                          style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, cursor: 'pointer', fontWeight: active ? 700 : 400,
+                            border: `1.5px solid ${active ? '#2C6B33' : '#d8e1e8'}`,
+                            background: active ? '#f0f9f1' : '#fff', color: active ? '#2C6B33' : '#607080' }}>
+                          {lbl}
+                        </button>
+                      );
+                    })}
                     <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#607080', cursor: 'pointer', userSelect: 'none' }}>
                       <input
                         type="checkbox"

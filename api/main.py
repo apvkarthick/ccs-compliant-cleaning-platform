@@ -749,6 +749,7 @@ class NewProductSendRequest(BaseModel):
     stockcodes: list[str]
     email: str
     dry_run: bool = True
+    email_type: str = "new_product"
 
 
 @app.post("/site-distribution/new-products/send")
@@ -773,14 +774,16 @@ def send_new_products_endpoint(
     public_base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
     tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
     site_name = site.get("name", req.accno)
+    subject = "New Chemical Purchased – Register Update Required" if req.email_type == "new_product" else ""
+    intro = _NEW_PRODUCT_BODY_INTRO if req.email_type == "new_product" else ""
     msg = compose_site_email(
         site,
         docs,
         req.email,
         public_base_url=public_base,
         tracking_secret=tracking_secret,
-        subject="New Chemical Purchased – Register Update Required",
-        body_intro=_NEW_PRODUCT_BODY_INTRO,
+        subject=subject,
+        body_intro=intro,
     )
 
     ghl_result: dict[str, Any] = {"status": "dry_run"}
