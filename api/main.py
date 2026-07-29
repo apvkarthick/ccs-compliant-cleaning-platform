@@ -897,7 +897,7 @@ def send_new_customer_endpoint(
 ) -> dict[str, Any]:
     """Send SDS pack to a brand new customer not yet in the site mapping."""
     from .distribution import _find_or_create_ghl_contact_id, _send_messages_via_ghl
-    from .site_distribution import _sb_post_batch
+    from .site_distribution import _sb_post_batch, _NEW_PRODUCT_BODY_INTRO
     from datetime import datetime, timezone
 
     if not req.stockcodes:
@@ -917,6 +917,8 @@ def send_new_customer_endpoint(
         site, docs, req.email,
         public_base_url=public_base,
         tracking_secret=tracking_secret,
+        subject="New Chemical Purchased – Register Update Required",
+        body_intro=_NEW_PRODUCT_BODY_INTRO,
     )
 
     if req.dry_run:
