@@ -1133,9 +1133,12 @@ def load_lookup_maps() -> tuple[dict[str, str], dict[str, str], dict[str, str], 
     group_fallback: dict[str, str] = {}
     for g in groups:
         primary = g.get("primary_code", "")
-        for related in g.get("related_codes") or []:
-            if related:
-                group_fallback[related] = primary
+        related_list = [r for r in (g.get("related_codes") or []) if r]
+        for related in related_list:
+            group_fallback[related] = primary
+        # bidirectional: primary falls back to first related too
+        if primary and related_list:
+            group_fallback.setdefault(primary, related_list[0])
 
     return sds_map, risk_map, group_fallback, risk_required_set, register_codes
 
