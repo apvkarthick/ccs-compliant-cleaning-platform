@@ -2077,28 +2077,6 @@ function ImportTools() {
           </a>
         </div>
 
-        {/* Test Alerts */}
-        <div style={card}>
-          <label style={{ fontWeight: 700, fontSize: 14, color: '#17202a', display: 'block', marginBottom: 6 }}>Test Alerts</label>
-          <p style={{ fontSize: 12, color: '#607080', margin: '0 0 14px' }}>
-            Fire each automated alert immediately. Sends to ccshub@ via GHL (skipped if GHL disabled).
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <button className="btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 13 }}
-              onClick={() => triggerTestAlert('/site-distribution/test/detect-new-products', 'New products')}>
-              New product detection
-            </button>
-            <button className="btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 13 }}
-              onClick={() => triggerTestAlert('/site-distribution/test/sds-expiry-alerts', 'SDS expiry')}>
-              SDS expiry alerts
-            </button>
-            <button className="btn-ghost" style={{ justifyContent: 'flex-start', fontSize: 13 }}
-              onClick={() => triggerTestAlert('/site-distribution/test/hold-list-notification', 'Hold & Exclusion list')}>
-              Hold &amp; Exclusion list
-            </button>
-          </div>
-          {testAlertResult && <p style={{ fontSize: 12, color: '#445', marginTop: 10, wordBreak: 'break-word' }}>{testAlertResult}</p>}
-        </div>
       </div>
 
       {/* Missing Documents Report */}
@@ -2509,12 +2487,12 @@ function DataManagement() {
           )}
         </div>
 
-        {/* Test Alerts */}
+        {/* On-Demand Alerts */}
         <div style={{ background: '#fff', border: '1px solid #e2eaef', borderRadius: 8, overflow: 'hidden', marginBottom: 32 }}>
           <div style={{ padding: '14px 20px', borderBottom: '1px solid #e2eaef', background: '#f8fafc' }}>
-            <h2 style={{ fontSize: 14, fontWeight: 700, color: '#17202a', margin: 0 }}>Test Alerts</h2>
+            <h2 style={{ fontSize: 14, fontWeight: 700, color: '#17202a', margin: 0 }}>On-Demand Alerts</h2>
             <p style={{ fontSize: 12, color: '#607080', margin: '4px 0 0' }}>
-              Fire each automated alert immediately. Sends to ccshub@ccsessentials.com.au via GHL (skipped if GHL not configured).
+              Send each alert immediately to any email address. Leave blank to use the default (ccshub@ccsessentials.com.au).
             </p>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -2562,11 +2540,11 @@ function DataManagement() {
               {[
                 {
                   key: 'sds', badge: 'Monthly', schedule: '1st working day 9am AEST',
-                  label: 'SDS Expiry', desc: 'Products with SDS expiring within 60 days',
+                  label: 'SDS Expiry Alert', desc: 'Products with SDS expiring within 60 days',
                 },
                 {
                   key: 'hold', badge: 'Monthly', schedule: '1st working day 9:15am AEST',
-                  label: 'Hold List', desc: 'Sites currently on hold',
+                  label: 'Hold List Alert', desc: 'Sites currently on hold',
                 },
               ].map(({ key, badge, schedule, label, desc }) => (
                 <tr key={key}>
