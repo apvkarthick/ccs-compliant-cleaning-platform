@@ -1890,19 +1890,16 @@ function CustomerActions() {
 // ---------------------------------------------------------------------------
 
 function ImportTools() {
-  const [mappingFile, setMappingFile] = useState(null);
-  const [sdsFile, setSdsFile] = useState(null);
-  const [riskFile, setRiskFile] = useState(null);
-  const [groupingFile, setGroupingFile] = useState(null);
-  const [registerFile, setRegisterFile] = useState(null);
-  const [importing, setImporting] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [spPulling, setSpPulling] = useState(false);
   const [spPullResult, setSpPullResult] = useState(null);
   const [spPullError, setSpPullError] = useState('');
-  const [testAlertResult, setTestAlertResult] = useState('');
-  const [testAlertPreviewHtml, setTestAlertPreviewHtml] = useState(null);
+  const [reportEmails, setReportEmails] = useState({ sds: '', hold: '' });
+  const [reportSending, setReportSending] = useState(null);
+  const [reportResults, setReportResults] = useState({});
+  const [npRunning, setNpRunning] = useState(false);
+  const [npResult, setNpResult] = useState('');
   const [missingDocs, setMissingDocs] = useState(null);
   const [missingLoading, setMissingLoading] = useState(false);
   const MISSING_PAGE = 50;
@@ -1912,26 +1909,6 @@ function ImportTools() {
   const [invalidEmailsLoading, setInvalidEmailsLoading] = useState(false);
   const INVALID_PAGE = 50;
   const [invalidShowAll, setInvalidShowAll] = useState(false);
-
-  async function handleImport(e) {
-    e.preventDefault();
-    if (!mappingFile && !sdsFile && !riskFile && !groupingFile && !registerFile) { setError('Select at least one file.'); return; }
-    setImporting(true); setError(''); setNotice('');
-    const form = new FormData();
-    if (mappingFile) form.append('mapping', mappingFile);
-    if (sdsFile) form.append('sds', sdsFile);
-    if (riskFile) form.append('risk', riskFile);
-    if (groupingFile) form.append('grouping', groupingFile);
-    if (registerFile) form.append('register', registerFile);
-    try {
-      const r = await fetch(`${API_BASE}/site-distribution/import`, { method: 'POST', headers: getAuthHeaders(), body: form });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || 'Import failed');
-      const regNote = data.register ? `, ${data.register} register products` : '';
-      setNotice(`Imported: ${data.sites} sites, ${data.links} SDS/Risk links, ${data.groups} product groups${regNote}.`);
-    } catch (err) { setError(err.message); }
-    finally { setImporting(false); }
-  }
 
   async function handleSpPull() {
     setSpPulling(true); setSpPullError(''); setSpPullResult(null); setError(''); setNotice('');
@@ -1946,21 +1923,47 @@ function ImportTools() {
     finally { setSpPulling(false); }
   }
 
-  async function triggerTestAlert(endpoint, label) {
-    setTestAlertResult(`Running ${label}…`); setTestAlertPreviewHtml(null);
+  async function sendReport(type) {
+    const endpoints = {
+      sds: 'site-distribution/test/sds-expiry-alerts',
+      hold: 'site-distribution/test/hold-list-notification',
+    };
+    setReportSending(type);
+    setReportResults(r => ({ ...r, [type]: '' }));
     try {
-      const r = await fetch(`${API_BASE}${endpoint}`, { method: 'POST', headers: getAuthHeaders() });
-      const text = await r.text();
-      let data;
-      try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
-      if (!r.ok) throw new Error(data.detail || 'Failed');
-      if (data.preview_html) {
-        setTestAlertPreviewHtml({ title: label, html: data.preview_html });
-        setTestAlertResult(`${label}: ${data.expiring_count ?? data.held_count ?? '—'} item(s) — preview ready`);
+      const email = reportEmails[type] || '';
+      const res = await fetch(`${API_BASE}/${endpoints[type]}`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(email ? { email } : {}),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setReportResults(r => ({ ...r, [type]: `Error: ${data.detail || res.status}` }));
       } else {
-        setTestAlertResult(`${label}: count=${data.new_count ?? '—'}, GHL=${data.ghl?.status || 'no email sent'}`);
+        const count = data.expiring_count ?? data.held_count ?? '?';
+        const dest = email || 'ccshub@ccsessentials.com.au';
+        setReportResults(r => ({ ...r, [type]: `Sent to ${dest} · ${count} item${count !== 1 ? 's' : ''}` }));
       }
-    } catch (err) { setTestAlertResult(`${label} error: ${err.message}`); }
+    } catch (err) {
+      setReportResults(r => ({ ...r, [type]: `Error: ${err.message}` }));
+    } finally {
+      setReportSending(null);
+    }
+  }
+
+  async function triggerNewProducts() {
+    setNpRunning(true); setNpResult('Running…');
+    try {
+      const res = await fetch(`${API_BASE}/site-distribution/test/detect-new-products`, {
+        method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) { setNpResult(`Error: ${data.detail || res.status}`); return; }
+      setNpResult(`Done — ${data.new_count ?? 0} new product(s) detected`);
+    } catch (err) { setNpResult(`Error: ${err.message}`); }
+    finally { setNpRunning(false); }
   }
 
   async function loadMissingDocs() {
@@ -2015,31 +2018,6 @@ function ImportTools() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
 
-        {/* Import mapping files */}
-        <div style={card}>
-          <label style={{ fontWeight: 700, fontSize: 14, color: '#17202a', display: 'block', marginBottom: 6 }}>Import mapping files</label>
-          <p style={{ fontSize: 12, color: '#607080', margin: '0 0 14px' }}>Upload one or more files to update the site mapping database.</p>
-          <form onSubmit={handleImport} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {[
-                ['Customer–Product Code Mapping', e => setMappingFile(e.target.files?.[0] || null)],
-                ['SDS links', e => setSdsFile(e.target.files?.[0] || null)],
-                ['Risk links', e => setRiskFile(e.target.files?.[0] || null)],
-                ['Product grouping (optional)', e => setGroupingFile(e.target.files?.[0] || null)],
-                ['Chemical Register — Title Sheet (optional)', e => setRegisterFile(e.target.files?.[0] || null)],
-              ].map(([label, onChange]) => (
-                <div key={label}>
-                  <label style={{ fontSize: 12, color: '#445', display: 'block', marginBottom: 2 }}>{label}</label>
-                  <input type="file" accept=".xlsx" onChange={onChange} />
-                </div>
-              ))}
-            </div>
-            <button type="submit" className="primary" disabled={importing}>
-              <Upload size={16} style={{ marginRight: 6 }} />{importing ? 'Importing…' : 'Import'}
-            </button>
-          </form>
-        </div>
-
         {/* Pull from SharePoint */}
         <div style={card}>
           <label style={{ fontWeight: 700, fontSize: 14, color: '#17202a', display: 'block', marginBottom: 6 }}>Pull from SharePoint</label>
@@ -2065,18 +2043,52 @@ function ImportTools() {
           )}
         </div>
 
-        {/* Site Report */}
+        {/* New Product Detection */}
         <div style={card}>
-          <label style={{ fontWeight: 700, fontSize: 14, color: '#17202a', display: 'block', marginBottom: 6 }}>Site Report</label>
+          <label style={{ fontWeight: 700, fontSize: 14, color: '#17202a', display: 'block', marginBottom: 6 }}>New Product Detection</label>
           <p style={{ fontSize: 12, color: '#607080', margin: '0 0 14px' }}>
-            Download CSV — every site, what documents they'd receive, and why any are skipped.
+            Runs the daily new-product check immediately. Sends distribution emails to any sites with new product codes since their last send.
           </p>
-          <a href={`${API_BASE}/site-distribution/report.csv`} download className="primary"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', padding: '8px 14px', borderRadius: 6, fontSize: 13 }}>
-            <Download size={15} style={{ marginRight: 6 }} />Download report
-          </a>
+          <button type="button" className="primary" disabled={npRunning} onClick={triggerNewProducts} style={{ width: '100%' }}>
+            <Upload size={16} style={{ marginRight: 6 }} />{npRunning ? 'Running…' : 'Run now'}
+          </button>
+          {npResult && <p style={{ fontSize: 12, color: npResult.startsWith('Error') ? '#991b1b' : '#166534', marginTop: 10 }}>{npResult}</p>}
         </div>
 
+      </div>
+
+      {/* On-Demand Alerts */}
+      <div style={{ ...card, marginTop: 24 }}>
+        <label style={{ fontWeight: 700, fontSize: 14, color: '#17202a', display: 'block', marginBottom: 4 }}>On-Demand Alerts</label>
+        <p style={{ fontSize: 12, color: '#607080', margin: '0 0 14px' }}>
+          Send each monthly alert immediately to any email. Leave blank to use the default (ccshub@ccsessentials.com.au).
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {[
+            { key: 'sds', label: 'SDS Expiry Alert', badge: 'Monthly', desc: 'Products with SDS expiring within 60 days' },
+            { key: 'hold', label: 'Hold List Alert', badge: 'Monthly', desc: 'Sites currently on hold' },
+          ].map(({ key, label, badge, desc }) => (
+            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 220px' }}>
+                <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#fef3c7', color: '#92400e', marginRight: 6 }}>{badge}</span>
+                <span style={{ fontWeight: 600, fontSize: 13 }}>{label}</span>
+                <p style={{ fontSize: 12, color: '#607080', margin: '2px 0 0' }}>{desc}</p>
+              </div>
+              <input type="email" placeholder="ccshub@ (default)" value={reportEmails[key]}
+                onChange={e => setReportEmails(r => ({ ...r, [key]: e.target.value }))}
+                style={{ flex: '1 1 180px', border: '1px solid #d1d9e0', borderRadius: 5, padding: '6px 10px', fontSize: 12, color: '#17202a' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                <button onClick={() => sendReport(key)} disabled={!!reportSending}
+                  style={{ background: reportSending === key ? '#f0f4f8' : '#2C6B33', color: reportSending === key ? '#607080' : '#fff', border: 'none', borderRadius: 5, padding: '7px 18px', fontSize: 12, fontWeight: 600, cursor: reportSending ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+                  {reportSending === key ? 'Sending…' : 'Send now'}
+                </button>
+                {reportResults[key] && (
+                  <span style={{ fontSize: 11, color: reportResults[key].startsWith('Error') ? '#991b1b' : '#166534' }}>{reportResults[key]}</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Missing Documents Report */}
@@ -2240,20 +2252,6 @@ function ImportTools() {
         )}
       </div>
 
-      {testAlertPreviewHtml && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 20px', overflowY: 'auto' }} onClick={() => setTestAlertPreviewHtml(null)}>
-          <div style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: 780, boxShadow: '0 8px 40px rgba(0,0,0,0.3)' }} onClick={e => e.stopPropagation()}>
-            <div style={{ background: '#1a2b3c', color: '#fff', padding: '12px 20px', borderRadius: '10px 10px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>Email preview — {testAlertPreviewHtml.title}</span>
-              <button onClick={() => setTestAlertPreviewHtml(null)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px' }}>×</button>
-            </div>
-            <iframe srcDoc={testAlertPreviewHtml.html} title="Alert email preview" style={{ width: '100%', height: 560, border: 'none', background: '#fff', display: 'block' }} sandbox="allow-same-origin" />
-            <div style={{ background: '#f3f4f6', padding: '10px 20px', display: 'flex', justifyContent: 'flex-end', borderRadius: '0 0 10px 10px' }}>
-              <button className="btn-ghost" onClick={() => setTestAlertPreviewHtml(null)} style={{ fontSize: 12 }}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
     </section>
   );
 }
@@ -2269,9 +2267,14 @@ function DataManagement() {
   const [clearConfirm, setClearConfirm] = useState(false);  // 'all' | table key | false
   const [clearing, setClearing] = useState(false);
   const [clearResult, setClearResult] = useState('');
-  const [reportEmails, setReportEmails] = useState({ sds: '', hold: '', newproducts: '' });
-  const [reportSending, setReportSending] = useState(null);  // 'sds' | 'hold' | 'newproducts'
-  const [reportResults, setReportResults] = useState({});   // { sds: string, hold: string, newproducts: string }
+  const [mappingFile, setMappingFile] = useState(null);
+  const [sdsFile, setSdsFile] = useState(null);
+  const [riskFile, setRiskFile] = useState(null);
+  const [groupingFile, setGroupingFile] = useState(null);
+  const [registerFile, setRegisterFile] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importNotice, setImportNotice] = useState('');
+  const [importError, setImportError] = useState('');
 
   async function loadAll() {
     setLoading(true);
@@ -2319,35 +2322,25 @@ function DataManagement() {
   const th = { fontSize: 11, fontWeight: 700, color: '#667789', textTransform: 'uppercase', letterSpacing: 0.5, padding: '8px 12px', borderBottom: '2px solid #e2eaef', textAlign: 'left', whiteSpace: 'nowrap' };
   const td = { fontSize: 13, padding: '10px 12px', borderBottom: '1px solid #f0f4f8', verticalAlign: 'middle' };
 
-  async function sendReport(type) {
-    const endpoints = {
-      sds: 'site-distribution/test/sds-expiry-alerts',
-      hold: 'site-distribution/test/hold-list-notification',
-      newproducts: 'site-distribution/test/detect-new-products',
-    };
-    const labels = { sds: 'SDS Expiry', hold: 'Hold List', newproducts: 'New Products' };
-    setReportSending(type);
-    setReportResults(r => ({ ...r, [type]: '' }));
+  async function handleImport(e) {
+    e.preventDefault();
+    if (!mappingFile && !sdsFile && !riskFile && !groupingFile && !registerFile) { setImportError('Select at least one file.'); return; }
+    setImporting(true); setImportError(''); setImportNotice('');
+    const form = new FormData();
+    if (mappingFile) form.append('mapping', mappingFile);
+    if (sdsFile) form.append('sds', sdsFile);
+    if (riskFile) form.append('risk', riskFile);
+    if (groupingFile) form.append('grouping', groupingFile);
+    if (registerFile) form.append('register', registerFile);
     try {
-      const email = reportEmails[type] || '';
-      const res = await fetch(`${API_BASE}/${endpoints[type]}`, {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(email ? { email } : {}),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setReportResults(r => ({ ...r, [type]: `Error: ${data.detail || res.status}` }));
-      } else {
-        const count = data.expiring_count ?? data.held_count ?? data.new_count ?? '?';
-        const dest = email || 'ccshub@ccsessentials.com.au';
-        setReportResults(r => ({ ...r, [type]: `Sent to ${dest} · ${count} item${count !== 1 ? 's' : ''}` }));
-      }
-    } catch (err) {
-      setReportResults(r => ({ ...r, [type]: `Error: ${err.message}` }));
-    } finally {
-      setReportSending(null);
-    }
+      const r = await fetch(`${API_BASE}/site-distribution/import`, { method: 'POST', headers: getAuthHeaders(), body: form });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Import failed');
+      const regNote = data.register ? `, ${data.register} register products` : '';
+      setImportNotice(`Imported: ${data.sites} sites, ${data.links} SDS/Risk links, ${data.groups} product groups${regNote}.`);
+      loadAll();
+    } catch (err) { setImportError(err.message); }
+    finally { setImporting(false); }
   }
 
   return (
@@ -2364,6 +2357,45 @@ function DataManagement() {
 
       <div style={{ maxWidth: 900, padding: '0 24px 40px' }}>
 
+        {/* Import mapping files */}
+        {importNotice && <div className="notice ok" style={{ marginBottom: 16 }}><CheckCircle2 size={15} /><span>{importNotice}</span></div>}
+        {importError && <div className="notice error" style={{ marginBottom: 16 }}><AlertCircle size={15} /><span>{importError}</span></div>}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start', marginBottom: 32 }}>
+          <div style={{ background: '#fff', border: '1px solid #e2eaef', borderRadius: 10, padding: 24 }}>
+            <label style={{ fontWeight: 700, fontSize: 14, color: '#17202a', display: 'block', marginBottom: 6 }}>Import mapping files</label>
+            <p style={{ fontSize: 12, color: '#607080', margin: '0 0 14px' }}>Upload one or more files to update the site mapping database.</p>
+            <form onSubmit={handleImport} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {[
+                  ['Customer–Product Code Mapping', e => setMappingFile(e.target.files?.[0] || null)],
+                  ['SDS links', e => setSdsFile(e.target.files?.[0] || null)],
+                  ['Risk links', e => setRiskFile(e.target.files?.[0] || null)],
+                  ['Product grouping (optional)', e => setGroupingFile(e.target.files?.[0] || null)],
+                  ['Chemical Register — Title Sheet (optional)', e => setRegisterFile(e.target.files?.[0] || null)],
+                ].map(([label, onChange]) => (
+                  <div key={label}>
+                    <label style={{ fontSize: 12, color: '#445', display: 'block', marginBottom: 2 }}>{label}</label>
+                    <input type="file" accept=".xlsx" onChange={onChange} />
+                  </div>
+                ))}
+              </div>
+              <button type="submit" className="primary" disabled={importing}>
+                <Upload size={16} style={{ marginRight: 6 }} />{importing ? 'Importing…' : 'Import'}
+              </button>
+            </form>
+          </div>
+          <div style={{ background: '#fff', border: '1px solid #e2eaef', borderRadius: 10, padding: 24 }}>
+            <label style={{ fontWeight: 700, fontSize: 14, color: '#17202a', display: 'block', marginBottom: 6 }}>Site Report</label>
+            <p style={{ fontSize: 12, color: '#607080', margin: '0 0 14px' }}>
+              Download CSV — every site, what documents they'd receive, and why any are skipped.
+            </p>
+            <a href={`${API_BASE}/site-distribution/report.csv`} download className="primary"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', padding: '8px 14px', borderRadius: 6, fontSize: 13 }}>
+              <Download size={15} style={{ marginRight: 6 }} />Download report
+            </a>
+          </div>
+        </div>
+
         {/* Current DB state */}
         <div style={{ marginBottom: 32 }}>
           <h2 style={{ fontSize: 14, fontWeight: 700, color: '#17202a', marginBottom: 4 }}>Current database state</h2>
@@ -2373,7 +2405,7 @@ function DataManagement() {
               {clearResult}
             </div>
           )}
-          {!status && !loading && <p style={{ color: '#607080', fontSize: 13 }}>No data yet — upload mapping files on the Sites page.</p>}
+          {!status && !loading && <p style={{ color: '#607080', fontSize: 13 }}>No data yet — upload mapping files above.</p>}
           {status && (() => {
             const TABLES = [
               { key: 'ccs_site_mapping', label: 'Customer–Product Mapping', file: 'Mapping file', also: [] },
@@ -2485,93 +2517,6 @@ function DataManagement() {
               </table>
             </div>
           )}
-        </div>
-
-        {/* On-Demand Alerts */}
-        <div style={{ background: '#fff', border: '1px solid #e2eaef', borderRadius: 8, overflow: 'hidden', marginBottom: 32 }}>
-          <div style={{ padding: '14px 20px', borderBottom: '1px solid #e2eaef', background: '#f8fafc' }}>
-            <h2 style={{ fontSize: 14, fontWeight: 700, color: '#17202a', margin: 0 }}>On-Demand Alerts</h2>
-            <p style={{ fontSize: 12, color: '#607080', margin: '4px 0 0' }}>
-              Send each alert immediately to any email address. Leave blank to use the default (ccshub@ccsessentials.com.au).
-            </p>
-          </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead style={{ background: '#f8fafc' }}>
-              <tr>
-                <th style={th}>Alert</th>
-                <th style={th}>Schedule</th>
-                <th style={th}>Description</th>
-                <th style={th}>Override email</th>
-                <th style={{ ...th, textAlign: 'center' }}>Send now</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Daily */}
-              {[
-                {
-                  key: 'newproducts', badge: 'Daily', schedule: '5am AEST',
-                  label: 'New Products', desc: 'Sites with product codes added since last send',
-                },
-              ].map(({ key, badge, schedule, label, desc }) => (
-                <tr key={key}>
-                  <td style={td}>
-                    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#e0f2fe', color: '#075985', marginRight: 6 }}>{badge}</span>
-                    <span style={{ fontWeight: 600 }}>{label}</span>
-                  </td>
-                  <td style={{ ...td, color: '#607080', fontSize: 12 }}>{schedule}</td>
-                  <td style={{ ...td, fontSize: 12, color: '#607080' }}>{desc}</td>
-                  <td style={td}>
-                    <input type="email" placeholder="ccshub@ (default)" value={reportEmails[key]}
-                      onChange={e => setReportEmails(r => ({ ...r, [key]: e.target.value }))}
-                      style={{ width: '100%', minWidth: 160, border: '1px solid #d1d9e0', borderRadius: 5, padding: '5px 8px', fontSize: 12, color: '#17202a' }} />
-                  </td>
-                  <td style={{ ...td, textAlign: 'center' }}>
-                    <button onClick={() => sendReport(key)} disabled={!!reportSending}
-                      style={{ background: reportSending === key ? '#f0f4f8' : '#2C6B33', color: reportSending === key ? '#607080' : '#fff', border: 'none', borderRadius: 5, padding: '5px 14px', fontSize: 12, fontWeight: 600, cursor: reportSending ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
-                      {reportSending === key ? 'Sending…' : 'Send now'}
-                    </button>
-                    {reportResults[key] && (
-                      <div style={{ marginTop: 4, fontSize: 11, color: reportResults[key].startsWith('Error') ? '#991b1b' : '#166534' }}>{reportResults[key]}</div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {/* Monthly */}
-              {[
-                {
-                  key: 'sds', badge: 'Monthly', schedule: '1st working day 9am AEST',
-                  label: 'SDS Expiry Alert', desc: 'Products with SDS expiring within 60 days',
-                },
-                {
-                  key: 'hold', badge: 'Monthly', schedule: '1st working day 9:15am AEST',
-                  label: 'Hold List Alert', desc: 'Sites currently on hold',
-                },
-              ].map(({ key, badge, schedule, label, desc }) => (
-                <tr key={key}>
-                  <td style={td}>
-                    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#fef3c7', color: '#92400e', marginRight: 6 }}>{badge}</span>
-                    <span style={{ fontWeight: 600 }}>{label}</span>
-                  </td>
-                  <td style={{ ...td, color: '#607080', fontSize: 12 }}>{schedule}</td>
-                  <td style={{ ...td, fontSize: 12, color: '#607080' }}>{desc}</td>
-                  <td style={td}>
-                    <input type="email" placeholder="ccshub@ (default)" value={reportEmails[key]}
-                      onChange={e => setReportEmails(r => ({ ...r, [key]: e.target.value }))}
-                      style={{ width: '100%', minWidth: 160, border: '1px solid #d1d9e0', borderRadius: 5, padding: '5px 8px', fontSize: 12, color: '#17202a' }} />
-                  </td>
-                  <td style={{ ...td, textAlign: 'center' }}>
-                    <button onClick={() => sendReport(key)} disabled={!!reportSending}
-                      style={{ background: reportSending === key ? '#f0f4f8' : '#2C6B33', color: reportSending === key ? '#607080' : '#fff', border: 'none', borderRadius: 5, padding: '5px 14px', fontSize: 12, fontWeight: 600, cursor: reportSending ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
-                      {reportSending === key ? 'Sending…' : 'Send now'}
-                    </button>
-                    {reportResults[key] && (
-                      <div style={{ marginTop: 4, fontSize: 11, color: reportResults[key].startsWith('Error') ? '#991b1b' : '#166534' }}>{reportResults[key]}</div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
 
         {/* Clear all */}
