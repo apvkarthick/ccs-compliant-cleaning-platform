@@ -1606,11 +1606,21 @@ function SiteDistribution() {
                     color: manualEmailType === val ? '#2C6B33' : '#445',
                   }}>
                     <input type="radio" name="email-type" value={val} checked={manualEmailType === val}
-                      onChange={() => setManualEmailType(val)} style={{ display: 'none' }} />
+                      onChange={() => {
+                        setManualEmailType(val);
+                        if (val === 'new_product') setManualCodes(new Set());
+                        else setManualCodes(new Set(manualSite?.stockcodes || []));
+                      }} style={{ display: 'none' }} />
                     {label}
                   </label>
                 ))}
               </div>
+
+              {manualEmailType === 'new_product' && (
+                <div style={{ fontSize: 11, color: '#2C6B33', background: '#f0f9f1', border: '1px solid #c6e8cc', borderRadius: 5, padding: '5px 10px', marginBottom: 14 }}>
+                  Select only the new products above — email will use the new product intro and subject.
+                </div>
+              )}
 
               <div className="toggle-row" style={{ marginBottom: 14 }}>
                 <input id="ms-dry-run" type="checkbox" checked={manualDryRun} onChange={e => setManualDryRun(e.target.checked)} />
