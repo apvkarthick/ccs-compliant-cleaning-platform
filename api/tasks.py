@@ -58,15 +58,100 @@ def run_scheduled_distributions() -> dict:
 @celery_app.task(name="ccs.detect_new_products")
 def detect_new_products_task() -> dict:
     """Daily beat task: detect and record new product–site pairs.
-    On first working day of month (AEST 9:30am), also sends a summary email."""
+    Auto-sends new-product emails to sites that have a prior send record (last_sent_at IS NOT NULL).
+    Sites never previously emailed are skipped — they require the New Customer Send flow.
+    On first working day of month (AEST 9:30am), also sends a summary email to staff."""
+    import os
+    import time
     from datetime import datetime, timezone
     from .site_distribution import (
         detect_and_record_new_products,
+        get_new_product_queue,
+        mark_products_notified,
+        load_lookup_maps,
+        resolve_docs_for_site,
+        compose_site_email,
         _is_first_weekday_of_month_aest,
         _render_new_products_email,
+        _NEW_PRODUCT_BODY_INTRO,
         send_internal_notification,
+        notify_admin_failure,
+        _sb_get_all,
     )
+    from .distribution import _find_or_create_ghl_contact_id, _send_messages_via_ghl
+
     result = detect_and_record_new_products()
+
+    # Auto-send new-product emails — only to sites already in the mailing list
+    auto_sent = 0
+    auto_failed = 0
+    auto_skipped_no_history = 0
+    if not result["first_run"] and result["new_count"] > 0:
+        queue = get_new_product_queue()
+        held_set = {r["accno"] for r in _sb_get_all("ccs_site_holds", "select=accno")}
+        site_data = {
+            s["accno"]: s
+            for s in _sb_get_all("ccs_site_mapping", "select=*")
+        }
+        sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
+        public_base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
+        tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
+
+        failures: list[dict] = []
+        for q_site in queue:
+            accno = q_site["accno"]
+            site = site_data.get(accno, {})
+
+            if not site.get("last_sent_at"):
+                auto_skipped_no_history += 1
+                continue
+            if accno in held_set:
+                continue
+
+            emails = [e for e in (q_site.get("emails") or []) if e]
+            if not emails:
+                continue
+
+            codes = [p["stock_code"] for p in q_site["products"]]
+            docs = resolve_docs_for_site(codes, sds_map, risk_map, group_fallback, risk_required_set, register_codes)
+            if not docs:
+                continue
+
+            try:
+                for email_addr in emails:
+                    msg = compose_site_email(
+                        site, docs, email_addr,
+                        public_base_url=public_base,
+                        tracking_secret=tracking_secret,
+                        subject="New Chemical Purchased – Register Update Required",
+                        body_intro=_NEW_PRODUCT_BODY_INTRO,
+                    )
+                    contact_id = _find_or_create_ghl_contact_id({"email": email_addr, "name": site.get("name", "")})
+                    if contact_id:
+                        msg["contact_id"] = contact_id
+                    ghl = _send_messages_via_ghl([msg])
+                    if ghl.get("status") == "sent":
+                        auto_sent += 1
+                    else:
+                        failures.append({"accno": accno, "email": email_addr, "error": ghl.get("reason", "send failed")})
+                        auto_failed += 1
+                    time.sleep(0.3)
+                mark_products_notified([{"accno": accno, "stock_code": c} for c in codes])
+            except Exception as exc:
+                auto_failed += 1
+                failures.append({"accno": accno, "error": str(exc)})
+
+        if failures:
+            lines = "\n".join(f"  accno={f.get('accno','')} email={f.get('email','')} — {f.get('error','')}" for f in failures)
+            notify_admin_failure(
+                f"New-product auto-send failures — {len(failures)} site(s) failed",
+                f"The following sites failed during auto new-product send:\n\n{lines}",
+            )
+
+    result["auto_sent"] = auto_sent
+    result["auto_failed"] = auto_failed
+    result["auto_skipped_no_history"] = auto_skipped_no_history
+
     if not result["first_run"] and _is_first_weekday_of_month_aest():
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         html = _render_new_products_email(result["by_site"], today)
