@@ -150,11 +150,11 @@ def _render_branded_html(
         'Safety Document Pack</div>'
     )
     if safe_logo_url and safe_logo_url_2:
-        # logo-1: 1079x287 → 120x32; logo-2: 1438x333 → 120x28 (proportional, no distortion)
+        # logo-1: 1079x287 → 160x43; logo-2: 1438x333 → 120x28 (proportional, no distortion)
         header_inner = (
             '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
-            f'<td width="136" valign="middle" style="padding-right:12px;">'
-            f'<img src="{safe_logo_url}" width="120" height="32" border="0" '
+            f'<td width="176" valign="middle" style="padding-right:12px;">'
+            f'<img src="{safe_logo_url}" width="160" height="43" border="0" '
             f'style="display:block;" alt="CCS Logo" /></td>'
             f'<td valign="middle">{wordmark}</td>'
             f'<td width="136" valign="middle" style="padding-left:12px;">'
@@ -165,8 +165,8 @@ def _render_branded_html(
     elif safe_logo_url:
         header_inner = (
             '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
-            f'<td width="136" valign="middle" style="padding-right:16px;">'
-            f'<img src="{safe_logo_url}" width="120" height="32" border="0" '
+            f'<td width="176" valign="middle" style="padding-right:16px;">'
+            f'<img src="{safe_logo_url}" width="160" height="43" border="0" '
             f'style="display:block;" alt="CCS Logo" /></td>'
             f'<td valign="middle">{wordmark}</td>'
             '</tr></table>'
