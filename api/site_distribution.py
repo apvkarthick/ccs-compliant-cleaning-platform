@@ -30,7 +30,7 @@ def _first_val(row: Any, *candidates: str) -> str:
     """Return first non-empty value from row matching any candidate column name (case-insensitive)."""
     cols = {str(k).upper().strip(): v for k, v in row.items()}
     for c in candidates:
-        v = str(cols.get(c.upper(), "")).strip().replace("_x000D_", "").replace("\r", "")
+        v = re.sub(r'_x[0-9A-Fa-f]{4}_', '', str(cols.get(c.upper(), ""))).replace("\xa0", " ").replace("\r", "").strip()
         if v and v != "nan":
             return v
     return ""
