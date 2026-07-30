@@ -265,7 +265,6 @@ def _compose_message(
         )
 
     logo_url = f"{_base}/api/assets/cleaninglogo-1.jpg" if _base else ""
-    logo_url_2 = f"{_base}/api/assets/cleaninglogo-2.jpg" if _base else ""
     email_html = _render_branded_html(
         contact_name=contact["name"],
         company=customer.get("company", ""),
@@ -273,7 +272,6 @@ def _compose_message(
         documents=documents,
         tracking_pixel_url=pixel_url,
         logo_url=logo_url,
-        logo_url_2=logo_url_2,
     )
 
     return {

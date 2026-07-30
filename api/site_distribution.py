@@ -1313,7 +1313,6 @@ def compose_site_email(
         )
 
     logo_url = f"{public_base_url}/api/assets/cleaninglogo-1.jpg" if public_base_url else ""
-    logo_url_2 = f"{public_base_url}/api/assets/cleaninglogo-2.jpg" if public_base_url else ""
 
     html_body = _render_branded_html(
         contact_name=site_name,
@@ -1322,7 +1321,6 @@ def compose_site_email(
         documents=documents,
         tracking_pixel_url=pixel_url,
         logo_url=logo_url,
-        logo_url_2=logo_url_2,
         cover_notice=cover_notice,
         body_intro=body_intro or _BULK_BODY_INTRO,
     )
@@ -1344,7 +1342,7 @@ def compose_site_email(
         "name": site_name,
         "contact_id": contact_id,
         "accno": accno,
-        "subject": subject or "Your Latest Chemical Register, SDS and Risk Assessments links provided",
+        "subject": subject or f"Latest Chemical Register & SDS for {site_name}",
         "html": html_body,
         "documents": documents,
     }
