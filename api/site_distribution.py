@@ -1348,8 +1348,11 @@ def compose_site_email(
         "html": html_body,
         "documents": documents,
     }
+    cover_sheet_url = f"{public_base_url}/api/assets/cover-sheet.pdf" if public_base_url else ""
+    attachments = ([cover_sheet_url] if cover_sheet_url else []) + ([register_url] if register_url else [])
+    if attachments:
+        msg["attachments"] = attachments
     if register_url:
-        msg["attachments"] = [register_url]
         msg["register_url"] = register_url
     if register_error:
         msg["register_error"] = register_error
