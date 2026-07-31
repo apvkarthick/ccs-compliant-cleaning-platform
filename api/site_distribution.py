@@ -68,6 +68,11 @@ def parse_mapping_excel(data: bytes) -> list[dict[str, Any]]:
     return sites
 
 
+def _norm_code(code: str) -> str:
+    """Normalize stock code for filename matching: strip & and + (removed from PDF filenames)."""
+    return code.replace("&", "").replace("+", "")
+
+
 def parse_sds_links(sds_data: bytes | None = None, risk_data: bytes | None = None) -> list[dict[str, Any]]:
     """Parse SDS URL file + Risk URL file → merged list of {stock_code, sds_url, risk_url}.
     Either argument may be None or empty — only non-empty files are parsed."""
@@ -81,9 +86,10 @@ def parse_sds_links(sds_data: bytes | None = None, risk_data: bytes | None = Non
             if not url or url == "nan":
                 continue
             fname = url.split("/")[-1]
-            m = re.match(r"([A-Z0-9]+(?:-[0-9]+)?)[_\-]", fname)
+            # Include . in char class to handle codes like ENZYMO12.5KG
+            m = re.match(r"([A-Z0-9.]+(?:-[0-9]+)?)[_\-]", fname)
             if m:
-                sds_map[m.group(1)] = url
+                sds_map[_norm_code(m.group(1))] = url
 
     if risk_data:
         df_risk = pd.read_excel(io.BytesIO(risk_data), header=None, dtype=str)
@@ -92,9 +98,9 @@ def parse_sds_links(sds_data: bytes | None = None, risk_data: bytes | None = Non
             if not url or url == "nan":
                 continue
             fname = url.split("/")[-1]
-            m = re.match(r"RISK_([A-Z0-9]+(?:-[0-9]+)?)[_\-]", fname)
+            m = re.match(r"RISK_([A-Z0-9.]+(?:-[0-9]+)?)[_\-]", fname)
             if m:
-                risk_map[m.group(1)] = url
+                risk_map[_norm_code(m.group(1))] = url
 
     all_codes = sorted(set(sds_map) | set(risk_map))
     return [
@@ -1181,10 +1187,25 @@ def load_lookup_maps() -> tuple[dict[str, str], dict[str, str], dict[str, str], 
       SDS-URL-only entries without a Chemical Register row are excluded intentionally.
     """
     links = _sb_get("ccs_sds_links", "select=stock_code,sds_url,risk_url,risk_assessment_required,product_name")
-    sds_map = {r["stock_code"]: r["sds_url"] for r in links if r.get("sds_url")}
-    risk_map = {r["stock_code"]: r["risk_url"] for r in links if r.get("risk_url")}
-    risk_required_set = {r["stock_code"] for r in links if r.get("risk_assessment_required")}
-    register_codes: set[str] = {r["stock_code"] for r in links if r.get("product_name")}
+    sds_map: dict[str, str] = {}
+    risk_map: dict[str, str] = {}
+    risk_required_set: set[str] = set()
+    register_codes: set[str] = set()
+    for r in links:
+        code = r["stock_code"]
+        norm = _norm_code(code)
+        if r.get("sds_url"):
+            sds_map[code] = r["sds_url"]
+            sds_map.setdefault(norm, r["sds_url"])
+        if r.get("risk_url"):
+            risk_map[code] = r["risk_url"]
+            risk_map.setdefault(norm, r["risk_url"])
+        if r.get("risk_assessment_required"):
+            risk_required_set.add(code)
+            risk_required_set.add(norm)
+        if r.get("product_name"):
+            register_codes.add(code)
+            register_codes.add(norm)
 
     groups = _sb_get("ccs_stock_groups", "select=primary_code,related_codes")
     group_fallback: dict[str, str] = {}
@@ -1216,23 +1237,25 @@ def resolve_docs_for_site(
     """
     docs: list[dict[str, str]] = []
     for code in stockcodes:
+        norm = _norm_code(code)
         # Filter: skip codes that are not in the Chemical Register and have no group fallback
         # to a registered code. This removes accessories/equipment from email sends.
         if register_codes is not None:
-            primary_fallback = group_fallback.get(code, "")
-            if code not in register_codes and primary_fallback not in register_codes:
+            primary_fallback = group_fallback.get(code, "") or group_fallback.get(norm, "")
+            if code not in register_codes and norm not in register_codes and primary_fallback not in register_codes:
                 continue
 
-        primary = group_fallback.get(code, "")
-        sds_url = sds_map.get(code, "") or (sds_map.get(primary, "") if primary else "")
+        primary = group_fallback.get(code, "") or group_fallback.get(norm, "")
+        sds_url = sds_map.get(code) or sds_map.get(norm) or (sds_map.get(primary) if primary else "") or ""
         risk_required = (
             risk_required_set is None
             or code in risk_required_set
+            or norm in risk_required_set
             or (primary and primary in risk_required_set)
         )
         risk_url = ""
         if risk_required:
-            risk_url = risk_map.get(code, "") or (risk_map.get(primary, "") if primary else "")
+            risk_url = risk_map.get(code) or risk_map.get(norm) or (risk_map.get(primary) if primary else "") or ""
         if sds_url or risk_url:
             docs.append({"code": code, "sds_url": sds_url, "risk_url": risk_url})
 
