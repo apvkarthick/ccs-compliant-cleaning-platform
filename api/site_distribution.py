@@ -5,6 +5,7 @@ import io
 import json
 import os
 import re
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
 from urllib.error import HTTPError
@@ -467,6 +468,42 @@ def generate_chemical_register_excel(
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+_COVER_SHEET_SPACES_URL: str = ""
+
+def _get_cover_sheet_url(public_base_url: str) -> str:
+    """Upload cover sheet PDF to DO Spaces once per process and return its public URL.
+    Falls back to the API asset URL if Spaces credentials are unavailable."""
+    global _COVER_SHEET_SPACES_URL
+    if _COVER_SHEET_SPACES_URL:
+        return _COVER_SHEET_SPACES_URL
+    filename = "CCS-SDS-Chemical-Register-Risk-Assessment-Cover-Sheet.pdf"
+    pdf_path = Path(__file__).resolve().parent / "assets" / filename
+    try:
+        import boto3
+        region = os.getenv("DO_SPACES_REGION", "syd1")
+        bucket = os.getenv("DO_SPACES_BUCKET", "simplyrun-media")
+        s3 = boto3.client(
+            "s3",
+            region_name=region,
+            endpoint_url=os.getenv("DO_SPACES_ENDPOINT", f"https://{region}.digitaloceanspaces.com"),
+            aws_access_key_id=os.getenv("DO_SPACES_KEY", ""),
+            aws_secret_access_key=os.getenv("DO_SPACES_SECRET", ""),
+        )
+        key = f"ccs/assets/{filename}"
+        s3.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=pdf_path.read_bytes(),
+            ACL="public-read",
+            ContentType="application/pdf",
+            ContentDisposition=f'attachment; filename="{filename}"',
+        )
+        _COVER_SHEET_SPACES_URL = f"https://{bucket}.{region}.digitaloceanspaces.com/{key}"
+    except Exception:
+        _COVER_SHEET_SPACES_URL = f"{public_base_url}/api/assets/{filename}" if public_base_url else ""
+    return _COVER_SHEET_SPACES_URL
 
 
 def upload_register_to_spaces(xlsx_bytes: bytes, accno: str, date_str: str) -> str:
@@ -1348,7 +1385,7 @@ def compose_site_email(
         "html": html_body,
         "documents": documents,
     }
-    cover_sheet_url = f"{public_base_url}/api/assets/CCS-SDS-Chemical-Register-Risk-Assessment-Cover-Sheet.pdf" if public_base_url else ""
+    cover_sheet_url = _get_cover_sheet_url(public_base_url)
     attachments = ([cover_sheet_url] if cover_sheet_url else []) + ([register_url] if register_url else [])
     if attachments:
         msg["attachments"] = attachments
