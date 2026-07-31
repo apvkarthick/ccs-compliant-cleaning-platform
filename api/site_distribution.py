@@ -978,11 +978,28 @@ def get_missing_docs() -> dict[str, list[dict]]:
                 all_codes.add(c)
 
     links = _sb_get_all("ccs_sds_links", "select=stock_code,sds_url,risk_url,risk_assessment_required,product_name")
-    link_map: dict[str, dict] = {r["stock_code"]: r for r in links}
-    sds_map = {r["stock_code"]: r["sds_url"] for r in links if r.get("sds_url")}
-    risk_map = {r["stock_code"]: r["risk_url"] for r in links if r.get("risk_url")}
-    risk_required_set = {r["stock_code"] for r in links if r.get("risk_assessment_required")}
-    register_codes = {r["stock_code"] for r in links if r.get("product_name")}
+    link_map: dict[str, dict] = {}
+    sds_map: dict[str, str] = {}
+    risk_map: dict[str, str] = {}
+    risk_required_set: set[str] = set()
+    register_codes: set[str] = set()
+    for r in links:
+        code = r["stock_code"]
+        norm = _norm_code(code)
+        link_map[code] = r
+        link_map.setdefault(norm, r)
+        if r.get("sds_url"):
+            sds_map[code] = r["sds_url"]
+            sds_map.setdefault(norm, r["sds_url"])
+        if r.get("risk_url"):
+            risk_map[code] = r["risk_url"]
+            risk_map.setdefault(norm, r["risk_url"])
+        if r.get("risk_assessment_required"):
+            risk_required_set.add(code)
+            risk_required_set.add(norm)
+        if r.get("product_name"):
+            register_codes.add(code)
+            register_codes.add(norm)
 
     groups = _sb_get_all("ccs_stock_groups", "select=primary_code,related_codes")
     group_fallback: dict[str, str] = {}
@@ -999,18 +1016,19 @@ def get_missing_docs() -> dict[str, list[dict]]:
     risk_missing: list[dict] = []
 
     for code in sorted(all_codes):
-        primary = group_fallback.get(code, "")
+        norm = _norm_code(code)
+        primary = group_fallback.get(code, "") or group_fallback.get(norm, "")
         # Only report codes that are in the Chemical Register (or resolve to one).
         # Products not in the register don't require SDS/risk docs.
-        if code not in register_codes and (not primary or primary not in register_codes):
+        if code not in register_codes and norm not in register_codes and (not primary or primary not in register_codes):
             continue
-        product_name = (link_map.get(code) or (link_map.get(primary) if primary else None) or {}).get("product_name") or ""
-        # Mirror resolve_docs_for_site: check code first, then fallback primary
-        sds_found = code in sds_map or (primary and primary in sds_map)
+        product_name = (link_map.get(code) or link_map.get(norm) or (link_map.get(primary) if primary else None) or {}).get("product_name") or ""
+        # Mirror resolve_docs_for_site: check code/norm first, then fallback primary
+        sds_found = code in sds_map or norm in sds_map or (primary and primary in sds_map)
         if not sds_found:
             sds_missing.append({"code": code, "product_name": product_name})
-        risk_required = code in risk_required_set or (primary and primary in risk_required_set)
-        risk_found = code in risk_map or (primary and primary in risk_map)
+        risk_required = code in risk_required_set or norm in risk_required_set or (primary and primary in risk_required_set)
+        risk_found = code in risk_map or norm in risk_map or (primary and primary in risk_map)
         if risk_required and not risk_found:
             risk_missing.append({"code": code, "product_name": product_name})
 
