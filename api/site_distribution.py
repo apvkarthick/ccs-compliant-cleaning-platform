@@ -86,8 +86,8 @@ def parse_sds_links(sds_data: bytes | None = None, risk_data: bytes | None = Non
             if not url or url == "nan":
                 continue
             fname = url.split("/")[-1]
-            # Include . in char class to handle codes like ENZYMO12.5KG
-            m = re.match(r"([A-Z0-9.]+(?:-[0-9]+)?)[_\-]", fname)
+            # Include . for ENZYMO12.5KG; (?:_\d+)? for GOJO7255_04-style suffix
+            m = re.match(r"([A-Z0-9.]+(?:_[0-9]+)?(?:-[0-9]+)?)[_\-]", fname)
             if m:
                 sds_map[_norm_code(m.group(1))] = url
 
@@ -98,7 +98,7 @@ def parse_sds_links(sds_data: bytes | None = None, risk_data: bytes | None = Non
             if not url or url == "nan":
                 continue
             fname = url.split("/")[-1]
-            m = re.match(r"RISK_([A-Z0-9.]+(?:-[0-9]+)?)[_\-]", fname)
+            m = re.match(r"RISK_([A-Z0-9.]+(?:_[0-9]+)?(?:-[0-9]+)?)[_\-]", fname)
             if m:
                 risk_map[_norm_code(m.group(1))] = url
 
