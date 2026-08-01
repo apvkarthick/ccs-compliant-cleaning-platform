@@ -912,6 +912,7 @@ function SiteDistribution() {
   const [bulkResume, setBulkResume] = useState(false);
   const [bulkSending, setBulkSending] = useState(false);
   const [bulkResult, setBulkResult] = useState('');
+  const [bulkConfirmData, setBulkConfirmData] = useState(null);
   const [presendCheck, setPresendCheck] = useState(null);
   const [presendLoading, setPresendLoading] = useState(false);
   const [bulkTaskId, setBulkTaskId] = useState('');
@@ -1033,8 +1034,23 @@ function SiteDistribution() {
   }
 
   async function handleBulkSend() {
-    const resumeLabel = bulkResume ? ' (resume — skipping already sent today)' : '';
-    if (!bulkDryRun && !confirm(`Send live emails to all active sites now?${resumeLabel}`)) return;
+    if (bulkDryRun) { await executeBulkSend(); return; }
+    // Live send: fetch presend check first, show confirmation modal
+    setBulkSending(true);
+    setBulkResult('');
+    try {
+      const skipSince = bulkResume ? new Date().toISOString().slice(0, 10) + 'T00:00:00Z' : '';
+      const params = new URLSearchParams();
+      if (skipSince) params.set('skip_sent_since', skipSince);
+      const r = await fetch(`${API_BASE}/site-distribution/presend-check?${params}`, { headers: getAuthHeaders() });
+      if (r.ok) setBulkConfirmData(await r.json());
+      else setBulkResult('Error fetching presend check');
+    } catch (err) { setBulkResult(`Error: ${err.message}`); }
+    finally { setBulkSending(false); }
+  }
+
+  async function executeBulkSend() {
+    setBulkConfirmData(null);
     setBulkSending(true);
     setBulkResult('');
     setBulkTaskResult(null);
@@ -1726,6 +1742,41 @@ function SiteDistribution() {
             <div style={{ background: '#f3f4f6', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 12, color: '#607080' }}>{previewData.docs} document(s) · {previewData.site_name}</span>
               <button className="btn-ghost" onClick={() => setPreviewData(null)} style={{ fontSize: 12 }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk send confirmation modal */}
+      {bulkConfirmData && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setBulkConfirmData(null)}>
+          <div style={{ background: '#fff', borderRadius: 10, width: 420, maxWidth: '94vw', boxShadow: '0 12px 40px rgba(0,0,0,0.25)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+            <div style={{ background: '#1e2633', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>Confirm bulk send</span>
+              <button onClick={() => setBulkConfirmData(null)} style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ padding: '20px 24px' }}>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: '#607080', marginBottom: 4 }}>Frequency</div>
+                <div style={{ fontWeight: 600, fontSize: 14, color: '#17202a' }}>
+                  {({'weekly':'Weekly','biweekly':'Every 2 weeks','monthly':'Monthly'})[schedFreq] || (schedFreq === 'custom' ? `Every ${schedCustomDays} days` : schedFreq)}
+                  {bulkResume && <span style={{ marginLeft: 8, fontSize: 12, color: '#5b21b6', fontWeight: 400 }}>Resume mode</span>}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+                <span style={{ background: '#dcfce7', color: '#166534', fontWeight: 700, borderRadius: 4, padding: '4px 10px', fontSize: 13 }}>{bulkConfirmData.totals.will_send} sites will be emailed</span>
+                {bulkConfirmData.totals.skip_no_email > 0 && <span style={{ background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '4px 10px', fontSize: 12 }}>{bulkConfirmData.totals.skip_no_email} no email</span>}
+                {bulkConfirmData.totals.skip_no_docs > 0 && <span style={{ background: '#fef3c7', color: '#92400e', borderRadius: 4, padding: '4px 10px', fontSize: 12 }}>{bulkConfirmData.totals.skip_no_docs} no docs</span>}
+                {bulkConfirmData.totals.skip_held > 0 && <span style={{ background: '#f0f4f7', color: '#607080', borderRadius: 4, padding: '4px 10px', fontSize: 12 }}>{bulkConfirmData.totals.skip_held} on hold</span>}
+                {bulkConfirmData.totals.skip_already_sent > 0 && <span style={{ background: '#ede9fe', color: '#5b21b6', borderRadius: 4, padding: '4px 10px', fontSize: 12 }}>{bulkConfirmData.totals.skip_already_sent} already sent</span>}
+              </div>
+              <p style={{ fontSize: 12, color: '#607080', margin: '0 0 20px' }}>Live emails will be sent immediately. This cannot be undone.</p>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button className="btn-ghost" onClick={() => setBulkConfirmData(null)} style={{ fontSize: 13, padding: '7px 16px' }}>Cancel</button>
+                <button className="primary" onClick={executeBulkSend} style={{ fontSize: 13, padding: '7px 18px', background: '#166534' }}>
+                  Proceed — Send to {bulkConfirmData.totals.will_send} sites
+                </button>
+              </div>
             </div>
           </div>
         </div>

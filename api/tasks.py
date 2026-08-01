@@ -12,9 +12,6 @@ def run_scheduled_distributions() -> dict:
     from .workbooks import advance_schedule, get_due_schedules, load_workbook
     from .site_distribution import notify_admin_failure
 
-    if os.getenv("CCS_BULK_SEND_DISABLED") == "1":
-        return {"triggered": 0, "errors": [], "skipped": True, "reason": "CCS_BULK_SEND_DISABLED=1"}
-
     due = get_due_schedules()
     if not due:
         return {"triggered": 0, "errors": []}

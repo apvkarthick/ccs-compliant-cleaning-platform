@@ -308,9 +308,6 @@ def send_sites_now(
     skip_sent_since: str = Query(default=""),
     _auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
-    import os
-    if os.getenv("CCS_BULK_SEND_DISABLED") == "1" and not dry_run:
-        raise HTTPException(status_code=503, detail="Bulk send is disabled — use manual send for testing")
     from .workbooks import advance_schedule, get_schedule
     batch_id = f"sendnow_sites_{uuid.uuid4().hex[:8]}"
     task = site_distribution_task.delay(dry_run=dry_run, batch_id=batch_id, skip_sent_since=skip_sent_since)
