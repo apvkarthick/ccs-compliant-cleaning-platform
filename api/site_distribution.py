@@ -682,6 +682,7 @@ def import_mapping(
     risk_bytes: bytes | None = None,
     grouping_bytes: bytes | None = None,
     register_bytes: bytes | None = None,
+    pulled_files: dict | None = None,
 ) -> dict[str, int]:
     now = _now()
 
@@ -746,13 +747,16 @@ def import_mapping(
 
     # Record import event — ignore failure so it doesn't block the import response
     try:
-        _sb_post_batch("ccs_import_history", [{
+        row: dict = {
             "imported_at": now,
             "sites_count": len(sites),
             "sds_links_count": len(links),
             "groups_count": group_count,
             "register_count": register_count,
-        }])
+        }
+        if pulled_files is not None:
+            row["pulled_files"] = pulled_files
+        _sb_post_batch("ccs_import_history", [row])
     except Exception:
         pass
 

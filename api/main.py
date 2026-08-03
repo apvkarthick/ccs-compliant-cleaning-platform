@@ -501,6 +501,7 @@ def import_from_sharepoint(_auth: dict = Depends(require_auth)) -> dict[str, Any
         risk_bytes=_bytes("risk_links"),
         grouping_bytes=_bytes("stock_groups"),
         register_bytes=_bytes("chemical_register"),
+        pulled_files=pulled,
     )
     return {**result, "pulled_files": pulled, "sp_errors": sp_errors}
 
