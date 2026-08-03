@@ -1246,6 +1246,32 @@ function SiteDistribution() {
                 </ul>
               </div>
             </div>
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #c9d8ff' }}>
+              <strong style={{ color: '#2C6B33' }}>Bulk Send &amp; Schedule</strong>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 32px', marginTop: 6 }}>
+                <div>
+                  <strong style={{ fontSize: 12 }}>One-off send</strong>
+                  <ol style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
+                    <li>Tick <strong>Dry run</strong> → click <strong>Test bulk send</strong> to preview without sending</li>
+                    <li>Untick <strong>Dry run</strong> → click <strong>Send all sites now</strong></li>
+                    <li>Confirmation popup shows site count + skips — click <strong>Proceed</strong> to confirm</li>
+                  </ol>
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: '#607080' }}><strong>Resume</strong> — tick only if a send failed halfway; skips sites already emailed today</p>
+                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#607080' }}><strong>Check before send</strong> — preview site counts without sending anything</p>
+                </div>
+                <div>
+                  <strong style={{ fontSize: 12 }}>Recurring schedule (auto-send)</strong>
+                  <ol style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
+                    <li>Pick frequency: Weekly / Every 2 weeks / Monthly / Custom</li>
+                    <li>Set <strong>First send</strong> date</li>
+                    <li>Untick <strong>Dry run</strong> for real sends</li>
+                    <li>Click <strong>Save schedule</strong> — system sends automatically and repeats</li>
+                  </ol>
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: '#607080' }}>Save again anytime to change frequency or date — overwrites previous schedule</p>
+                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#607080' }}><strong>Daily cap (700)</strong> — if more than 700 sites, excess auto-queues to next day(s)</p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
