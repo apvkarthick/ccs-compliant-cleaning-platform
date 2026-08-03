@@ -1022,17 +1022,18 @@ def get_missing_docs() -> dict[str, list[dict]]:
     for code in sorted(all_codes):
         norm = _norm_code(code)
         primary = group_fallback.get(code, "") or group_fallback.get(norm, "")
+        norm_primary = _norm_code(primary) if primary else ""
         # Only report codes that are in the Chemical Register (or resolve to one).
         # Products not in the register don't require SDS/risk docs.
-        if code not in register_codes and norm not in register_codes and (not primary or primary not in register_codes):
+        if code not in register_codes and norm not in register_codes and (not primary or (primary not in register_codes and norm_primary not in register_codes)):
             continue
-        product_name = (link_map.get(code) or link_map.get(norm) or (link_map.get(primary) if primary else None) or {}).get("product_name") or ""
-        # Mirror resolve_docs_for_site: check code/norm first, then fallback primary
-        sds_found = code in sds_map or norm in sds_map or (primary and primary in sds_map)
+        product_name = (link_map.get(code) or link_map.get(norm) or (link_map.get(primary) if primary else None) or (link_map.get(norm_primary) if norm_primary else None) or {}).get("product_name") or ""
+        # Mirror resolve_docs_for_site: check code/norm first, then fallback primary (raw + normalized)
+        sds_found = code in sds_map or norm in sds_map or (primary and (primary in sds_map or norm_primary in sds_map))
         if not sds_found:
             sds_missing.append({"code": code, "product_name": product_name})
-        risk_required = code in risk_required_set or norm in risk_required_set or (primary and primary in risk_required_set)
-        risk_found = code in risk_map or norm in risk_map or (primary and primary in risk_map)
+        risk_required = code in risk_required_set or norm in risk_required_set or (primary and (primary in risk_required_set or norm_primary in risk_required_set))
+        risk_found = code in risk_map or norm in risk_map or (primary and (primary in risk_map or norm_primary in risk_map))
         if risk_required and not risk_found:
             risk_missing.append({"code": code, "product_name": product_name})
 
