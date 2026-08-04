@@ -1955,6 +1955,19 @@ function CustomerActions() {
                     if (e.key === 'Enter') { e.preventDefault(); if (ncSugInput.trim()) ncAddCode(ncSugInput.trim()); }
                     if (e.key === 'Escape') setNcSuggestions([]);
                   }}
+                  onPaste={e => {
+                    const text = e.clipboardData.getData('text');
+                    if (!text.includes('\n') && !text.includes('\t')) return;
+                    e.preventDefault();
+                    const codes = text.split(/[\n\t,]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+                    if (!codes.length) return;
+                    setNcForm(f => {
+                      const existing = f.stockcodes_text ? f.stockcodes_text.split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(Boolean) : [];
+                      const merged = [...existing, ...codes.filter(c => !existing.includes(c))];
+                      return { ...f, stockcodes_text: merged.join('\n') };
+                    });
+                    setNcSugInput(''); setNcSuggestions([]);
+                  }}
                   placeholder="Type to search product codes…"
                   style={{ width: '100%', padding: '6px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 13, boxSizing: 'border-box' }}
                 />
@@ -1971,7 +1984,7 @@ function CustomerActions() {
                   </div>
                 )}
               </div>
-              <p style={{ margin: '3px 0 0', fontSize: 11, color: '#99aabb' }}>Search and click to add codes. Press Enter to add typed code directly.</p>
+              <p style={{ margin: '3px 0 0', fontSize: 11, color: '#99aabb' }}>Search and click to add codes. Press Enter to add typed code directly. Paste multiple codes from Excel (one per row) to bulk-add.</p>
             </div>
             <label style={{ fontSize: 12, color: '#445', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
               <input type="checkbox" checked={ncForm.dry_run} onChange={e => setNcForm(f => ({ ...f, dry_run: e.target.checked }))} />
