@@ -1969,7 +1969,7 @@ function CustomerActions() {
                     setNcSugInput(''); setNcSuggestions([]);
                   }}
                   placeholder="Type to search product codes…"
-                  style={{ width: '100%', padding: '6px 8px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 13, boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '10px 12px', border: '1px solid #d8e1e8', borderRadius: 5, fontSize: 14, boxSizing: 'border-box' }}
                 />
                 {ncSuggestions.length > 0 && (
                   <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #d8e1e8', borderRadius: 5, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 200, maxHeight: 200, overflowY: 'auto' }}>
