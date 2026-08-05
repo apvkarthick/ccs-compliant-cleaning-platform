@@ -954,6 +954,26 @@ def send_new_customer_endpoint(
     return {"status": result.get("status", "ok"), "docs": len(docs), "email": req.email, "saved_accno": effective_accno}
 
 
+class SdsUpdateAlertRequest(BaseModel):
+    stock_codes: list[str]
+    test_email: str | None = None
+    dry_run: bool = False
+
+
+@app.post("/site-distribution/sds-update-alert")
+def sds_update_alert_endpoint(
+    req: SdsUpdateAlertRequest,
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    """Send or preview an updated-SDS alert for given stock codes.
+    dry_run=True returns affected site count without sending.
+    test_email sends only to that address using the first matching site's data."""
+    from .site_distribution import send_sds_update_alert
+    if not req.stock_codes:
+        raise HTTPException(status_code=400, detail="stock_codes required")
+    return send_sds_update_alert(req.stock_codes, test_email=req.test_email, dry_run=req.dry_run)
+
+
 class ReportTriggerRequest(BaseModel):
     email: str | None = None
 

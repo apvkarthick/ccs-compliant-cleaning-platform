@@ -2051,6 +2051,40 @@ function ImportTools() {
   const [invalidEmailsLoading, setInvalidEmailsLoading] = useState(false);
   const INVALID_PAGE = 50;
   const [invalidShowAll, setInvalidShowAll] = useState(false);
+  const [sdsAlertCodes, setSdsAlertCodes] = useState('');
+  const [sdsAlertTestEmail, setSdsAlertTestEmail] = useState('');
+  const [sdsAlertState, setSdsAlertState] = useState(null); // null | 'checking' | 'checked' | 'sending' | 'done'
+  const [sdsAlertResult, setSdsAlertResult] = useState(null);
+
+  async function checkSdsAlert() {
+    if (!sdsAlertCodes.trim()) return;
+    setSdsAlertState('checking'); setSdsAlertResult(null);
+    const codes = sdsAlertCodes.split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/sds-update-alert`, {
+        method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stock_codes: codes, dry_run: true }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Check failed');
+      setSdsAlertResult(data); setSdsAlertState('checked');
+    } catch (err) { setSdsAlertResult({ error: err.message }); setSdsAlertState('checked'); }
+  }
+
+  async function sendSdsAlert() {
+    const codes = sdsAlertCodes.split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+    if (!codes.length) return;
+    setSdsAlertState('sending');
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/sds-update-alert`, {
+        method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stock_codes: codes, test_email: sdsAlertTestEmail.trim() || null, dry_run: false }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Send failed');
+      setSdsAlertResult(data); setSdsAlertState('done');
+    } catch (err) { setSdsAlertResult({ error: err.message }); setSdsAlertState('done'); }
+  }
 
   async function handleSpPull() {
     setSpPulling(true); setSpPullError(''); setSpPullResult(null); setError(''); setNotice('');
@@ -2230,6 +2264,53 @@ function ImportTools() {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Updated SDS Alert */}
+      <div style={{ ...card, marginTop: 24 }}>
+        <label style={{ fontWeight: 700, fontSize: 14, color: '#17202a', display: 'block', marginBottom: 4 }}>Updated SDS Alert</label>
+        <p style={{ fontSize: 12, color: '#607080', margin: '0 0 14px' }}>
+          Enter stock code(s) whose SDS has been updated. System finds all sites that use those products and sends an alert email with the new SDS.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Stock codes (one per line or comma-separated)</label>
+            <textarea
+              value={sdsAlertCodes}
+              onChange={e => { setSdsAlertCodes(e.target.value); setSdsAlertState(null); setSdsAlertResult(null); }}
+              placeholder={'CHLORADET5L\nEUCALYPT5L'}
+              rows={3}
+              style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d9e0', borderRadius: 5, fontSize: 13, boxSizing: 'border-box', fontFamily: 'monospace', resize: 'vertical' }}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Test email (optional — leave blank to send to all affected sites)</label>
+            <input type="email" value={sdsAlertTestEmail} onChange={e => setSdsAlertTestEmail(e.target.value)}
+              placeholder="e.g. test@example.com"
+              style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d9e0', borderRadius: 5, fontSize: 13, boxSizing: 'border-box' }} />
+            <p style={{ fontSize: 11, color: '#607080', margin: '3px 0 0' }}>If filled, sends only to this address using the first matching site&apos;s data. Use to verify the email before sending to all sites.</p>
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button onClick={checkSdsAlert} disabled={!sdsAlertCodes.trim() || sdsAlertState === 'checking' || sdsAlertState === 'sending'}
+              className="btn-ghost" style={{ fontSize: 13 }}>
+              {sdsAlertState === 'checking' ? 'Checking…' : 'Check affected sites'}
+            </button>
+            <button onClick={sendSdsAlert} disabled={!sdsAlertCodes.trim() || sdsAlertState === 'sending' || sdsAlertState === 'checking'}
+              style={{ background: sdsAlertState === 'sending' ? '#f0f4f8' : '#7c3aed', color: sdsAlertState === 'sending' ? '#607080' : '#fff', border: 'none', borderRadius: 5, padding: '7px 18px', fontSize: 13, fontWeight: 600, cursor: sdsAlertState === 'sending' ? 'not-allowed' : 'pointer' }}>
+              {sdsAlertState === 'sending' ? 'Sending…' : (sdsAlertTestEmail.trim() ? 'Test send' : 'Send alerts to all affected sites')}
+            </button>
+          </div>
+          {sdsAlertResult && (
+            <div style={{ background: sdsAlertResult.error ? '#fee2e2' : '#f0fdf4', border: `1px solid ${sdsAlertResult.error ? '#fca5a5' : '#86efac'}`, borderRadius: 6, padding: '10px 14px', fontSize: 13 }}>
+              {sdsAlertResult.error
+                ? <span style={{ color: '#991b1b' }}>{sdsAlertResult.error}</span>
+                : sdsAlertState === 'checked'
+                  ? <span style={{ color: '#166534' }}><strong>{sdsAlertResult.affected_sites}</strong> site{sdsAlertResult.affected_sites !== 1 ? 's' : ''} use these product{sdsAlertCodes.split(/[\n,]+/).filter(s => s.trim()).length !== 1 ? 's' : ''}. Ready to send alerts.</span>
+                  : <span style={{ color: '#166534' }}><strong>{sdsAlertResult.sent}</strong> sent{sdsAlertResult.failed > 0 ? `, ${sdsAlertResult.failed} failed` : ''} across <strong>{sdsAlertResult.affected_sites}</strong> affected sites.</span>
+              }
+            </div>
+          )}
         </div>
       </div>
 

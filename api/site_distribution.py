@@ -1335,6 +1335,135 @@ _NEW_PRODUCT_BODY_INTRO = (
 )
 
 
+def _sds_update_body_intro(product_names: list[str]) -> str:
+    if len(product_names) == 1:
+        product_str = f'<strong>{product_names[0]}</strong>'
+    else:
+        parts = [f'<strong>{n}</strong>' for n in product_names]
+        product_str = ', '.join(parts[:-1]) + ' and ' + parts[-1]
+    verb = 'are' if len(product_names) > 1 else 'is'
+    return (
+        '<p style="margin:0 0 14px;color:#17202a;font-size:15px;line-height:1.6;">'
+        'You are receiving this email because you purchase chemicals from us &amp; one of them has an expired SDS.</p>'
+        f'<p style="margin:0 0 14px;color:#17202a;font-size:15px;line-height:1.6;">'
+        f'The product{" is" if verb == "is" else "s are"} called {product_str}. '
+        'We&#8217;re providing you with the latest Safety Data Sheet (SDS) and Risk Assessment to help keep '
+        'your Chemical Register up to date and maintain compliance.</p>'
+        '<p style="margin:0 0 14px;color:#17202a;font-size:15px;line-height:1.6;">'
+        'Maintaining an up-to-date Chemical Register with current Safety Data Sheets (SDS) and Risk Assessments '
+        'is a legal requirement.</p>'
+        '<p style="margin:0 0 8px;color:#2C6B33;font-size:15px;font-weight:700;line-height:1.6;">What you need to do</p>'
+        '<p style="margin:0 0 8px;color:#17202a;font-size:15px;line-height:1.6;">'
+        'The list below includes the new SDS and all the chemical products your site has purchased from us during '
+        'the past 12 months. Please follow these instructions to update your chemical compliance records:</p>'
+        '<ol style="margin:0 0 20px;padding-left:22px;color:#17202a;font-size:15px;line-height:1.6;">'
+        '<li style="margin-bottom:6px;"><strong>Download the documents</strong> &#8212; Click each relevant box to '
+        'download and print the latest SDS and Risk Assessment.</li>'
+        '<li style="margin-bottom:6px;"><strong>Keep the same order</strong> &#8212; Print the documents in the order '
+        'shown below so they match the product listing in the Chemical Register.</li>'
+        '<li style="margin-bottom:6px;"><strong>Always update the register</strong> &#8212; Download and use the latest '
+        'Chemical Register&#8212;even if you are only updating a small number of SDS or Risk Assessments.</li>'
+        '</ol>'
+    )
+
+
+def send_sds_update_alert(
+    stock_codes: list[str],
+    test_email: str | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Find all sites that have any of stock_codes and send them an updated-SDS alert email."""
+    import re
+    import time
+    EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+    if not stock_codes:
+        return {"error": "No stock codes provided"}
+
+    norm_inputs = {_norm_code(c) for c in stock_codes}
+
+    held_set = {r["accno"] for r in _sb_get_all("ccs_site_holds", "select=accno")}
+    all_sites = _sb_get_all("ccs_site_mapping", "select=*&order=name.asc")
+
+    matching_sites = []
+    for site in all_sites:
+        if site["accno"] in held_set:
+            continue
+        site_norms = {_norm_code(c) for c in (site.get("stockcodes") or [])}
+        if site_norms & norm_inputs:
+            matching_sites.append(site)
+
+    if dry_run:
+        return {
+            "affected_sites": len(matching_sites),
+            "sites": [{"accno": s["accno"], "name": s.get("name", "")} for s in matching_sites],
+        }
+
+    # Resolve product display names for the alert intro
+    meta = fetch_product_metadata(stock_codes)
+    product_names = []
+    for code in stock_codes:
+        name = (meta.get(code) or meta.get(_norm_code(code)) or {}).get("product_name") or code
+        if name not in product_names:
+            product_names.append(name)
+
+    body_intro = _sds_update_body_intro(product_names)
+    subject = "A chemical you use has an updated SDS – Action Required"
+    public_base = os.environ.get("CCS_PUBLIC_BASE_URL", "").rstrip("/")
+    tracking_secret = os.environ.get("CCS_TRACKING_HMAC_SECRET", "")
+
+    sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
+
+    from .distribution import _find_or_create_ghl_contact_id, _send_messages_via_ghl
+
+    sites_to_process = [matching_sites[0]] if (test_email and matching_sites) else matching_sites
+    sent, failed = 0, []
+
+    for site in sites_to_process:
+        accno = site["accno"]
+        emails_raw = site.get("emails") or []
+        send_to = [test_email] if test_email else [e for e in emails_raw if EMAIL_RE.match(e)]
+        if not send_to:
+            failed.append({"accno": accno, "reason": "no valid email"})
+            continue
+        docs = resolve_docs_for_site(
+            site.get("stockcodes") or [],
+            sds_map, risk_map, group_fallback, risk_required_set, register_codes,
+        )
+        if not docs:
+            failed.append({"accno": accno, "reason": "no docs found"})
+            continue
+        batch_id = f"sdsalert_{accno}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+        for email in send_to:
+            try:
+                msg = compose_site_email(
+                    site, docs, email,
+                    batch_id=batch_id,
+                    public_base_url=public_base,
+                    tracking_secret=tracking_secret,
+                    subject=subject,
+                    body_intro=body_intro,
+                )
+                contact_id = _find_or_create_ghl_contact_id({"email": email, "name": site.get("name", "")})
+                if contact_id:
+                    msg["contact_id"] = contact_id
+                ghl = _send_messages_via_ghl([msg])
+                if ghl.get("status") == "sent":
+                    sent += 1
+                else:
+                    failed.append({"accno": accno, "email": email, "error": ghl.get("reason", "send failed")})
+                time.sleep(0.3)
+            except Exception as exc:
+                failed.append({"accno": accno, "email": email, "error": str(exc)})
+
+    return {
+        "affected_sites": len(matching_sites),
+        "sent": sent,
+        "failed": len(failed),
+        "failed_details": failed,
+    }
+
+
 def compose_site_email(
     site: dict[str, Any],
     docs: list[dict[str, str]],
