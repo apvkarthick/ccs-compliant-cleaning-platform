@@ -714,10 +714,23 @@ def import_mapping(
     links: list[dict] = []
     if sds_bytes or risk_bytes:
         links = parse_sds_links(sds_bytes, risk_bytes)
-        _sb_post_batch(
-            "ccs_sds_links",
-            [{**lnk, "imported_at": now} for lnk in links if lnk.get("sds_url") or lnk.get("risk_url")],
-        )
+        incoming = [lnk for lnk in links if lnk.get("sds_url") or lnk.get("risk_url")]
+        if incoming:
+            codes = [lnk["stock_code"] for lnk in incoming]
+            existing = {
+                r["stock_code"]: r
+                for r in _sb_get("ccs_sds_links", f"select=stock_code,sds_url,risk_url&stock_code={_in_filter(codes)}")
+            }
+            stamped = []
+            for lnk in incoming:
+                row = {**lnk, "imported_at": now}
+                prev = existing.get(lnk["stock_code"]) or {}
+                if lnk.get("sds_url") and lnk.get("sds_url") != prev.get("sds_url"):
+                    row["sds_url_updated_at"] = now
+                if lnk.get("risk_url") and lnk.get("risk_url") != prev.get("risk_url"):
+                    row["risk_url_updated_at"] = now
+                stamped.append(row)
+            _sb_post_batch("ccs_sds_links", stamped)
 
     group_count = 0
     if grouping_bytes:

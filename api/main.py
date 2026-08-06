@@ -974,6 +974,22 @@ def sds_update_alert_endpoint(
     return send_sds_update_alert(req.stock_codes, test_email=req.test_email, dry_run=req.dry_run)
 
 
+@app.get("/site-distribution/sds-recently-updated")
+def sds_recently_updated(
+    days: int = Query(default=30),
+    _auth: dict = Depends(require_auth),
+) -> list[str]:
+    """Return stock codes whose SDS or Risk URL changed within the last N days."""
+    from datetime import datetime, timezone, timedelta
+    from .site_distribution import _sb_get_all
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    rows = _sb_get_all(
+        "ccs_sds_links",
+        f"select=stock_code&or=(sds_url_updated_at.gte.{cutoff},risk_url_updated_at.gte.{cutoff})",
+    )
+    return [r["stock_code"] for r in rows]
+
+
 class ReportTriggerRequest(BaseModel):
     email: str | None = None
 

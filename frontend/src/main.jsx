@@ -2055,6 +2055,7 @@ function ImportTools() {
   const [sdsAlertTestEmail, setSdsAlertTestEmail] = useState('');
   const [sdsAlertState, setSdsAlertState] = useState(null); // null | 'checking' | 'checked' | 'sending' | 'done'
   const [sdsAlertResult, setSdsAlertResult] = useState(null);
+  const [sdsRecentLoading, setSdsRecentLoading] = useState(false);
 
   async function checkSdsAlert() {
     if (!sdsAlertCodes.trim()) return;
@@ -2069,6 +2070,18 @@ function ImportTools() {
       if (!r.ok) throw new Error(data.detail || 'Check failed');
       setSdsAlertResult(data); setSdsAlertState('checked');
     } catch (err) { setSdsAlertResult({ error: err.message }); setSdsAlertState('checked'); }
+  }
+
+  async function loadRecentlyUpdatedSds() {
+    setSdsRecentLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/sds-recently-updated?days=30`, { headers: getAuthHeaders() });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Failed');
+      if (data.length) { setSdsAlertCodes(data.join('\n')); setSdsAlertState(null); setSdsAlertResult(null); }
+      else alert('No SDS/Risk URL changes detected in the last 30 days.');
+    } catch (err) { alert(err.message); }
+    finally { setSdsRecentLoading(false); }
   }
 
   async function sendSdsAlert() {
@@ -2271,11 +2284,17 @@ function ImportTools() {
       <div style={{ ...card, marginTop: 24 }}>
         <label style={{ fontWeight: 700, fontSize: 14, color: '#17202a', display: 'block', marginBottom: 4 }}>Updated SDS Alert</label>
         <p style={{ fontSize: 12, color: '#607080', margin: '0 0 14px' }}>
-          Enter stock code(s) whose SDS has been updated. System finds all sites that use those products and sends an alert email with the new SDS.
+          Enter stock code(s) whose SDS or Risk PDF has been updated. System finds all sites that use those products and sends an alert email with the updated documents only.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div>
-            <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Stock codes (one per line or comma-separated)</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Stock codes (one per line or comma-separated)</label>
+              <button onClick={loadRecentlyUpdatedSds} disabled={sdsRecentLoading} className="btn-ghost"
+                style={{ fontSize: 11, padding: '3px 10px' }}>
+                {sdsRecentLoading ? 'Loading…' : 'Load recently updated (30 days)'}
+              </button>
+            </div>
             <textarea
               value={sdsAlertCodes}
               onChange={e => { setSdsAlertCodes(e.target.value); setSdsAlertState(null); setSdsAlertResult(null); }}
