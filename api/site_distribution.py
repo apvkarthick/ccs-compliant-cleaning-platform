@@ -1426,8 +1426,11 @@ def send_sds_update_alert(
         if not send_to:
             failed.append({"accno": accno, "reason": "no valid email"})
             continue
+        site_codes = site.get("stockcodes") or []
+        site_norm_map = {_norm_code(c): c for c in site_codes}
+        updated_site_codes = [site_norm_map[n] for n in norm_inputs if n in site_norm_map]
         docs = resolve_docs_for_site(
-            site.get("stockcodes") or [],
+            updated_site_codes,
             sds_map, risk_map, group_fallback, risk_required_set, register_codes,
         )
         if not docs:
