@@ -1030,9 +1030,9 @@ def track_msds_download(
     chem: str = Query(""),
     redirect: str = Query(...),
 ) -> HTMLResponse:
-    if not validate_tracking_signature(doc, contact, sig):
-        raise HTTPException(status_code=400, detail="Invalid or expired MSDS link")
-    acknowledgement = record_download_acknowledgement(doc, contact, chem)
+    acknowledgement = {}
+    if validate_tracking_signature(doc, contact, sig):
+        acknowledgement = record_download_acknowledgement(doc, contact, chem)
     safe_chem = html.escape(chem or "this MSDS document")
     safe_redirect = html.escape(redirect, quote=True)
     page = f"""<!doctype html>
