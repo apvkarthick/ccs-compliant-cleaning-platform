@@ -721,16 +721,21 @@ def import_mapping(
                 r["stock_code"]: r
                 for r in _sb_get("ccs_sds_links", f"select=stock_code,sds_url,risk_url&stock_code={_in_filter(codes)}")
             }
-            stamped = []
+            # PGRST102: all rows in a batch must have identical key sets.
+            # Split by which _updated_at fields are present to keep each batch homogeneous.
+            groups: dict[tuple, list] = {(False, False): [], (True, False): [], (False, True): [], (True, True): []}
             for lnk in incoming:
                 row = {**lnk, "imported_at": now}
                 prev = existing.get(lnk["stock_code"]) or {}
-                if lnk.get("sds_url") and lnk.get("sds_url") != prev.get("sds_url"):
+                sds_changed = bool(lnk.get("sds_url") and lnk.get("sds_url") != prev.get("sds_url"))
+                risk_changed = bool(lnk.get("risk_url") and lnk.get("risk_url") != prev.get("risk_url"))
+                if sds_changed:
                     row["sds_url_updated_at"] = now
-                if lnk.get("risk_url") and lnk.get("risk_url") != prev.get("risk_url"):
+                if risk_changed:
                     row["risk_url_updated_at"] = now
-                stamped.append(row)
-            _sb_post_batch("ccs_sds_links", stamped)
+                groups[(sds_changed, risk_changed)].append(row)
+            for batch in groups.values():
+                _sb_post_batch("ccs_sds_links", batch)
 
     group_count = 0
     if grouping_bytes:

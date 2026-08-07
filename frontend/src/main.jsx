@@ -2080,8 +2080,8 @@ function ImportTools() {
     setSpPulling(true); setSpPullError(''); setSpPullResult(null); setError(''); setNotice('');
     try {
       const r = await fetch(`${API_BASE}/site-distribution/import-from-sharepoint`, { method: 'POST', headers: getAuthHeaders() });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || 'SharePoint pull failed');
+      let data; try { data = await r.json(); } catch { data = {}; }
+      if (!r.ok) throw new Error(data.detail || `Server error ${r.status}`);
       const regNote = data.register ? `, ${data.register} register products` : '';
       setNotice(`SharePoint import: ${data.sites} sites, ${data.links} SDS/Risk links, ${data.groups} product groups${regNote}.`);
       setSpPullResult(data.pulled_files || {});
