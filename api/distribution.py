@@ -492,10 +492,33 @@ def fetch_distribution_batches() -> dict[str, Any]:
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     if not supabase_url or not service_key:
         return {"batches": [], "error": "Supabase not configured"}
-    endpoint = f"{supabase_url}/rest/v1/ccs_distribution_batches?order=sent_at.desc"
+    # Aggregate from ccs_email_opens — new sends write here, not ccs_distribution_batches
+    endpoint = (
+        f"{supabase_url}/rest/v1/ccs_email_opens"
+        f"?select=batch_id,customer_email,opened_at"
+        f"&batch_id=not.is.null&batch_id=neq.&batch_id=neq.preview"
+        f"&order=opened_at.desc&limit=5000"
+    )
     response = _get_json(endpoint, {"apikey": service_key, "Authorization": f"Bearer {service_key}"})
-    body = response.get("body") or []
-    return {"batches": body if isinstance(body, list) else []}
+    rows = response.get("body") or []
+    if not isinstance(rows, list):
+        return {"batches": []}
+    seen: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        bid = r.get("batch_id") or ""
+        if not bid:
+            continue
+        if bid not in seen:
+            seen[bid] = {"batch_id": bid, "sent_at": r["opened_at"], "contact_count": 0, "_emails": set()}
+        seen[bid]["_emails"].add(r.get("customer_email") or "")
+        if r["opened_at"] < seen[bid]["sent_at"]:
+            seen[bid]["sent_at"] = r["opened_at"]
+    batches = [
+        {"batch_id": v["batch_id"], "sent_at": v["sent_at"], "contact_count": len(v["_emails"])}
+        for v in seen.values()
+    ]
+    batches.sort(key=lambda b: b["sent_at"], reverse=True)
+    return {"batches": batches}
 
 
 def fetch_document_opens(*, email: str = "", batch_id: str = "", limit: int = 200, offset: int = 0) -> dict[str, Any]:

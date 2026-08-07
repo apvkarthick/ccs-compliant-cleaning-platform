@@ -982,7 +982,7 @@ def sds_recently_updated(
     """Return stock codes whose SDS or Risk URL changed within the last N days."""
     from datetime import datetime, timezone, timedelta
     from .site_distribution import _sb_get_all
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime('%Y-%m-%dT%H:%M:%SZ')
     rows = _sb_get_all(
         "ccs_sds_links",
         f"select=stock_code&or=(sds_url_updated_at.gte.{cutoff},risk_url_updated_at.gte.{cutoff})",
