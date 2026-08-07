@@ -501,24 +501,23 @@ def fetch_distribution_batches() -> dict[str, Any]:
 def fetch_document_opens(*, email: str = "", batch_id: str = "", limit: int = 200, offset: int = 0) -> dict[str, Any]:
     supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-    table = os.getenv("SUPABASE_DISTRIBUTION_TABLE", "ccs_distributions")
     if not supabase_url or not service_key:
-        return {"rows": [], "error": "Supabase not configured"}
-    filters = "&status=neq.dry_run"
+        return {"opens": [], "error": "Supabase not configured"}
+    filters = ""
     if email:
         filters += f"&customer_email=ilike.*{quote(email, safe='')}*"
     if batch_id:
         filters += f"&batch_id=eq.{quote(batch_id, safe='')}"
     endpoint = (
-        f"{supabase_url}/rest/v1/{table}"
-        f"?select=customer_email,ghl_contact_id,document_id,chemical_name,product_code,status,downloaded_at,batch_id"
+        f"{supabase_url}/rest/v1/ccs_document_opens"
+        f"?select=id,contact_id,customer_email,document_id,stock_code,doc_type,opened_at,batch_id"
         f"{filters}"
-        f"&order=customer_email.asc,downloaded_at.desc.nullslast"
+        f"&order=opened_at.desc"
         f"&limit={limit}&offset={offset}"
     )
     response = _get_json(endpoint, {"apikey": service_key, "Authorization": f"Bearer {service_key}"})
     body = response.get("body") or []
-    return {"rows": body if isinstance(body, list) else []}
+    return {"opens": body if isinstance(body, list) else []}
 
 
 def fetch_email_opens(*, batch_id: str = "", limit: int = 500, offset: int = 0) -> dict[str, Any]:
@@ -543,17 +542,21 @@ def tracking_url(
     chemical_name: str,
     redirect_url: str,
     secret: str,
+    email: str = "",
+    batch_id: str = "",
 ) -> str:
-    query = urlencode(
-        {
-            "doc": document_id,
-            "contact": contact_id,
-            "sig": tracking_signature(document_id, contact_id, secret),
-            "chem": chemical_name,
-            "redirect": redirect_url,
-        }
-    )
-    return f"{public_base_url.rstrip('/')}/api/ccs-msds-track?{query}"
+    params: dict[str, str] = {
+        "doc": document_id,
+        "contact": contact_id,
+        "sig": tracking_signature(document_id, contact_id, secret),
+        "chem": chemical_name,
+        "redirect": redirect_url,
+    }
+    if email:
+        params["email"] = email
+    if batch_id:
+        params["batch"] = batch_id
+    return f"{public_base_url.rstrip('/')}/api/ccs-msds-track?{urlencode(params)}"
 
 
 def validate_tracking_signature(document_id: str, contact_id: str, signature: str) -> bool:
@@ -564,11 +567,38 @@ def validate_tracking_signature(document_id: str, contact_id: str, signature: st
     return hmac.compare_digest(expected, signature)
 
 
-def record_download_acknowledgement(document_id: str, contact_id: str, chemical_name: str) -> dict[str, Any]:
-    return {
-        "supabase": _mark_distribution_downloaded(document_id, contact_id),
-        "ghl": _tag_ghl_contact(contact_id, ["msds_acknowledged", tag_slug_for_chemical(chemical_name)]),
-    }
+def record_download_acknowledgement(document_id: str, contact_id: str, chemical_name: str, *, customer_email: str = "", batch_id: str = "") -> dict[str, Any]:
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    sb_result: dict[str, Any] = {"status": "skipped"}
+    if supabase_url and service_key:
+        # Parse stock_code and doc_type from document_id (format: site_{accno}_{code}_{sds|risk_assessment})
+        parts = document_id.split("_", 2)  # ['site', accno, '{code}_{type}']
+        remainder = parts[2] if len(parts) == 3 else document_id
+        # Split off trailing _sds or _risk_assessment
+        doc_type = ""
+        stock_code = remainder
+        for suffix in ("_risk_assessment", "_sds"):
+            if remainder.endswith(suffix):
+                doc_type = suffix.lstrip("_")
+                stock_code = remainder[: -len(suffix)]
+                break
+        payload: dict[str, Any] = {
+            "contact_id": contact_id,
+            "customer_email": customer_email or contact_id,
+            "document_id": document_id,
+            "stock_code": stock_code,
+            "doc_type": doc_type,
+            "opened_at": _now(),
+            "batch_id": batch_id,
+        }
+        sb_result = _post_json(
+            f"{supabase_url}/rest/v1/ccs_document_opens",
+            payload,
+            {"apikey": service_key, "Authorization": f"Bearer {service_key}", "Prefer": "return=minimal"},
+        )
+    ghl = _tag_ghl_contact(contact_id, ["msds_acknowledged", tag_slug_for_chemical(chemical_name)])
+    return {"supabase": sb_result, "ghl": ghl}
 
 
 def _compact_match_text(value: str) -> str:

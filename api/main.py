@@ -1045,10 +1045,12 @@ def track_msds_download(
     sig: str = Query(...),
     chem: str = Query(""),
     redirect: str = Query(...),
+    email: str = Query(""),
+    batch: str = Query(""),
 ) -> HTMLResponse:
     acknowledgement = {}
     if validate_tracking_signature(doc, contact, sig):
-        acknowledgement = record_download_acknowledgement(doc, contact, chem)
+        acknowledgement = record_download_acknowledgement(doc, contact, chem, customer_email=email, batch_id=batch)
     safe_chem = html.escape(chem or "this MSDS document")
     safe_redirect = html.escape(redirect, quote=True)
     page = f"""<!doctype html>

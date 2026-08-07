@@ -518,62 +518,39 @@ function EmailOpensDashboard() {
 
 function PdfOpensDashboard() {
   const [search, setSearch] = useState('');
-  const [query, setQuery] = useState('');
-  const [rows, setRows] = useState([]);
+  const [opens, setOpens] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [batchId, setBatchId] = useState('');
-  const batches = useBatches();
 
-  async function runSearch(q, bid) {
-    const email = (q ?? query).trim();
-    const batch = bid ?? batchId;
-    if (!email && !batch) { setRows([]); return; }
+  async function loadOpens(emailFilter) {
     setLoading(true); setError('');
     try {
-      const params = new URLSearchParams({ limit: 200 });
-      if (email) params.set('email', email);
-      if (batch) params.set('batch_id', batch);
-      const response = await fetch(`${API_BASE}/document-opens?${params}`);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || 'Failed to load');
-      setRows(data.rows || []);
+      const params = new URLSearchParams({ limit: 500 });
+      if (emailFilter) params.set('email', emailFilter);
+      const r = await fetch(`${API_BASE}/document-opens?${params}`, { headers: getAuthHeaders() });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Failed to load');
+      setOpens(data.opens || []);
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
   }
 
+  useEffect(() => { loadOpens(''); }, []);
+
   function handleSearch(e) {
     e.preventDefault();
-    setQuery(search);
-    runSearch(search, batchId);
+    loadOpens(search.trim());
   }
-
-  function handleBatchChange(bid) {
-    setBatchId(bid);
-    if (query || bid) runSearch(query, bid);
-    else setRows([]);
-  }
-
-  const filtered = useMemo(() => {
-    if (statusFilter === 'opened') return rows.filter(r => r.status === 'downloaded');
-    if (statusFilter === 'not-opened') return rows.filter(r => r.status !== 'downloaded');
-    return rows;
-  }, [rows, statusFilter]);
 
   const stats = useMemo(() => ({
-    total: rows.length,
-    opened: rows.filter(r => r.status === 'downloaded').length,
-    notOpened: rows.filter(r => r.status !== 'downloaded').length,
-  }), [rows]);
+    total: opens.length,
+    contacts: new Set(opens.map(r => r.customer_email)).size,
+    products: new Set(opens.map(r => r.stock_code)).size,
+  }), [opens]);
 
   function fmt(ts) {
     if (!ts) return '—';
     return new Date(ts).toLocaleString('en-AU', { dateStyle: 'short', timeStyle: 'short' });
-  }
-
-  function chemName(row) {
-    return row.chemical_name || row.product_code || row.document_id || '—';
   }
 
   return (
@@ -583,76 +560,60 @@ function PdfOpensDashboard() {
           <p className="eyebrow">Compliant Cleaning Supplies</p>
           <h1>PDF Opens</h1>
         </div>
-        <BatchSelect batches={batches} value={batchId} onChange={handleBatchChange} />
+        <button className="tab" onClick={() => loadOpens(search.trim())} disabled={loading}>Refresh</button>
       </div>
 
       <form onSubmit={handleSearch} style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search by contact email…"
-          style={{ flex: 1, padding: '8px 12px', border: '1px solid #d9e1e8', borderRadius: '6px', fontSize: '0.95rem' }}
-        />
+        <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Filter by email…"
+          style={{ flex: 1, padding: '8px 12px', border: '1px solid #d9e1e8', borderRadius: '6px', fontSize: '0.95rem' }} />
         <button type="submit" className="primary" disabled={loading} style={{ whiteSpace: 'nowrap' }}>
-          {loading ? 'Searching…' : 'Search'}
+          {loading ? 'Loading…' : 'Filter'}
         </button>
       </form>
 
       {error && <div className="notice error"><AlertCircle size={18} /><span>{error}</span></div>}
 
-      {!loading && rows.length > 0 && (
-        <>
-          <div className="info-grid" style={{ margin: '0 0 1rem' }}>
-            <Info label="Total sent" value={String(stats.total)} />
-            <Info label="Opened" value={String(stats.opened)} />
-            <Info label="Not opened" value={String(stats.notOpened)} />
-            <Info label="Open rate" value={`${Math.round(stats.opened / stats.total * 100)}%`} />
-          </div>
-          <div style={{ display: 'flex', gap: '0.5rem', margin: '0 0 1rem' }}>
-            {[['all', 'All'], ['opened', 'Opened'], ['not-opened', 'Not opened']].map(([val, label]) => (
-              <button key={val} className={`tab ${statusFilter === val ? 'active' : ''}`}
-                onClick={() => setStatusFilter(val)}
-                style={{ fontSize: '0.8rem', padding: '4px 12px' }}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </>
+      {opens.length > 0 && (
+        <div className="info-grid" style={{ margin: '0 0 1rem' }}>
+          <Info label="Total opens" value={String(stats.total)} />
+          <Info label="Unique contacts" value={String(stats.contacts)} />
+          <Info label="Unique products" value={String(stats.products)} />
+        </div>
       )}
 
-      {!query && !batchId ? (
+      {loading ? (
+        <div className="empty-state"><p>Loading…</p></div>
+      ) : opens.length === 0 ? (
         <div className="empty-state">
           <FileSpreadsheet size={34} />
-          <h2>Search a contact</h2>
-          <p>Enter an email address, or select a send campaign above to view PDF delivery status.</p>
+          <h2>No PDF opens recorded yet</h2>
+          <p>PDF click events will appear here once customers open their documents.</p>
         </div>
-      ) : loading ? (
-        <div className="empty-state"><p>Searching…</p></div>
-      ) : filtered.length === 0 ? (
-        <div className="empty-state"><p>No records found for <strong>{query}</strong>.</p></div>
       ) : (
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Email</th>
-                <th>Chemical / Product</th>
-                <th>Status</th>
+                <th>Site</th>
+                <th>Product code</th>
+                <th>Doc type</th>
                 <th>Opened at</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row, i) => (
+              {opens.map((row, i) => (
                 <tr key={i}>
                   <td>{row.customer_email}</td>
-                  <td>{chemName(row)}</td>
+                  <td style={{ color: 'var(--muted)', fontSize: 13 }}>{row.contact_id}</td>
+                  <td><code style={{ fontSize: 12 }}>{row.stock_code || '—'}</code></td>
                   <td>
-                    <span style={{ color: row.status === 'downloaded' ? '#2C6B33' : '#607080', fontWeight: 600 }}>
-                      {row.status === 'downloaded' ? 'Opened' : 'Not opened'}
+                    <span style={{ fontSize: 12, fontWeight: 600, color: row.doc_type === 'sds' ? '#1d4ed8' : '#7c3aed' }}>
+                      {row.doc_type === 'risk_assessment' ? 'Risk' : (row.doc_type || '—').toUpperCase()}
                     </span>
                   </td>
-                  <td>{fmt(row.downloaded_at)}</td>
+                  <td>{fmt(row.opened_at)}</td>
                 </tr>
               ))}
             </tbody>

@@ -1519,6 +1519,8 @@ def compose_site_email(
                     chemical_name=d["code"],
                     redirect_url=raw_url,
                     secret=tracking_secret,
+                    email=email_addr,
+                    batch_id=batch_id,
                 )
             documents.append({
                 "label": label,
