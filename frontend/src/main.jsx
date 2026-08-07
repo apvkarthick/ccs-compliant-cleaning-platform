@@ -60,7 +60,7 @@ function LoginPage() {
     setError('');
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: window.location.origin },
+      options: { emailRedirectTo: `${window.location.origin}/sites` },
     });
     if (error) setError(error.message);
     else setSent(true);
