@@ -119,6 +119,7 @@ function Root() {
   const { session, loading } = useAuth();
 
   if (loading) return <div className="login-shell"><div className="login-card"><p>Loading…</p></div></div>;
+  if (!session) return <LoginForm />;
   return <App session={session} />;
 }
 
