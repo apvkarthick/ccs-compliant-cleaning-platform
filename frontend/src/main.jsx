@@ -116,6 +116,7 @@ function App({ session }) {
   const [activeTab, setActiveTab] = useState(() => {
     if (window.location.pathname === '/email-opens') return 'email-opens';
     if (window.location.pathname === '/pdf-opens') return 'pdf-opens';
+    if (window.location.pathname === '/email-stats') return 'email-stats';
     if (window.location.pathname === '/library') return 'library';
     if (window.location.pathname === '/sites') return 'sites';
     if (window.location.pathname === '/data-management') return 'data-management';
@@ -129,6 +130,7 @@ function App({ session }) {
     const paths = {
       'email-opens': '/email-opens',
       'pdf-opens': '/pdf-opens',
+      'email-stats': '/email-stats',
       'distribution': '/app',
       'library': '/library',
       'sites': '/sites',
@@ -152,7 +154,7 @@ function App({ session }) {
         <button className={`tab ${activeTab === 'new-products' ? 'active' : ''}`} onClick={() => switchTab('new-products')}>New Products</button>
         <button className={`tab ${activeTab === 'customers' ? 'active' : ''}`} onClick={() => switchTab('customers')}>Customers</button>
         <button className={`tab ${activeTab === 'tools' ? 'active' : ''}`} onClick={() => switchTab('tools')}>Import & Tools</button>
-        {/* Email Opens tab hidden — accessible via /email-opens directly */}
+        {/* Email Opens, PDF Opens, Email Stats tabs hidden — accessible via direct URL */}
         <button className={`tab ${activeTab === 'library' ? 'active' : ''}`} onClick={() => switchTab('library')}><BookOpen size={13} style={{marginRight:4,verticalAlign:'middle'}}/>Doc Library</button>
 
         <a className="tab" href="/rebrand">Rebrand SDS</a>
@@ -169,6 +171,7 @@ function App({ session }) {
       {activeTab === 'new-products' && <NewProductQueue />}
       {activeTab === 'customers' && <CustomerActions />}
       {activeTab === 'tools' && <ImportTools />}
+      {activeTab === 'email-stats' && <EmailStatsDashboard />}
     </main>
   );
 }
@@ -401,6 +404,59 @@ function BatchSelect({ batches, value, onChange }) {
         <option key={b.batch_id} value={b.batch_id}>{fmtBatchLabel(b)}</option>
       ))}
     </select>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Email Stats dashboard
+// ---------------------------------------------------------------------------
+
+function EmailStatsDashboard() {
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetch(`${API_BASE}/email-stats`, { headers: getAuthHeaders() })
+      .then(r => r.json())
+      .then(d => { setStats(d); setLoading(false); })
+      .catch(() => { setError('Failed to load stats'); setLoading(false); });
+  }, []);
+
+  if (loading) return <div style={{ padding: '2rem' }}>Loading…</div>;
+  if (error) return <div style={{ padding: '2rem', color: 'red' }}>{error}</div>;
+
+  return (
+    <div style={{ padding: '2rem', maxWidth: 600 }}>
+      <h2 style={{ marginBottom: '1.25rem' }}>Email Send Stats</h2>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date (AEST)</th>
+              <th style={{ textAlign: 'right' }}>Sites</th>
+              <th style={{ textAlign: 'right' }}>Emails</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(stats?.rows || []).map(row => (
+              <tr key={row.date}>
+                <td>{row.date}</td>
+                <td style={{ textAlign: 'right' }}>{row.sites.toLocaleString()}</td>
+                <td style={{ textAlign: 'right' }}>{row.emails.toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ fontWeight: 600 }}>
+              <td>Total</td>
+              <td style={{ textAlign: 'right' }}>{(stats?.total_sites || 0).toLocaleString()}</td>
+              <td style={{ textAlign: 'right' }}>{(stats?.total_emails || 0).toLocaleString()}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
   );
 }
 

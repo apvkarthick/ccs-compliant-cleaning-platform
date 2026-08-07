@@ -550,6 +550,45 @@ def fetch_document_opens(*, email: str = "", batch_id: str = "", limit: int = 20
     return {"opens": body if isinstance(body, list) else []}
 
 
+def fetch_email_stats() -> dict[str, Any]:
+    from collections import defaultdict
+    from datetime import timedelta
+    AEST = timezone(timedelta(hours=10))
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not supabase_url or not service_key:
+        return {"rows": [], "error": "Supabase not configured"}
+    headers = {"apikey": service_key, "Authorization": f"Bearer {service_key}"}
+    # fetch all rows — ~1500 rows, fine in memory
+    endpoint = f"{supabase_url}/rest/v1/ccs_distributions?select=sent_at,customer_email&order=sent_at.asc&limit=10000"
+    response = _get_json(endpoint, headers)
+    body = response.get("body") or []
+    if not isinstance(body, list):
+        return {"rows": []}
+    by_date: dict[str, set] = defaultdict(set)
+    counts: dict[str, int] = defaultdict(int)
+    for row in body:
+        raw = row.get("sent_at") or ""
+        if not raw:
+            continue
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(AEST)
+        except ValueError:
+            continue
+        key = dt.strftime("%-d %b") if hasattr(dt, "strftime") else str(dt.date())
+        try:
+            key = dt.strftime("{d} {m}".replace("{d}", str(dt.day)).replace("{m}", dt.strftime("%b")))
+        except Exception:
+            pass
+        key = f"{dt.day} {dt.strftime('%b')}"
+        by_date[key].add(row.get("customer_email") or "")
+        counts[key] += 1
+    rows = [{"date": k, "sites": len(by_date[k]), "emails": counts[k]} for k in by_date]
+    total_sites = len({e for s in by_date.values() for e in s})
+    total_emails = sum(counts.values())
+    return {"rows": rows, "total_sites": total_sites, "total_emails": total_emails}
+
+
 def fetch_email_opens(*, batch_id: str = "", limit: int = 500, offset: int = 0) -> dict[str, Any]:
     supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")

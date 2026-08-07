@@ -18,6 +18,7 @@ from .distribution import (
     fetch_distribution_batches,
     fetch_document_opens,
     fetch_email_opens,
+    fetch_email_stats,
     process_distribution,
     record_download_acknowledgement,
     record_email_open,
@@ -1128,6 +1129,11 @@ def get_email_opens(
     offset: int = Query(default=0),
 ) -> dict[str, Any]:
     return fetch_email_opens(batch_id=batch_id, limit=limit, offset=offset)
+
+
+@app.get("/email-stats")
+def get_email_stats(_: dict = Depends(require_auth)) -> dict[str, Any]:
+    return fetch_email_stats()
 
 
 @app.post("/rebrand/sds")
