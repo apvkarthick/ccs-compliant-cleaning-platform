@@ -506,19 +506,26 @@ def fetch_distribution_batches() -> dict[str, Any]:
     seen: dict[str, dict[str, Any]] = {}
     for r in rows:
         bid = r.get("batch_id") or ""
-        if not bid:
+        # Exclude per-site manual sends — they flood the dropdown (one entry per site)
+        if not bid or bid.startswith("manual_"):
             continue
         if bid not in seen:
-            seen[bid] = {"batch_id": bid, "sent_at": r["opened_at"], "contact_count": 0, "_emails": set()}
+            label = (
+                "Bulk Send" if "-" in bid and len(bid) == 36  # UUID
+                else "Scheduled" if bid.startswith("sched_")
+                else "SDS Alert" if bid.startswith("sdsalert_")
+                else bid
+            )
+            seen[bid] = {"batch_id": bid, "sent_at": r["opened_at"], "label": label, "_emails": set()}
         seen[bid]["_emails"].add(r.get("customer_email") or "")
         if r["opened_at"] < seen[bid]["sent_at"]:
             seen[bid]["sent_at"] = r["opened_at"]
     batches = [
-        {"batch_id": v["batch_id"], "sent_at": v["sent_at"], "contact_count": len(v["_emails"])}
+        {"batch_id": v["batch_id"], "sent_at": v["sent_at"], "contact_count": len(v["_emails"]), "label": v["label"]}
         for v in seen.values()
     ]
     batches.sort(key=lambda b: b["sent_at"], reverse=True)
-    return {"batches": batches}
+    return {"batches": batches[:50]}
 
 
 def fetch_document_opens(*, email: str = "", batch_id: str = "", limit: int = 200, offset: int = 0) -> dict[str, Any]:

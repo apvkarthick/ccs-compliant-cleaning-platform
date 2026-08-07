@@ -395,7 +395,8 @@ function useBatches() {
 function fmtBatchLabel(b) {
   const d = new Date(b.sent_at);
   const date = d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
-  return `${date} — ${b.contact_count} contact${b.contact_count !== 1 ? 's' : ''}`;
+  const type = b.label || 'Send';
+  return `${type} — ${date} (${b.contact_count} opener${b.contact_count !== 1 ? 's' : ''})`;
 }
 
 function BatchSelect({ batches, value, onChange }) {
@@ -548,6 +549,19 @@ function PdfOpensDashboard() {
     products: new Set(opens.map(r => r.stock_code)).size,
   }), [opens]);
 
+  // Group duplicate clicks: same email+stock_code+doc_type on same day → one row with count
+  const grouped = useMemo(() => {
+    const map = {};
+    for (const r of opens) {
+      const day = (r.opened_at || '').slice(0, 10);
+      const key = `${r.customer_email}|${r.contact_id}|${r.stock_code}|${r.doc_type}|${day}`;
+      if (!map[key]) map[key] = { ...r, count: 0, opened_at: r.opened_at };
+      map[key].count++;
+      if (r.opened_at > map[key].opened_at) map[key].opened_at = r.opened_at;
+    }
+    return Object.values(map).sort((a, b) => (b.opened_at || '').localeCompare(a.opened_at || ''));
+  }, [opens]);
+
   function fmt(ts) {
     if (!ts) return '—';
     return new Date(ts).toLocaleString('en-AU', { dateStyle: 'short', timeStyle: 'short' });
@@ -599,11 +613,12 @@ function PdfOpensDashboard() {
                 <th>Site</th>
                 <th>Product code</th>
                 <th>Doc type</th>
-                <th>Opened at</th>
+                <th>Last opened</th>
+                <th style={{ textAlign: 'center' }}>Clicks</th>
               </tr>
             </thead>
             <tbody>
-              {opens.map((row, i) => (
+              {grouped.map((row, i) => (
                 <tr key={i}>
                   <td>{row.customer_email}</td>
                   <td style={{ color: 'var(--muted)', fontSize: 13 }}>{row.contact_id}</td>
@@ -614,6 +629,7 @@ function PdfOpensDashboard() {
                     </span>
                   </td>
                   <td>{fmt(row.opened_at)}</td>
+                  <td style={{ textAlign: 'center', fontWeight: row.count > 1 ? 700 : 400, color: row.count > 1 ? '#2C6B33' : 'inherit' }}>{row.count}</td>
                 </tr>
               ))}
             </tbody>
