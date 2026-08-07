@@ -162,7 +162,7 @@ function App({ session }) {
         <button className={`tab ${activeTab === 'new-products' ? 'active' : ''}`} onClick={() => switchTab('new-products')}>New Products</button>
         <button className={`tab ${activeTab === 'customers' ? 'active' : ''}`} onClick={() => switchTab('customers')}>Customers</button>
         <button className={`tab ${activeTab === 'tools' ? 'active' : ''}`} onClick={() => switchTab('tools')}>Import & Tools</button>
-        <button className={`tab ${activeTab === 'email-opens' ? 'active' : ''}`} onClick={() => switchTab('email-opens')}>Email Opens</button>
+        {/* Email Opens tab hidden — accessible via /email-opens directly */}
         <button className={`tab ${activeTab === 'library' ? 'active' : ''}`} onClick={() => switchTab('library')}><BookOpen size={13} style={{marginRight:4,verticalAlign:'middle'}}/>Doc Library</button>
 
         <a className="tab" href="/rebrand">Rebrand SDS</a>
