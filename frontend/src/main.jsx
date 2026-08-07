@@ -50,35 +50,17 @@ function useAuth() {
 
 function LoginPage() {
   const [email, setEmail] = useState('');
-  const [sent, setSent] = useState(false);
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [sending, setSending] = useState(false);
+  const [signing, setSigning] = useState(false);
 
-  async function sendMagicLink(e) {
+  async function handleLogin(e) {
     e.preventDefault();
-    setSending(true);
+    setSigning(true);
     setError('');
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${window.location.origin}/sites` },
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) setError(error.message);
-    else setSent(true);
-    setSending(false);
-  }
-
-  if (sent) {
-    return (
-      <div className="login-shell">
-        <div className="login-card">
-          <p className="eyebrow">Compliant Cleaning Supplies</p>
-          <h1>Check your inbox</h1>
-          <p style={{ marginTop: '0.75rem', color: '#607080' }}>
-            A login link has been sent to <strong>{email}</strong>.<br />Click it to access the platform.
-          </p>
-        </div>
-      </div>
-    );
+    setSigning(false);
   }
 
   return (
@@ -86,19 +68,26 @@ function LoginPage() {
       <div className="login-card">
         <p className="eyebrow">Compliant Cleaning Supplies</p>
         <h1>CCS Platform</h1>
-        <p style={{ marginTop: '0.5rem', marginBottom: '1.25rem', color: '#607080', fontSize: '0.9rem' }}>
-          Enter your email to receive a secure login link.
-        </p>
-        <form onSubmit={sendMagicLink} className="login-form">
+        <form onSubmit={handleLogin} className="login-form" style={{ marginTop: '1.25rem' }}>
           <input
             type="email"
             value={email}
             onChange={e => setEmail(e.target.value)}
-            placeholder="your@email.com"
+            placeholder="Email"
             required
+            autoComplete="username"
           />
-          <button type="submit" className="primary" disabled={sending}>
-            {sending ? 'Sending…' : 'Send login link'}
+          <input
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            placeholder="Password"
+            required
+            autoComplete="current-password"
+            style={{ marginTop: '0.5rem' }}
+          />
+          <button type="submit" className="primary" disabled={signing} style={{ marginTop: '0.75rem' }}>
+            {signing ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
         {error && (
