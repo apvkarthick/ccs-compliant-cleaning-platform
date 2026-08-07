@@ -246,6 +246,13 @@ def parse_chemical_register(data: bytes) -> list[dict[str, Any]]:
     return records
 
 
+def _in_filter(codes: list[str] | set[str]) -> str:
+    """Build a PostgREST in.() value list, percent-encoding each value."""
+    from urllib.parse import quote as _q
+    safe = ",".join(_q(str(c), safe="") for c in codes)
+    return f"in.({safe})"
+
+
 def fetch_product_metadata(stock_codes: list[str]) -> dict[str, dict]:
     """Return product metadata keyed by stock_code.
 
@@ -262,16 +269,6 @@ def fetch_product_metadata(stock_codes: list[str]) -> dict[str, dict]:
         "signal_word,un_number,risk_assessment_required,sds_expiry,"
         "maximum_qty,hazchem,chemical_class,packing_group"
     )
-
-    def _in_filter(codes: list[str] | set[str]) -> str:
-        """Build a PostgREST in.() value list.
-        Percent-encode special URL chars (&, comma, etc.) in each value so the
-        query string stays valid; the HTTP layer decodes them before PostgREST
-        parses the filter.  Avoids double-quoted syntax which older PostgREST
-        versions do not support."""
-        from urllib.parse import quote as _q
-        safe = ",".join(_q(str(c), safe="") for c in codes)
-        return f"in.({safe})"
 
     # Direct lookup
     rows = _sb_get("ccs_sds_links", f"select={_FIELDS}&stock_code={_in_filter(stock_codes)}")
