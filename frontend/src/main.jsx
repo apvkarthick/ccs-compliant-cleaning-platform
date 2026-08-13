@@ -415,6 +415,7 @@ function EmailStatsDashboard() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [range, setRange] = useState('all');
 
   useEffect(() => {
     fetch(`${API_BASE}/email-stats`, { headers: getAuthHeaders() })
@@ -423,12 +424,61 @@ function EmailStatsDashboard() {
       .catch(() => { setError('Failed to load stats'); setLoading(false); });
   }, []);
 
+  const filteredRows = useMemo(() => {
+    if (!stats?.rows) return [];
+    const rows = [...stats.rows].sort((a, b) => b.date.localeCompare(a.date));
+    if (range === 'all') return rows;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - (range === '7d' ? 7 : 30));
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    return rows.filter(r => r.date >= cutoffStr);
+  }, [stats, range]);
+
+  const totalEmails = filteredRows.reduce((s, r) => s + r.emails, 0);
+  const totalSites = filteredRows.reduce((s, r) => s + r.sites, 0);
+  const peakRow = filteredRows.reduce((m, r) => r.emails > (m?.emails || 0) ? r : m, null);
+  const maxEmails = Math.max(...filteredRows.map(r => r.emails), 1);
+
+  function fmtDate(iso) {
+    const [, m, d] = iso.split('-');
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${parseInt(d)} ${months[parseInt(m) - 1]}`;
+  }
+
   if (loading) return <div style={{ padding: '2rem' }}>Loading…</div>;
   if (error) return <div style={{ padding: '2rem', color: 'red' }}>{error}</div>;
 
+  const tile = (label, value) => (
+    <div key={label} style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 10, padding: '1rem 1.25rem' }}>
+      <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--accent)' }}>{value}</div>
+      <div style={{ fontSize: '.75rem', color: 'var(--muted)', marginTop: 4 }}>{label}</div>
+    </div>
+  );
+
   return (
-    <div style={{ padding: '2rem', maxWidth: 600 }}>
-      <h2 style={{ marginBottom: '1.25rem' }}>Email Send Stats</h2>
+    <div style={{ padding: '2rem', maxWidth: 820 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+        <h2 style={{ margin: 0 }}>Email Send Stats</h2>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          {[['7d','Last 7 days'],['30d','Last 30 days'],['all','All time']].map(([val, label]) => (
+            <button key={val} onClick={() => setRange(val)} style={{
+              padding: '5px 14px', borderRadius: 6, border: '1px solid',
+              background: range === val ? 'var(--accent)' : 'transparent',
+              borderColor: range === val ? 'var(--accent)' : 'var(--line)',
+              color: range === val ? '#fff' : 'var(--muted)',
+              fontSize: '.8rem', cursor: 'pointer'
+            }}>{label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+        {tile('Total Emails', totalEmails.toLocaleString())}
+        {tile('Unique Site Emails', totalSites.toLocaleString())}
+        {tile('Active Days', filteredRows.length)}
+        {tile('Peak Day', peakRow ? `${peakRow.emails} (${fmtDate(peakRow.date)})` : '—')}
+      </div>
+
       <div className="table-wrap">
         <table>
           <thead>
@@ -436,22 +486,29 @@ function EmailStatsDashboard() {
               <th>Date (AEST)</th>
               <th style={{ textAlign: 'right' }}>Sites</th>
               <th style={{ textAlign: 'right' }}>Emails</th>
+              <th style={{ width: 130 }}></th>
             </tr>
           </thead>
           <tbody>
-            {(stats?.rows || []).map(row => (
+            {filteredRows.map(row => (
               <tr key={row.date}>
-                <td>{row.date}</td>
+                <td>{fmtDate(row.date)}</td>
                 <td style={{ textAlign: 'right' }}>{row.sites.toLocaleString()}</td>
                 <td style={{ textAlign: 'right' }}>{row.emails.toLocaleString()}</td>
+                <td>
+                  <div style={{ height: 6, borderRadius: 3, background: 'var(--soft)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${(row.emails / maxEmails) * 100}%`, background: 'var(--accent)', borderRadius: 3 }} />
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
           <tfoot>
             <tr style={{ fontWeight: 600 }}>
               <td>Total</td>
-              <td style={{ textAlign: 'right' }}>{(stats?.total_sites || 0).toLocaleString()}</td>
-              <td style={{ textAlign: 'right' }}>{(stats?.total_emails || 0).toLocaleString()}</td>
+              <td style={{ textAlign: 'right' }}>{totalSites.toLocaleString()}</td>
+              <td style={{ textAlign: 'right' }}>{totalEmails.toLocaleString()}</td>
+              <td />
             </tr>
           </tfoot>
         </table>

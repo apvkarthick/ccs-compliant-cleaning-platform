@@ -575,15 +575,10 @@ def fetch_email_stats() -> dict[str, Any]:
             dt = datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(AEST)
         except ValueError:
             continue
-        key = dt.strftime("%-d %b") if hasattr(dt, "strftime") else str(dt.date())
-        try:
-            key = dt.strftime("{d} {m}".replace("{d}", str(dt.day)).replace("{m}", dt.strftime("%b")))
-        except Exception:
-            pass
-        key = f"{dt.day} {dt.strftime('%b')}"
+        key = dt.strftime("%Y-%m-%d")
         by_date[key].add(row.get("customer_email") or "")
         counts[key] += 1
-    rows = [{"date": k, "sites": len(by_date[k]), "emails": counts[k]} for k in by_date]
+    rows = [{"date": k, "sites": len(by_date[k]), "emails": counts[k]} for k in sorted(by_date)]
     total_sites = len({e for s in by_date.values() for e in s})
     total_emails = sum(counts.values())
     return {"rows": rows, "total_sites": total_sites, "total_emails": total_emails}
