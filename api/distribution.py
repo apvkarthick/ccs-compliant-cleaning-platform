@@ -76,14 +76,11 @@ def process_distribution(
         return distribution
 
     distribution["ghl"] = _send_messages_via_ghl(distribution["messages"])
-    _ensure_documents_in_supabase(distribution["messages"])
-    distribution["distribution_rows"] = distribution_rows_for_supabase(
-        distribution["messages"],
-        dry_run=False,
-        table=os.getenv("SUPABASE_DISTRIBUTION_TABLE", "ccs_distributions"),
-        batch_id=batch_id,
-    )
-    distribution["supabase"] = _log_events_to_supabase(distribution["distribution_rows"])
+    rows = [
+        {"customer_email": msg["to"], "ghl_contact_id": msg.get("contact_id", ""), "status": "sent", "batch_id": batch_id}
+        for msg in distribution["messages"]
+    ]
+    distribution["supabase"] = _log_events_to_supabase(rows)
     return distribution
 
 
@@ -560,7 +557,8 @@ def fetch_email_stats() -> dict[str, Any]:
         return {"rows": [], "error": "Supabase not configured"}
     headers = {"apikey": service_key, "Authorization": f"Bearer {service_key}"}
     # fetch all rows — ~1500 rows, fine in memory
-    endpoint = f"{supabase_url}/rest/v1/ccs_distributions?select=sent_at,customer_email&order=sent_at.asc&limit=10000"
+    # product_code='' filters to one-row-per-email records; old per-document rows have real codes
+    endpoint = f"{supabase_url}/rest/v1/ccs_distributions?select=sent_at,customer_email&product_code=eq.&status=eq.sent&order=sent_at.asc&limit=10000"
     response = _get_json(endpoint, headers)
     body = response.get("body") or []
     if not isinstance(body, list):

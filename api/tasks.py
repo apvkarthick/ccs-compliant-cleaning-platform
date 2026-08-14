@@ -490,15 +490,12 @@ def bulk_distribute_task(self, preview: dict, contacts: list, dry_run: bool = Tr
                             "errors": ghl_errors,
                         })
                     else:
-                        _ensure_documents_in_supabase(dist["messages"])
-                        rows = distribution_rows_for_supabase(
-                            dist["messages"],
-                            dry_run=False,
-                            table=os.getenv("SUPABASE_DISTRIBUTION_TABLE", "ccs_distributions"),
-                            batch_id=batch_id,
-                        )
-                        if rows:
-                            _log_events_to_supabase(rows)
+                        _log_events_to_supabase([{
+                            "customer_email": contact.get("email", ""),
+                            "ghl_contact_id": contact.get("ghl_contact_id", "") or contact.get("id", ""),
+                            "status": "sent",
+                            "batch_id": batch_id,
+                        }])
                         summary["sent"] += 1
                 # Rate limit: pause between GHL calls (skip after last contact)
                 if i < total - 1:
