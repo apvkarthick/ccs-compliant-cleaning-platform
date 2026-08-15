@@ -981,6 +981,9 @@ function SiteDistribution() {
   const [testEmail, setTestEmail] = useState('');
   const [useOverride, setUseOverride] = useState(false);
   const [overrideEmail, setOverrideEmail] = useState('');
+  const [selectedSites, setSelectedSites] = useState(new Set());
+  const [batchSending, setBatchSending] = useState(false);
+  const [batchResult, setBatchResult] = useState(null);
 
   // Bulk send + schedule
   const [siteSchedule, setSiteSchedule] = useState(null);
@@ -1197,6 +1200,42 @@ function SiteDistribution() {
     setManualNewCodes(null);
     setManualResult('');
     setManualSending(false);
+  }
+
+  function toggleSelectSite(accno) {
+    setSelectedSites(prev => { const n = new Set(prev); n.has(accno) ? n.delete(accno) : n.add(accno); return n; });
+  }
+
+  function toggleSelectAll() {
+    const allOnPage = sites.every(s => selectedSites.has(s.accno));
+    setSelectedSites(prev => {
+      const n = new Set(prev);
+      allOnPage ? sites.forEach(s => n.delete(s.accno)) : sites.forEach(s => n.add(s.accno));
+      return n;
+    });
+  }
+
+  async function sendToSelected() {
+    const targets = sites.filter(s => selectedSites.has(s.accno));
+    if (!targets.length) return;
+    setBatchSending(true);
+    setBatchResult(null);
+    let ok = 0, fail = 0;
+    for (const site of targets) {
+      const email = (useOverride && overrideEmail) ? overrideEmail : (testEmail || (site.emails || []).join(', ') || '');
+      if (!email) { fail++; continue; }
+      try {
+        const r = await fetch(`${API_BASE}site-distribution/manual-send`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accno: site.accno, emails: [email], stock_codes: site.stockcodes || [], email_type: 'bulk' }),
+        });
+        r.ok ? ok++ : fail++;
+      } catch { fail++; }
+    }
+    setBatchSending(false);
+    setBatchResult({ ok, fail });
+    setSelectedSites(new Set());
   }
 
   async function switchToNewProduct(site) {
@@ -1633,6 +1672,25 @@ function SiteDistribution() {
         {useOverride && search && <span style={{ fontSize: 11, color: '#2C6B33', whiteSpace: 'nowrap' }}>Showing all statuses incl. On Hold</span>}
       </div>
 
+      {/* Selection action bar */}
+      {selectedSites.size > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, padding: '10px 16px', background: '#2C6B33', borderRadius: 8, color: '#fff' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{selectedSites.size} site{selectedSites.size !== 1 ? 's' : ''} selected</span>
+          <button onClick={() => setSelectedSites(new Set())} style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 5, color: '#fff', fontSize: 12, padding: '4px 12px', cursor: 'pointer' }}>
+            Deselect all
+          </button>
+          <button onClick={sendToSelected} disabled={batchSending} style={{ background: '#fff', border: 'none', borderRadius: 5, color: '#2C6B33', fontSize: 12, fontWeight: 700, padding: '4px 14px', cursor: batchSending ? 'not-allowed' : 'pointer', opacity: batchSending ? 0.7 : 1 }}>
+            {batchSending ? 'Sending…' : `Send to ${selectedSites.size} selected`}
+          </button>
+        </div>
+      )}
+      {batchResult && (
+        <div style={{ marginBottom: 10, padding: '8px 14px', background: batchResult.fail ? '#fff8e1' : '#e8f5ea', border: `1px solid ${batchResult.fail ? '#ffe082' : '#b8d9bc'}`, borderRadius: 7, fontSize: 13, color: '#17202a' }}>
+          Batch send: <strong>{batchResult.ok}</strong> sent{batchResult.fail ? `, ${batchResult.fail} failed` : ''}.
+          <button onClick={() => setBatchResult(null)} style={{ marginLeft: 12, fontSize: 11, color: '#607080', background: 'none', border: 'none', cursor: 'pointer' }}>Dismiss</button>
+        </div>
+      )}
+
       {loading ? (
         <p style={{ color: '#607080', fontSize: 14 }}>Loading…</p>
       ) : (
@@ -1640,6 +1698,15 @@ function SiteDistribution() {
           <table>
             <thead>
               <tr>
+                <th style={{ width: 32, textAlign: 'center' }}>
+                  <input type="checkbox"
+                    checked={sites.length > 0 && sites.every(s => selectedSites.has(s.accno))}
+                    ref={el => { if (el) el.indeterminate = sites.some(s => selectedSites.has(s.accno)) && !sites.every(s => selectedSites.has(s.accno)); }}
+                    onChange={toggleSelectAll}
+                    title="Select all on this page"
+                    style={{ accentColor: '#2C6B33', width: 14, height: 14, cursor: 'pointer' }}
+                  />
+                </th>
                 <th>Site</th>
                 <th>Head Office</th>
                 <th>Emails</th>
@@ -1649,8 +1716,14 @@ function SiteDistribution() {
               </tr>
             </thead>
             <tbody>
-              {sites.map(site => (
-                <tr key={site.accno} style={{ opacity: site.held ? 0.65 : 1 }}>
+              {sites.map(site => {
+                const isSelected = selectedSites.has(site.accno);
+                return (
+                <tr key={site.accno} style={{ opacity: site.held ? 0.65 : 1, background: isSelected ? '#edf7ee' : undefined, outline: isSelected ? '2px solid #2C6B33' : undefined, outlineOffset: -2 }}>
+                  <td style={{ textAlign: 'center' }}>
+                    <input type="checkbox" checked={isSelected} onChange={() => toggleSelectSite(site.accno)}
+                      style={{ accentColor: '#2C6B33', width: 14, height: 14, cursor: 'pointer' }} />
+                  </td>
                   <td>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{site.name}</div>
                     <div style={{ fontSize: 11, color: '#607080' }}>#{site.accno}</div>
@@ -1688,9 +1761,9 @@ function SiteDistribution() {
                     </div>
                   </td>
                 </tr>
-              ))}
+              );})}
               {sites.length === 0 && (
-                <tr><td colSpan={6} style={{ textAlign: 'center', color: '#607080', padding: 24 }}>
+                <tr><td colSpan={7} style={{ textAlign: 'center', color: '#607080', padding: 24 }}>
                   {stats?.total_sites === 0 ? 'No sites imported yet — use Import & Tools to upload mapping files.' : 'No results.'}
                 </td></tr>
               )}
