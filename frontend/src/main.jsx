@@ -979,6 +979,8 @@ function SiteDistribution() {
   const [error, setError] = useState('');
   const [showHelp, setShowHelp] = useState(false);
   const [testEmail, setTestEmail] = useState('');
+  const [useOverride, setUseOverride] = useState(false);
+  const [overrideEmail, setOverrideEmail] = useState('');
 
   // Bulk send + schedule
   const [siteSchedule, setSiteSchedule] = useState(null);
@@ -1028,7 +1030,9 @@ function SiteDistribution() {
     try {
       const params = new URLSearchParams({ page, page_size: PAGE_SIZE });
       if (search) params.set('search', search);
-      if (statusFilter !== 'all') params.set('status', statusFilter);
+      // When override is active with a search, show all statuses so held sites appear
+      const effectiveStatus = (useOverride && search) ? 'all' : statusFilter;
+      if (effectiveStatus !== 'all') params.set('status', effectiveStatus);
       if (lastSentFilter !== 'all') params.set('last_sent', lastSentFilter);
       const r = await fetch(`${API_BASE}/site-distribution/sites?${params}`, { headers: getAuthHeaders() });
       if (r.ok) setSites((await r.json()).sites || []);
@@ -1155,7 +1159,7 @@ function SiteDistribution() {
     fetch(`${API_BASE}/site-distribution/daily-status`, { headers: getAuthHeaders() })
       .then(r => r.ok ? r.json() : null).then(d => { if (d) setDailyStatus(d); }).catch(() => {});
   }, []);
-  useEffect(() => { loadSites(); }, [page, search, statusFilter, lastSentFilter]);
+  useEffect(() => { loadSites(); }, [page, search, statusFilter, lastSentFilter, useOverride]);
 
   async function toggleExclude(site) {
     const accno = site.accno;
@@ -1187,7 +1191,7 @@ function SiteDistribution() {
 
   function openManualSend(site) {
     setManualSite(site);
-    setManualEmail(testEmail || (site.emails || []).join(', ') || '');
+    setManualEmail((useOverride && overrideEmail) ? overrideEmail : (testEmail || (site.emails || []).join(', ') || ''));
     setManualCodes(new Set(site.stockcodes || []));
     setManualEmailType('bulk');
     setManualNewCodes(null);
@@ -1599,10 +1603,10 @@ function SiteDistribution() {
       </div>
 
       {/* Search + pagination */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
         <input
           type="search"
-          placeholder="Search sites…"
+          placeholder="Search by site name, head office, or account number…"
           value={search}
           onChange={e => { setSearch(e.target.value); setPage(1); }}
           style={{ flex: 1, padding: '9px 14px', border: '2px solid #2C6B33', borderRadius: 8, fontSize: '0.925rem', fontWeight: 500, color: '#17202a', background: '#f9fefb', outline: 'none' }}
@@ -1610,6 +1614,23 @@ function SiteDistribution() {
         <span style={{ fontSize: 12, color: '#607080', whiteSpace: 'nowrap' }}>Page {page}</span>
         <button className="btn-ghost" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>‹</button>
         <button className="btn-ghost" onClick={() => setPage(p => p + 1)} disabled={sites.length < PAGE_SIZE}>›</button>
+      </div>
+
+      {/* Head-office override email */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, padding: '10px 14px', background: useOverride ? '#e8f5ea' : '#f5f8fa', border: `1px solid ${useOverride ? '#b8d9bc' : '#d8e1e8'}`, borderRadius: 8 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 600, color: '#17202a', userSelect: 'none' }}>
+          <input type="checkbox" checked={useOverride} onChange={e => setUseOverride(e.target.checked)} style={{ width: 15, height: 15, accentColor: '#2C6B33' }} />
+          Send all emails to this address:
+        </label>
+        <input
+          type="email"
+          value={overrideEmail}
+          onChange={e => setOverrideEmail(e.target.value)}
+          placeholder="e.g. headoffice@client.com.au"
+          disabled={!useOverride}
+          style={{ flex: 1, padding: '6px 10px', border: '1px solid #c8d4de', borderRadius: 6, fontSize: 13, background: useOverride ? '#fff' : '#eef3f6', color: useOverride ? '#17202a' : '#aab', outline: 'none' }}
+        />
+        {useOverride && search && <span style={{ fontSize: 11, color: '#2C6B33', whiteSpace: 'nowrap' }}>Showing all statuses incl. On Hold</span>}
       </div>
 
       {loading ? (
