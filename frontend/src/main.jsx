@@ -1225,10 +1225,10 @@ function SiteDistribution() {
       const email = (useOverride && overrideEmail) ? overrideEmail : (testEmail || (site.emails || []).join(', ') || '');
       if (!email) { fail++; continue; }
       try {
-        const r = await fetch(`${API_BASE}site-distribution/manual-send`, {
+        const r = await fetch(`${API_BASE}site-distribution/send-manual`, {
           method: 'POST',
           headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accno: site.accno, emails: [email], stock_codes: site.stockcodes || [], email_type: 'bulk' }),
+          body: JSON.stringify({ accno: site.accno, emails: [email], stockcodes: site.stockcodes || [], email_type: 'bulk' }),
         });
         r.ok ? ok++ : fail++;
       } catch { fail++; }
