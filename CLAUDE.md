@@ -44,3 +44,12 @@ Deployment is fully automated via GitHub Actions. Pushing to `main` triggers the
 **Workflow:** commit changes → get user approval → `git push origin main` → GitHub Actions deploys automatically.
 
 IMPORTANT: Always get explicit user approval before running `git push`. Never push without the user saying to.
+
+## Server Access (SSH)
+SSH MCP is NOT available for this droplet. Use the PEM key directly via Bash tool or ask user to run `! ssh ...` in terminal.
+
+```bash
+ssh -i "O:\downloads-nov-2018\python-self-programs\aws\digitaloceannxai-private.pem" root@209.38.93.174 "<command>"
+```
+
+App dir: `/opt/apps/ccs-platform/`. Env file: `/opt/apps/ccs-platform/.env`. Services: `ccs-api`, `ccs-worker`, `ccs-beat`.

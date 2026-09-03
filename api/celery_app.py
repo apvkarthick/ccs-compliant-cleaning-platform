@@ -34,15 +34,15 @@ celery_app.conf.update(
             "task": "ccs.detect_new_products",
             "schedule": crontab(hour=19, minute=0),
         },
-        # Daily at 23:00 UTC (9am AEST) — task self-guards: only sends on first weekday of month
+        # Daily at 01:00 UTC (11:00 AEST) — task self-guards: only sends on first weekday of month
         "send-sds-expiry-alerts": {
             "task": "ccs.send_sds_expiry_alerts",
-            "schedule": crontab(hour=23, minute=0),
+            "schedule": crontab(hour=1, minute=0),
         },
-        # Daily at 23:15 UTC (9:15am AEST) — task self-guards: only sends on first weekday of month
+        # Daily at 01:15 UTC (11:15 AEST) — task self-guards: only sends on first weekday of month
         "send-hold-list-notification": {
             "task": "ccs.send_hold_list_notification",
-            "schedule": crontab(hour=23, minute=15),
+            "schedule": crontab(hour=1, minute=15),
         },
         # ── Auto SharePoint pull ─────────────────────────────────────────────
         # Pulls latest import files from SharePoint and runs full import pipeline.
