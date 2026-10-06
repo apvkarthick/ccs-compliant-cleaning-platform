@@ -59,7 +59,7 @@ function LoginPage() {
     setSigning(true);
     setError('');
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setError(error.message);
+    if (error) setError(error.message || 'Login failed. Please try again.');
     setSigning(false);
   }
 

@@ -1426,15 +1426,7 @@ def send_sds_update_alert(
             "sites": [{"accno": s["accno"], "name": s.get("name", "")} for s in matching_sites],
         }
 
-    # Resolve product display names for the alert intro
     meta = fetch_product_metadata(stock_codes)
-    product_names = []
-    for code in stock_codes:
-        name = (meta.get(code) or meta.get(_norm_code(code)) or {}).get("product_name") or code
-        if name not in product_names:
-            product_names.append(name)
-
-    body_intro = _sds_update_body_intro(product_names)
     subject = "A chemical you use has an updated SDS – Action Required"
     public_base = os.environ.get("CCS_PUBLIC_BASE_URL", "").rstrip("/")
     tracking_secret = os.environ.get("CCS_TRACKING_HMAC_SECRET", "")
@@ -1460,6 +1452,12 @@ def send_sds_update_alert(
             site_codes = site.get("stockcodes") or []
             site_norm_map = {_norm_code(c): c for c in site_codes}
             updated_site_codes = [site_norm_map[n] for n in norm_inputs if n in site_norm_map]
+        site_product_names = []
+        for code in updated_site_codes:
+            name = (meta.get(code) or meta.get(_norm_code(code)) or {}).get("product_name") or code
+            if name not in site_product_names:
+                site_product_names.append(name)
+        body_intro = _sds_update_body_intro(site_product_names)
         docs = resolve_docs_for_site(
             updated_site_codes,
             sds_map, risk_map, group_fallback, risk_required_set, register_codes,
