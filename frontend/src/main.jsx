@@ -2226,10 +2226,28 @@ function ImportTools() {
   const INVALID_PAGE = 50;
   const [invalidShowAll, setInvalidShowAll] = useState(false);
   const [sdsAlertCodes, setSdsAlertCodes] = useState('');
+  const [sdsAlertInput, setSdsAlertInput] = useState('');
   const [sdsAlertTestEmail, setSdsAlertTestEmail] = useState('');
   const [sdsAlertState, setSdsAlertState] = useState(null); // null | 'checking' | 'checked' | 'sending' | 'done'
   const [sdsAlertResult, setSdsAlertResult] = useState(null);
   const [sdsRecentLoading, setSdsRecentLoading] = useState(false);
+
+  function parseSdsCodes(str) {
+    return [...new Set(str.split(/[\n,\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean))];
+  }
+  function removeSdsCode(code) {
+    setSdsAlertCodes(parseSdsCodes(sdsAlertCodes).filter(c => c !== code).join('\n'));
+    setSdsAlertState(null); setSdsAlertResult(null);
+  }
+  function commitSdsInput() {
+    const newCodes = parseSdsCodes(sdsAlertInput);
+    if (!newCodes.length) return;
+    const existing = parseSdsCodes(sdsAlertCodes);
+    const merged = [...new Set([...existing, ...newCodes])];
+    setSdsAlertCodes(merged.join('\n'));
+    setSdsAlertInput('');
+    setSdsAlertState(null); setSdsAlertResult(null);
+  }
 
   async function checkSdsAlert() {
     if (!sdsAlertCodes.trim()) return;
@@ -2463,19 +2481,36 @@ function ImportTools() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Stock codes (one per line or comma-separated)</label>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Stock codes</label>
               <button onClick={loadRecentlyUpdatedSds} disabled={sdsRecentLoading} className="btn-ghost"
                 style={{ fontSize: 11, padding: '3px 10px' }}>
                 {sdsRecentLoading ? 'Loading…' : 'Load recently updated (30 days)'}
               </button>
             </div>
-            <textarea
-              value={sdsAlertCodes}
-              onChange={e => { setSdsAlertCodes(e.target.value); setSdsAlertState(null); setSdsAlertResult(null); }}
-              placeholder={'CHLORADET5L\nEUCALYPT5L'}
-              rows={3}
-              style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d9e0', borderRadius: 5, fontSize: 13, boxSizing: 'border-box', fontFamily: 'monospace', resize: 'vertical' }}
-            />
+            {parseSdsCodes(sdsAlertCodes).length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8, padding: '8px 10px', border: '1px solid #d1d9e0', borderRadius: 5, background: '#fafcff', minHeight: 38 }}>
+                {parseSdsCodes(sdsAlertCodes).map(code => (
+                  <span key={code} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#e8f0fe', border: '1px solid #c5d3f5', borderRadius: 4, padding: '2px 7px', fontSize: 12, fontFamily: 'monospace', fontWeight: 600 }}>
+                    {code}
+                    <button onClick={() => removeSdsCode(code)} title="Remove" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#5566aa', fontSize: 13, lineHeight: 1, display: 'flex', alignItems: 'center' }}>×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                type="text"
+                value={sdsAlertInput}
+                onChange={e => setSdsAlertInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commitSdsInput(); } }}
+                onBlur={commitSdsInput}
+                placeholder="Type code and press Enter, or paste comma-separated"
+                style={{ flex: 1, padding: '7px 10px', border: '1px solid #d1d9e0', borderRadius: 5, fontSize: 13, fontFamily: 'monospace' }}
+              />
+              {sdsAlertInput.trim() && (
+                <button onClick={commitSdsInput} className="btn-ghost" style={{ fontSize: 12, padding: '4px 10px' }}>Add</button>
+              )}
+            </div>
           </div>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Test email (optional — leave blank to send to all affected sites)</label>
@@ -2985,6 +3020,7 @@ function NewProductQueue() {
   const [results, setResults] = useState({});      // {accno: string}
   const [fullPack, setFullPack] = useState({});    // {accno: bool} — true=full site pack, false=new only
   const [emailType, setEmailType] = useState({});  // {accno: 'new_product'|'bulk'}
+  const [dismissing, setDismissing] = useState(''); // accno currently being dismissed
 
   async function loadQueue() {
     setLoading(true);
@@ -3014,6 +3050,25 @@ function NewProductQueue() {
 
   function toggleAll(accno, codes, checked) {
     setSelected(prev => ({ ...prev, [accno]: checked ? new Set(codes) : new Set() }));
+  }
+
+  async function handleDismiss(site) {
+    const codes = [...(selected[site.accno] || [])];
+    if (!codes.length) return;
+    setDismissing(site.accno);
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/new-products/dismiss`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accno: site.accno, stockcodes: codes }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Failed');
+      setResults(r => ({ ...r, [site.accno]: `Dismissed ${data.dismissed} product(s) — removed from queue` }));
+      loadQueue();
+    } catch (err) {
+      setResults(r => ({ ...r, [site.accno]: `Error: ${err.message}` }));
+    } finally { setDismissing(''); }
   }
 
   async function handleSend(site, dryRun) {
@@ -3135,9 +3190,17 @@ function NewProductQueue() {
                     <button
                       style={{ background: '#2C6B33', color: '#fff', border: 'none', borderRadius: 5, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
                       onClick={() => handleSend(site, false)}
-                      disabled={sending === site.accno || !sel.size}
+                      disabled={sending === site.accno || dismissing === site.accno || !sel.size}
                     >
                       {sending === site.accno ? 'Sending…' : 'Send'}
+                    </button>
+                    <button
+                      title="Mark as done without sending — removes from queue"
+                      style={{ background: '#fff', color: '#9b6b00', border: '1.5px solid #f0c040', borderRadius: 5, padding: '5px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                      onClick={() => handleDismiss(site)}
+                      disabled={sending === site.accno || dismissing === site.accno || !sel.size}
+                    >
+                      {dismissing === site.accno ? 'Dismissing…' : 'Dismiss'}
                     </button>
                   </div>
                 </div>

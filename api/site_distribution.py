@@ -1445,13 +1445,15 @@ def send_sds_update_alert(
         if not send_to:
             failed.append({"accno": accno, "reason": "no valid email"})
             continue
+        site_codes = site.get("stockcodes") or []
+        site_norm_map = {_norm_code(c): c for c in site_codes}
         if test_email:
-            # Test: show all entered codes so the preview is representative
+            # Test: show all entered codes for intro; use them as proxy for site pack
             updated_site_codes = stock_codes
+            docs_codes = stock_codes
         else:
-            site_codes = site.get("stockcodes") or []
-            site_norm_map = {_norm_code(c): c for c in site_codes}
             updated_site_codes = [site_norm_map[n] for n in norm_inputs if n in site_norm_map]
+            docs_codes = site_codes  # full site pack per Matt's request
         site_product_names = []
         for code in updated_site_codes:
             name = (meta.get(code) or meta.get(_norm_code(code)) or {}).get("product_name") or code
@@ -1459,7 +1461,7 @@ def send_sds_update_alert(
                 site_product_names.append(name)
         body_intro = _sds_update_body_intro(site_product_names)
         docs = resolve_docs_for_site(
-            updated_site_codes,
+            docs_codes,
             sds_map, risk_map, group_fallback, risk_required_set, register_codes,
         )
         if not docs:
