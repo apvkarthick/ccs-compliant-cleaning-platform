@@ -61,6 +61,7 @@ def detect_new_products_task() -> dict:
     import os
     import time
     from datetime import datetime, timezone
+    from urllib.parse import quote
     from .site_distribution import (
         detect_and_record_new_products,
         get_new_product_queue,
@@ -86,10 +87,12 @@ def detect_new_products_task() -> dict:
     if not result["first_run"] and result["new_count"] > 0:
         queue = get_new_product_queue()
         held_set = {r["accno"] for r in _sb_get_all("ccs_site_holds", "select=accno")}
-        site_data = {
-            s["accno"]: s
-            for s in _sb_get_all("ccs_site_mapping", "select=*")
-        }
+        accnos_needed = {q["accno"] for q in queue if q.get("accno")}
+        if accnos_needed:
+            joined = ",".join(quote(a, safe="") for a in accnos_needed)
+            site_data = {s["accno"]: s for s in _sb_get_all("ccs_site_mapping", f"select=*&accno=in.({joined})")}
+        else:
+            site_data = {}
         sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
         public_base = os.getenv("CCS_PUBLIC_BASE_URL", "").rstrip("/")
         tracking_secret = os.getenv("CCS_TRACKING_HMAC_SECRET", "")
@@ -294,6 +297,7 @@ def site_distribution_task(
     import time
     from datetime import datetime, timezone
 
+    from urllib.parse import quote
     from .site_distribution import (
         _update_last_sent_at,
         compose_site_email,
@@ -301,6 +305,7 @@ def site_distribution_task(
         notify_admin_failure,
         resolve_docs_for_site,
         _sb_get_all,
+        _sb_count,
     )
     from .distribution import _find_or_create_ghl_contact_id, _send_messages_via_ghl
 
@@ -321,22 +326,21 @@ def site_distribution_task(
     excl_set = {r["accno"] for r in _sb_get_all("ccs_site_exclusions", "select=accno")}
     held_set = {r["accno"] for r in _sb_get_all("ccs_site_holds", "select=accno")}
     skip_set = excl_set | held_set
-    all_sites = _sb_get_all("ccs_site_mapping", "select=*&order=name.asc")
-    sites = [s for s in all_sites if s.get("accno") not in skip_set]
 
-    # Exclude sites already sent in this campaign
-    sites = [s for s in sites if not s.get("last_sent_at") or s["last_sent_at"] < batch_start]
+    # Fetch only eligible sites server-side: not excluded/held, not sent in this campaign
+    site_params = f"select=*&order=name.asc&or=(last_sent_at.lt.{batch_start},last_sent_at.is.null)"
+    if skip_set:
+        joined = ",".join(quote(a, safe="") for a in skip_set)
+        site_params += f"&accno=not.in.({joined})"
+    sites = _sb_get_all("ccs_site_mapping", site_params)
 
-    # Also apply manual resume filter if explicitly set
+    # Manual resume filter (rare — skip_sent_since differs from batch_start)
     if skip_sent_since and skip_sent_since != batch_start:
         sites = [s for s in sites if not s.get("last_sent_at") or s["last_sent_at"] < skip_sent_since]
 
     # Count emails already sent today (for cap enforcement)
     today_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00")
-    sent_today_already = sum(
-        1 for s in all_sites
-        if (s.get("last_sent_at") or "") >= today_start
-    )
+    sent_today_already = _sb_count("ccs_site_mapping", f"last_sent_at=gte.{today_start}")
 
     # Determine how many we can send right now
     if daily_cap > 0:

@@ -648,6 +648,20 @@ def _sb_get_all(table: str, params: str = "") -> list[dict]:
     return results
 
 
+def _sb_count(table: str, params: str = "") -> int:
+    """Return row count via HEAD + Prefer: count=exact — zero rows fetched."""
+    sep = "&" if params else ""
+    url = f"{_sb_url()}/rest/v1/{table}?{params}{sep}limit=1"
+    req = Request(url, method="HEAD", headers={**_sb_headers(), "Prefer": "count=exact"})
+    try:
+        with urlopen(req, timeout=30) as resp:
+            cr = resp.getheader("Content-Range", "*/0")
+            total = cr.split("/")[-1]
+            return int(total) if total.isdigit() else 0
+    except Exception:
+        return 0
+
+
 def _sb_delete(table: str, filter_param: str) -> None:
     url = f"{_sb_url()}/rest/v1/{table}?{filter_param}"
     req = Request(url, method="DELETE", headers={**_sb_headers(), "Prefer": "return=minimal"})
@@ -845,10 +859,10 @@ def list_sites(search: str = "", page: int = 1, page_size: int = 50, status: str
 
 def get_stats() -> dict[str, int]:
     try:
-        total = len(_sb_get_all("ccs_site_mapping", "select=accno"))
-        excl = len(_sb_get_all("ccs_site_exclusions", "select=accno"))
-        held = len(_sb_get_all("ccs_site_holds", "select=accno"))
-        links = len(_sb_get_all("ccs_sds_links", "select=stock_code"))
+        total = _sb_count("ccs_site_mapping")
+        excl = _sb_count("ccs_site_exclusions")
+        held = _sb_count("ccs_site_holds")
+        links = _sb_count("ccs_sds_links")
         return {
             "total_sites": total,
             "excluded_sites": excl,
@@ -862,20 +876,13 @@ def get_stats() -> dict[str, int]:
 
 def get_import_status() -> dict[str, Any]:
     """Return per-table record counts and last import timestamp for the admin data panel."""
-    _TABLE_PK = {
-        "ccs_site_mapping": "accno",
-        "ccs_sds_links": "stock_code",
-        "ccs_stock_groups": "primary_code",
-    }
+    tables = ["ccs_site_mapping", "ccs_sds_links", "ccs_stock_groups"]
     result: dict[str, Any] = {}
-    for table, pk in _TABLE_PK.items():
-        rows_all = _sb_get(table, f"select={pk},imported_at")
-        last_ts = None
-        for r in rows_all:
-            ts = r.get("imported_at")
-            if ts and (last_ts is None or ts > last_ts):
-                last_ts = ts
-        result[table] = {"count": len(rows_all), "last_import": last_ts}
+    for table in tables:
+        count = _sb_count(table)
+        rows = _sb_get(table, "select=imported_at&order=imported_at.desc&limit=1")
+        last_ts = rows[0].get("imported_at") if rows else None
+        result[table] = {"count": count, "last_import": last_ts}
     return result
 
 
@@ -885,8 +892,7 @@ def get_daily_send_status() -> dict:
     from datetime import datetime, timezone
     daily_cap = int(os.getenv("CCS_DAILY_EMAIL_CAP", "0") or 0)
     today_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00")
-    all_sites = _sb_get_all("ccs_site_mapping", "select=last_sent_at")
-    sent_today = sum(1 for s in all_sites if (s.get("last_sent_at") or "") >= today_start)
+    sent_today = _sb_count("ccs_site_mapping", f"last_sent_at=gte.{today_start}")
     return {
         "daily_cap": daily_cap,
         "sent_today": sent_today,
@@ -939,8 +945,7 @@ def get_presend_check(skip_sent_since: str = "") -> dict:
     from datetime import datetime, timezone
     daily_cap = int(os.getenv("CCS_DAILY_EMAIL_CAP", "0") or 0)
     today_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00")
-    all_mapping = _sb_get_all("ccs_site_mapping", "select=last_sent_at")
-    sent_today = sum(1 for s in all_mapping if (s.get("last_sent_at") or "") >= today_start)
+    sent_today = _sb_count("ccs_site_mapping", f"last_sent_at=gte.{today_start}")
     remaining_today = max(0, daily_cap - sent_today) if daily_cap > 0 else len(will_send)
     total_will_send = len(will_send)
     schedule: list[dict] = []
@@ -984,12 +989,14 @@ def get_missing_docs() -> dict[str, list[dict]]:
     excl_set = {r["accno"] for r in _sb_get_all("ccs_site_exclusions", "select=accno")}
     held_set = {r["accno"] for r in _sb_get_all("ccs_site_holds", "select=accno")}
     skip_set = excl_set | held_set
-    all_sites = _sb_get_all("ccs_site_mapping", "select=accno,stockcodes")
+    site_params = "select=accno,stockcodes"
+    if skip_set:
+        joined = ",".join(quote(a, safe="") for a in skip_set)
+        site_params += f"&accno=not.in.({joined})"
+    all_sites = _sb_get_all("ccs_site_mapping", site_params)
 
     all_codes: set[str] = set()
     for site in all_sites:
-        if site.get("accno") in skip_set:
-            continue
         raw = site.get("stockcodes") or ""
         for c in (raw.split(",") if isinstance(raw, str) else (raw or [])):
             c = c.strip()
