@@ -2250,9 +2250,12 @@ function ImportTools() {
   }
 
   async function checkSdsAlert() {
-    if (!sdsAlertCodes.trim()) return;
+    if (!sdsAlertCodes.trim() && !sdsAlertInput.trim()) return;
     setSdsAlertState('checking'); setSdsAlertResult(null);
-    const codes = sdsAlertCodes.split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+    const codes = [...new Set([
+      ...sdsAlertCodes.split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(Boolean),
+      ...sdsAlertInput.split(/[\n,\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean),
+    ])];
     try {
       const r = await fetch(`${API_BASE}/site-distribution/sds-update-alert`, {
         method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
@@ -2277,7 +2280,10 @@ function ImportTools() {
   }
 
   async function sendSdsAlert() {
-    const codes = sdsAlertCodes.split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+    const codes = [...new Set([
+      ...sdsAlertCodes.split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(Boolean),
+      ...sdsAlertInput.split(/[\n,\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean),
+    ])];
     if (!codes.length) return;
     setSdsAlertState('sending');
     try {
@@ -2520,11 +2526,11 @@ function ImportTools() {
             <p style={{ fontSize: 11, color: '#607080', margin: '3px 0 0' }}>If filled, sends only to this address using the first matching site&apos;s data. Use to verify the email before sending to all sites.</p>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            <button onClick={checkSdsAlert} disabled={!sdsAlertCodes.trim() || sdsAlertState === 'checking' || sdsAlertState === 'sending'}
+            <button onClick={checkSdsAlert} disabled={(!sdsAlertCodes.trim() && !sdsAlertInput.trim()) || sdsAlertState === 'checking' || sdsAlertState === 'sending'}
               className="btn-ghost" style={{ fontSize: 13 }}>
               {sdsAlertState === 'checking' ? 'Checking…' : 'Check affected sites'}
             </button>
-            <button onClick={sendSdsAlert} disabled={!sdsAlertCodes.trim() || sdsAlertState === 'sending' || sdsAlertState === 'checking'}
+            <button onClick={sendSdsAlert} disabled={(!sdsAlertCodes.trim() && !sdsAlertInput.trim()) || sdsAlertState === 'sending' || sdsAlertState === 'checking'}
               style={{ background: sdsAlertState === 'sending' ? '#f0f4f8' : '#7c3aed', color: sdsAlertState === 'sending' ? '#607080' : '#fff', border: 'none', borderRadius: 5, padding: '7px 18px', fontSize: 13, fontWeight: 600, cursor: sdsAlertState === 'sending' ? 'not-allowed' : 'pointer' }}>
               {sdsAlertState === 'sending' ? 'Sending…' : (sdsAlertTestEmail.trim() ? 'Test send' : 'Send alerts to all affected sites')}
             </button>
