@@ -806,8 +806,9 @@ def dismiss_new_products_endpoint(
     req: NewProductDismissRequest,
     _auth: dict = Depends(require_auth),
 ) -> dict[str, Any]:
-    """Mark new-product queue entries as notified without sending an email."""
-    mark_products_notified([{"accno": req.accno, "stock_code": c} for c in req.stockcodes])
+    """Mark new-product queue entries as dismissed (no email sent)."""
+    from .site_distribution import mark_products_dismissed
+    mark_products_dismissed([{"accno": req.accno, "stock_code": c} for c in req.stockcodes])
     return {"dismissed": len(req.stockcodes)}
 
 

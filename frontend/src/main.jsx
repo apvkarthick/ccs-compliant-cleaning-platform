@@ -3021,12 +3021,15 @@ function NewProductQueue() {
   const [loading, setLoading] = useState(true);
   const [testEmail, setTestEmail] = useState('');
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState({});   // {accno: Set<stock_code>}
-  const [sending, setSending] = useState('');      // accno currently sending
-  const [results, setResults] = useState({});      // {accno: string}
-  const [fullPack, setFullPack] = useState({});    // {accno: bool} — true=full site pack, false=new only
-  const [emailType, setEmailType] = useState({});  // {accno: 'new_product'|'bulk'}
-  const [dismissing, setDismissing] = useState(''); // accno currently being dismissed
+  const [selected, setSelected] = useState({});      // {accno: Set<stock_code>}
+  const [selectedSites, setSelectedSites] = useState(new Set()); // Set<accno> for bulk site actions
+  const [sending, setSending] = useState('');         // accno currently sending
+  const [bulkSending, setBulkSending] = useState(false);
+  const [bulkDismissing, setBulkDismissing] = useState(false);
+  const [results, setResults] = useState({});         // {accno: string}
+  const [fullPack, setFullPack] = useState({});       // {accno: bool} — true=full site pack, false=new only
+  const [emailType, setEmailType] = useState({});     // {accno: 'new_product'|'bulk'}
+  const [dismissing, setDismissing] = useState('');   // accno currently being dismissed
 
   async function loadQueue() {
     setLoading(true);
@@ -3077,6 +3080,14 @@ function NewProductQueue() {
     } finally { setDismissing(''); }
   }
 
+  function toggleSelectSite(accno) {
+    setSelectedSites(prev => { const n = new Set(prev); n.has(accno) ? n.delete(accno) : n.add(accno); return n; });
+  }
+
+  function toggleSelectAllSites(visibleQueue, checked) {
+    setSelectedSites(checked ? new Set(visibleQueue.map(s => s.accno)) : new Set());
+  }
+
   async function handleSend(site, dryRun) {
     const codes = [...(selected[site.accno] || [])];
     if (!codes.length) return;
@@ -3096,6 +3107,52 @@ function NewProductQueue() {
     } catch (err) {
       setResults(r => ({ ...r, [site.accno]: `Error: ${err.message}` }));
     } finally { setSending(''); }
+  }
+
+  async function handleBulkSend(visibleQueue) {
+    const targets = visibleQueue.filter(s => selectedSites.has(s.accno));
+    if (!targets.length) return;
+    setBulkSending(true);
+    for (const site of targets) {
+      const codes = [...(selected[site.accno] || [])];
+      if (!codes.length) continue;
+      const email = testEmail || (site.emails || [])[0] || '';
+      if (!email) { setResults(r => ({ ...r, [site.accno]: 'No email — skipped' })); continue; }
+      try {
+        const r = await fetch(`${API_BASE}/site-distribution/new-products/send`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accno: site.accno, stockcodes: codes, email, dry_run: false, full_pack: fullPack[site.accno] !== false, email_type: emailType[site.accno] || 'new_product' }),
+        });
+        const data = await r.json();
+        setResults(prev => ({ ...prev, [site.accno]: r.ok ? `Sent — ${data.docs} doc(s)` : `Error: ${data.detail || 'Failed'}` }));
+      } catch (err) { setResults(prev => ({ ...prev, [site.accno]: `Error: ${err.message}` })); }
+    }
+    setBulkSending(false);
+    setSelectedSites(new Set());
+    loadQueue();
+  }
+
+  async function handleBulkDismiss(visibleQueue) {
+    const targets = visibleQueue.filter(s => selectedSites.has(s.accno));
+    if (!targets.length) return;
+    setBulkDismissing(true);
+    for (const site of targets) {
+      const codes = [...(selected[site.accno] || [])];
+      if (!codes.length) continue;
+      try {
+        const r = await fetch(`${API_BASE}/site-distribution/new-products/dismiss`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accno: site.accno, stockcodes: codes }),
+        });
+        const data = await r.json();
+        setResults(prev => ({ ...prev, [site.accno]: r.ok ? `Dismissed ${data.dismissed} product(s)` : `Error: ${data.detail || 'Failed'}` }));
+      } catch (err) { setResults(prev => ({ ...prev, [site.accno]: `Error: ${err.message}` })); }
+    }
+    setBulkDismissing(false);
+    setSelectedSites(new Set());
+    loadQueue();
   }
 
   return (
@@ -3153,14 +3210,43 @@ function NewProductQueue() {
               No results for "{search}".
             </div>
           );
-          return q.map(site => {
+          const allSitesChecked = q.length > 0 && q.every(s => selectedSites.has(s.accno));
+          const someSitesChecked = q.some(s => selectedSites.has(s.accno)) && !allSitesChecked;
+          return <>
+            {/* Bulk select bar */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, padding: '8px 12px', background: selectedSites.size > 0 ? '#2C6B33' : '#f0f4f7', borderRadius: 7, transition: 'background 0.15s' }}>
+              <input type="checkbox" checked={allSitesChecked}
+                ref={el => { if (el) el.indeterminate = someSitesChecked; }}
+                onChange={e => toggleSelectAllSites(q, e.target.checked)}
+                style={{ accentColor: '#2C6B33', width: 14, height: 14, cursor: 'pointer' }} />
+              {selectedSites.size > 0 ? (
+                <>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#fff', flex: 1 }}>{selectedSites.size} site{selectedSites.size !== 1 ? 's' : ''} selected</span>
+                  <button onClick={() => setSelectedSites(new Set())} style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 5, color: '#fff', fontSize: 12, padding: '3px 10px', cursor: 'pointer' }}>
+                    Deselect all
+                  </button>
+                  <button onClick={() => handleBulkSend(q)} disabled={bulkSending || bulkDismissing} style={{ background: '#fff', border: 'none', borderRadius: 5, color: '#2C6B33', fontSize: 12, fontWeight: 700, padding: '3px 12px', cursor: 'pointer', opacity: (bulkSending || bulkDismissing) ? 0.7 : 1 }}>
+                    {bulkSending ? 'Sending…' : `Send ${selectedSites.size} selected`}
+                  </button>
+                  <button onClick={() => handleBulkDismiss(q)} disabled={bulkSending || bulkDismissing} style={{ background: '#fff0c0', border: '1px solid #f0c040', borderRadius: 5, color: '#9b6b00', fontSize: 12, fontWeight: 600, padding: '3px 12px', cursor: 'pointer', opacity: (bulkSending || bulkDismissing) ? 0.7 : 1 }}>
+                    {bulkDismissing ? 'Dismissing…' : `Dismiss ${selectedSites.size} selected`}
+                  </button>
+                </>
+              ) : (
+                <span style={{ fontSize: 12, color: '#607080' }}>Select sites for bulk send or dismiss</span>
+              )}
+            </div>
+            {q.map(site => {
             const codes = site.products.map(p => p.stock_code);
             const sel = selected[site.accno] || new Set();
             const allChecked = codes.every(c => sel.has(c));
+            const siteSelected = selectedSites.has(site.accno);
             return (
-              <div key={site.accno} style={{ background: '#fff', border: '1px solid #e0e8f0', borderRadius: 8, marginBottom: 16, overflow: 'hidden' }}>
-                <div style={{ padding: '12px 16px', background: '#f8fafc', borderBottom: '1px solid #e0e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
+              <div key={site.accno} style={{ background: '#fff', border: `1px solid ${siteSelected ? '#2C6B33' : '#e0e8f0'}`, borderRadius: 8, marginBottom: 16, overflow: 'hidden', outline: siteSelected ? '2px solid #2C6B33' : undefined, outlineOffset: -1 }}>
+                <div style={{ padding: '12px 16px', background: siteSelected ? '#edf7ee' : '#f8fafc', borderBottom: '1px solid #e0e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input type="checkbox" checked={siteSelected} onChange={() => toggleSelectSite(site.accno)}
+                      style={{ accentColor: '#2C6B33', width: 14, height: 14, cursor: 'pointer' }} />
                     <span style={{ fontWeight: 700, fontSize: 14 }}>{site.name}</span>
                     <span style={{ fontSize: 11, color: '#607080', marginLeft: 8 }}>#{site.accno}</span>
                     <span style={{ fontSize: 11, color: '#607080', marginLeft: 8 }}>{site.emails?.join('; ')}</span>
@@ -3232,7 +3318,7 @@ function NewProductQueue() {
                 </div>
               </div>
             );
-          });
+          })}</>;
         })()}
       </div>
     </section>

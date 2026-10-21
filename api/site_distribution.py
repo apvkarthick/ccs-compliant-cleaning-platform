@@ -1656,10 +1656,10 @@ def _is_first_weekday_of_month_aest() -> bool:
 
 
 def get_new_product_queue() -> list[dict[str, Any]]:
-    """Return unactioned new-product entries grouped by site (notified_at IS NULL)."""
+    """Return unactioned new-product entries grouped by site (notified_at IS NULL and dismissed_at IS NULL)."""
     rows = _sb_get(
         "ccs_site_product_history",
-        "select=accno,stock_code,first_seen_at&notified_at=is.null&order=first_seen_at.desc",
+        "select=accno,stock_code,first_seen_at&notified_at=is.null&dismissed_at=is.null&order=first_seen_at.desc",
     )
     sites = {s["accno"]: s for s in _sb_get("ccs_site_mapping", "select=accno,name,emails")}
     by_site: dict[str, dict] = {}
@@ -1691,15 +1691,35 @@ def mark_products_notified(entries: list[dict[str, Any]]) -> None:
         )
 
 
+def mark_products_dismissed(entries: list[dict[str, Any]]) -> None:
+    """Set dismissed_at=now for each (accno, stock_code) pair (dismiss without sending email)."""
+    now = datetime.now(timezone.utc).isoformat()
+    for e in entries:
+        _sb_patch(
+            "ccs_site_product_history",
+            f"accno=eq.{quote(e['accno'], safe='')}&stock_code=eq.{quote(e['stock_code'], safe='')}",
+            {"dismissed_at": now},
+        )
+
+
 def detect_and_record_new_products() -> dict[str, Any]:
     """Compare ccs_site_mapping stockcodes vs ccs_site_product_history.
     Insert new (accno, stock_code) pairs. Returns counts and per-site breakdown.
-    On first run (empty history) seeds the table without flagging anything as new."""
+    On first run (empty history) seeds the table without flagging anything as new.
+    Only tracks products present in the Chemical Register (ccs_sds_links with product_name)."""
     sites = _sb_get("ccs_site_mapping", "select=accno,name,stockcodes")
     # Paginated fetch — history can exceed PostgREST's default 1000-row page
     history_rows = _sb_get_all("ccs_site_product_history", "select=accno,stock_code")
     seen: set[tuple[str, str]] = {(r["accno"], r["stock_code"]) for r in history_rows}
     first_run = len(seen) == 0
+
+    # Only flag products in the Chemical Register — non-chemicals (arts/craft, accessories) are excluded
+    chem_rows = _sb_get("ccs_sds_links", "select=stock_code&product_name=not.is.null")
+    register_codes: set[str] = set()
+    for r in chem_rows:
+        code = r["stock_code"]
+        register_codes.add(code)
+        register_codes.add(_norm_code(code))
 
     new_rows: list[dict[str, Any]] = []
     now = datetime.now(timezone.utc).isoformat()
@@ -1707,6 +1727,8 @@ def detect_and_record_new_products() -> dict[str, Any]:
         accno = site.get("accno", "")
         for code in (site.get("stockcodes") or []):
             if (accno, code) not in seen:
+                if code not in register_codes and _norm_code(code) not in register_codes:
+                    continue  # not in Chemical Register — skip
                 new_rows.append({"accno": accno, "stock_code": code, "first_seen_at": now})
 
     if new_rows:
