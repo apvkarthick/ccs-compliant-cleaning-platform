@@ -812,6 +812,29 @@ def dismiss_new_products_endpoint(
     return {"dismissed": len(req.stockcodes)}
 
 
+@app.get("/site-distribution/new-products/dismissed")
+def get_dismissed_products_queue(_auth: dict = Depends(require_auth)) -> list[dict[str, Any]]:
+    """Return dismissed (unnotified) new-product entries grouped by site."""
+    from .site_distribution import get_dismissed_product_queue
+    return get_dismissed_product_queue()
+
+
+class RestoreProductRequest(BaseModel):
+    accno: str
+    stockcodes: list[str]
+
+
+@app.post("/site-distribution/new-products/restore")
+def restore_dismissed_endpoint(
+    req: RestoreProductRequest,
+    _auth: dict = Depends(require_auth),
+) -> dict[str, Any]:
+    """Restore dismissed products back to the active queue."""
+    from .site_distribution import mark_products_restored
+    mark_products_restored([{"accno": req.accno, "stock_code": c} for c in req.stockcodes])
+    return {"restored": len(req.stockcodes)}
+
+
 # ---------------------------------------------------------------------------
 # Add single product to Chemical Register
 # ---------------------------------------------------------------------------

@@ -1702,6 +1702,42 @@ def mark_products_dismissed(entries: list[dict[str, Any]]) -> None:
         )
 
 
+def get_dismissed_product_queue() -> list[dict[str, Any]]:
+    """Return dismissed (not yet notified) new-product entries grouped by site."""
+    rows = _sb_get(
+        "ccs_site_product_history",
+        "select=accno,stock_code,first_seen_at,dismissed_at&dismissed_at=not.is.null&notified_at=is.null&order=dismissed_at.desc",
+    )
+    sites = {s["accno"]: s for s in _sb_get("ccs_site_mapping", "select=accno,name,emails")}
+    by_site: dict[str, dict] = {}
+    for r in rows:
+        accno = r["accno"]
+        if accno not in by_site:
+            site = sites.get(accno, {})
+            by_site[accno] = {
+                "accno": accno,
+                "name": site.get("name", accno),
+                "emails": site.get("emails") or [],
+                "products": [],
+            }
+        by_site[accno]["products"].append({
+            "stock_code": r["stock_code"],
+            "first_seen_at": r["first_seen_at"],
+            "dismissed_at": r["dismissed_at"],
+        })
+    return list(by_site.values())
+
+
+def mark_products_restored(entries: list[dict[str, Any]]) -> None:
+    """Clear dismissed_at so products return to the active queue."""
+    for e in entries:
+        _sb_patch(
+            "ccs_site_product_history",
+            f"accno=eq.{quote(e['accno'], safe='')}&stock_code=eq.{quote(e['stock_code'], safe='')}",
+            {"dismissed_at": None},
+        )
+
+
 def detect_and_record_new_products() -> dict[str, Any]:
     """Compare ccs_site_mapping stockcodes vs ccs_site_product_history.
     Insert new (accno, stock_code) pairs. Returns counts and per-site breakdown.

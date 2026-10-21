@@ -3030,6 +3030,9 @@ function NewProductQueue() {
   const [fullPack, setFullPack] = useState({});       // {accno: bool} — true=full site pack, false=new only
   const [emailType, setEmailType] = useState({});     // {accno: 'new_product'|'bulk'}
   const [dismissing, setDismissing] = useState('');   // accno currently being dismissed
+  const [dismissed, setDismissed] = useState([]);
+  const [showDismissed, setShowDismissed] = useState(false);
+  const [restoring, setRestoring] = useState('');
 
   async function loadQueue() {
     setLoading(true);
@@ -3047,7 +3050,14 @@ function NewProductQueue() {
     } finally { setLoading(false); }
   }
 
-  useEffect(() => { loadQueue(); }, []);
+  async function loadDismissed() {
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/new-products/dismissed`, { headers: getAuthHeaders() });
+      if (r.ok) setDismissed(await r.json());
+    } catch (_) {}
+  }
+
+  useEffect(() => { loadQueue(); loadDismissed(); }, []);
 
   function toggleCode(accno, code) {
     setSelected(prev => {
@@ -3075,6 +3085,7 @@ function NewProductQueue() {
       if (!r.ok) throw new Error(data.detail || 'Failed');
       setResults(r => ({ ...r, [site.accno]: `Dismissed ${data.dismissed} product(s) — removed from queue` }));
       loadQueue();
+      loadDismissed();
     } catch (err) {
       setResults(r => ({ ...r, [site.accno]: `Error: ${err.message}` }));
     } finally { setDismissing(''); }
@@ -3109,11 +3120,27 @@ function NewProductQueue() {
     } finally { setSending(''); }
   }
 
+  async function handleRestore(site) {
+    const codes = site.products.map(p => p.stock_code);
+    setRestoring(site.accno);
+    try {
+      const r = await fetch(`${API_BASE}/site-distribution/new-products/restore`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accno: site.accno, stockcodes: codes }),
+      });
+      if (r.ok) { loadQueue(); loadDismissed(); }
+    } finally { setRestoring(''); }
+  }
+
   async function handleBulkSend(visibleQueue) {
     const targets = visibleQueue.filter(s => selectedSites.has(s.accno));
     if (!targets.length) return;
+    // Bug 2: skip sites already sent in this session to prevent double-sends
+    const alreadySent = new Set(Object.entries(results).filter(([, v]) => v.startsWith('Sent')).map(([k]) => k));
     setBulkSending(true);
     for (const site of targets) {
+      if (alreadySent.has(site.accno)) continue;
       const codes = [...(selected[site.accno] || [])];
       if (!codes.length) continue;
       const email = testEmail || (site.emails || [])[0] || '';
@@ -3153,6 +3180,7 @@ function NewProductQueue() {
     setBulkDismissing(false);
     setSelectedSites(new Set());
     loadQueue();
+    loadDismissed();
   }
 
   return (
@@ -3225,10 +3253,10 @@ function NewProductQueue() {
                   <button onClick={() => setSelectedSites(new Set())} style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 5, color: '#fff', fontSize: 12, padding: '3px 10px', cursor: 'pointer' }}>
                     Deselect all
                   </button>
-                  <button onClick={() => handleBulkSend(q)} disabled={bulkSending || bulkDismissing} style={{ background: '#fff', border: 'none', borderRadius: 5, color: '#2C6B33', fontSize: 12, fontWeight: 700, padding: '3px 12px', cursor: 'pointer', opacity: (bulkSending || bulkDismissing) ? 0.7 : 1 }}>
+                  <button onClick={() => handleBulkSend(q)} disabled={bulkSending || bulkDismissing || !!sending} style={{ background: '#fff', border: 'none', borderRadius: 5, color: '#2C6B33', fontSize: 12, fontWeight: 700, padding: '3px 12px', cursor: 'pointer', opacity: (bulkSending || bulkDismissing || !!sending) ? 0.7 : 1 }}>
                     {bulkSending ? 'Sending…' : `Send ${selectedSites.size} selected`}
                   </button>
-                  <button onClick={() => handleBulkDismiss(q)} disabled={bulkSending || bulkDismissing} style={{ background: '#fff0c0', border: '1px solid #f0c040', borderRadius: 5, color: '#9b6b00', fontSize: 12, fontWeight: 600, padding: '3px 12px', cursor: 'pointer', opacity: (bulkSending || bulkDismissing) ? 0.7 : 1 }}>
+                  <button onClick={() => handleBulkDismiss(q)} disabled={bulkSending || bulkDismissing || !!sending} style={{ background: '#fff0c0', border: '1px solid #f0c040', borderRadius: 5, color: '#9b6b00', fontSize: 12, fontWeight: 600, padding: '3px 12px', cursor: 'pointer', opacity: (bulkSending || bulkDismissing || !!sending) ? 0.7 : 1 }}>
                     {bulkDismissing ? 'Dismissing…' : `Dismiss ${selectedSites.size} selected`}
                   </button>
                 </>
@@ -3320,6 +3348,44 @@ function NewProductQueue() {
             );
           })}</>;
         })()}
+
+        {/* Dismissed section */}
+        {dismissed.length > 0 && (
+          <div style={{ marginTop: 32, borderTop: '1px solid #e0e8f0', paddingTop: 20 }}>
+            <button
+              onClick={() => setShowDismissed(v => !v)}
+              style={{ background: 'none', border: 'none', fontSize: 13, color: '#607080', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', fontWeight: 600 }}
+            >
+              <span style={{ fontSize: 11, fontFamily: 'monospace' }}>{showDismissed ? '▾' : '▸'}</span>
+              Dismissed ({dismissed.length} site{dismissed.length !== 1 ? 's' : ''})
+            </button>
+            {showDismissed && dismissed.map(site => (
+              <div key={site.accno} style={{ background: '#f8fafc', border: '1px solid #e0e8f0', borderRadius: 8, marginTop: 8, padding: '10px 16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ fontWeight: 600, fontSize: 13, color: '#607080' }}>{site.name}</span>
+                    <span style={{ fontSize: 11, color: '#99aabb', marginLeft: 8 }}>#{site.accno}</span>
+                    <span style={{ fontSize: 11, color: '#99aabb', marginLeft: 8 }}>{site.products.length} product{site.products.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  <button
+                    onClick={() => handleRestore(site)}
+                    disabled={restoring === site.accno}
+                    style={{ background: '#fff', border: '1.5px solid #2C6B33', borderRadius: 5, color: '#2C6B33', fontSize: 12, fontWeight: 600, padding: '4px 12px', cursor: 'pointer', opacity: restoring === site.accno ? 0.7 : 1 }}
+                  >
+                    {restoring === site.accno ? 'Restoring…' : 'Restore to queue'}
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
+                  {site.products.map(p => (
+                    <span key={p.stock_code} style={{ fontSize: 11, padding: '2px 7px', background: '#e0e8f0', borderRadius: 4, color: '#607080' }}>
+                      {p.stock_code}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
