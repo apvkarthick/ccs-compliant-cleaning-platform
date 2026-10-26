@@ -1278,7 +1278,7 @@ function SiteDistribution() {
       if (!r.ok) throw new Error(data.detail || 'Send failed');
       const emailDisplay = data.sent_to ? data.sent_to.join(', ') : data.email;
       const docCount = data.sent_to ? (data.results[0]?.docs ?? '?') : data.docs;
-      setManualResult(`${data.status === 'dry_run' ? 'Dry run OK' : 'Sent'} — ${docCount} document(s) to ${emailDisplay}`);
+      setManualResult(data.status === 'duplicate' ? `Duplicate blocked — ${data.reason}` : `${data.status === 'dry_run' ? 'Dry run OK' : 'Sent'} — ${docCount} document(s) to ${emailDisplay}`);
     } catch (err) {
       setManualResult(`Error: ${err.message}`);
     } finally {
@@ -3113,7 +3113,7 @@ function NewProductQueue() {
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || 'Failed');
-      setResults(r => ({ ...r, [site.accno]: `${dryRun ? 'Dry run OK' : 'Sent'} — ${data.docs} doc(s) to ${data.email}` }));
+      setResults(r => ({ ...r, [site.accno]: data.status === 'duplicate' ? `Duplicate blocked — ${data.reason}` : `${dryRun ? 'Dry run OK' : 'Sent'} — ${data.docs} doc(s) to ${data.email}` }));
       if (!dryRun) loadQueue();
     } catch (err) {
       setResults(r => ({ ...r, [site.accno]: `Error: ${err.message}` }));
@@ -3152,7 +3152,7 @@ function NewProductQueue() {
           body: JSON.stringify({ accno: site.accno, stockcodes: codes, email, dry_run: false, full_pack: fullPack[site.accno] !== false, email_type: emailType[site.accno] || 'new_product' }),
         });
         const data = await r.json();
-        setResults(prev => ({ ...prev, [site.accno]: r.ok ? `Sent — ${data.docs} doc(s)` : `Error: ${data.detail || 'Failed'}` }));
+        setResults(prev => ({ ...prev, [site.accno]: !r.ok ? `Error: ${data.detail || 'Failed'}` : data.status === 'duplicate' ? `Duplicate blocked — ${data.reason}` : `Sent — ${data.docs} doc(s)` }));
       } catch (err) { setResults(prev => ({ ...prev, [site.accno]: `Error: ${err.message}` })); }
     }
     setBulkSending(false);

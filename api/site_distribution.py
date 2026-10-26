@@ -6,7 +6,7 @@ import json
 import os
 import re
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 from urllib.error import HTTPError
 from urllib.parse import quote
@@ -1179,6 +1179,12 @@ def send_manual(
         raise ValueError(f"Site {accno!r} not found")
     site = sites[0]
 
+    if not dry_run:
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        last_sent = site.get("last_sent_at") or ""
+        if last_sent and last_sent >= cutoff:
+            return {"status": "duplicate", "reason": f"already sent at {last_sent} — retry after 5 min"}
+
     use_codes = stockcodes if stockcodes else (site.get("stockcodes") or [])
     if not use_codes:
         raise ValueError(f"No products specified for site {accno!r}")
@@ -1742,7 +1748,8 @@ def detect_and_record_new_products() -> dict[str, Any]:
     """Compare ccs_site_mapping stockcodes vs ccs_site_product_history.
     Insert new (accno, stock_code) pairs. Returns counts and per-site breakdown.
     On first run (empty history) seeds the table without flagging anything as new.
-    Only tracks products present in the Chemical Register (ccs_sds_links with product_name)."""
+    Only tracks products present in the Chemical Register (ccs_sds_links with product_name).
+    Skips size variants of chemicals the site already has (reconciles against ccs_stock_groups)."""
     sites = _sb_get("ccs_site_mapping", "select=accno,name,stockcodes")
     # Paginated fetch — history can exceed PostgREST's default 1000-row page
     history_rows = _sb_get_all("ccs_site_product_history", "select=accno,stock_code")
@@ -1757,15 +1764,42 @@ def detect_and_record_new_products() -> dict[str, Any]:
         register_codes.add(code)
         register_codes.add(_norm_code(code))
 
+    # Build group siblings map: any code → set of all codes in the same size group (incl. itself + normalised)
+    # Used to skip "new size of existing chemical" — if site already has DEBLIM5LT, don't flag DEBLIM20LT
+    group_siblings: dict[str, set[str]] = {}
+    for g in _sb_get("ccs_stock_groups", "select=primary_code,related_codes"):
+        primary = g.get("primary_code", "")
+        related_list = [r for r in (g.get("related_codes") or []) if r]
+        all_members: set[str] = set()
+        for c in [primary] + related_list:
+            all_members.add(c)
+            all_members.add(_norm_code(c))
+        for c in list(all_members):
+            group_siblings[c] = all_members
+
+    # Pre-build per-site seen sets (code + normalised) for fast sibling lookup
+    seen_by_accno: dict[str, set[str]] = {}
+    for (accno, code) in seen:
+        s = seen_by_accno.setdefault(accno, set())
+        s.add(code)
+        s.add(_norm_code(code))
+
     new_rows: list[dict[str, Any]] = []
     now = datetime.now(timezone.utc).isoformat()
     for site in sites:
         accno = site.get("accno", "")
+        site_seen = seen_by_accno.get(accno, set())
         for code in (site.get("stockcodes") or []):
-            if (accno, code) not in seen:
-                if code not in register_codes and _norm_code(code) not in register_codes:
-                    continue  # not in Chemical Register — skip
-                new_rows.append({"accno": accno, "stock_code": code, "first_seen_at": now})
+            if (accno, code) in seen:
+                continue
+            norm = _norm_code(code)
+            if code not in register_codes and norm not in register_codes:
+                continue  # not in Chemical Register — skip
+            # Skip if a sibling size of this chemical is already in the site's history
+            siblings = group_siblings.get(code) or group_siblings.get(norm)
+            if siblings and siblings & site_seen:
+                continue
+            new_rows.append({"accno": accno, "stock_code": code, "first_seen_at": now})
 
     if new_rows:
         # Plain INSERT — no upsert Prefer header (old PostgREST doesn't support resolution=);

@@ -47,6 +47,7 @@ from .site_distribution import (
     resolve_docs_for_site,
     send_manual,
     unhold_site,
+    _update_last_sent_at,
     _sb_get,
     _sb_get_all,
     _sb_url,
@@ -763,6 +764,13 @@ def send_new_products_endpoint(
         raise HTTPException(status_code=404, detail="Site not found")
     site = sites[0]
 
+    if not req.dry_run:
+        from datetime import datetime, timezone, timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        last_sent = site.get("last_sent_at") or ""
+        if last_sent and last_sent >= cutoff:
+            return {"status": "duplicate", "reason": f"already sent at {last_sent} — retry after 5 min", "docs": 0, "email": req.email}
+
     sds_map, risk_map, group_fallback, risk_required_set, register_codes = load_lookup_maps()
 
     # Email body links = new products only; Chemical Register (Excel) = full site stockcodes via site dict
@@ -792,6 +800,7 @@ def send_new_products_endpoint(
 
     if not req.dry_run and ghl_result.get("status") != "skipped":
         mark_products_notified([{"accno": req.accno, "stock_code": c} for c in req.stockcodes])
+        _update_last_sent_at(req.accno)
 
     return {"status": ghl_result.get("status", "ok"), "docs": len(docs), "email": req.email}
 
